@@ -1,0 +1,231 @@
+/** Sidebar, legend, filters, search and the line detail panel. */
+
+import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
+import { t, lang, type Lang } from './i18n.ts';
+import type { LineRecord, Registry } from './main.ts';
+import type { ViewState } from './state.ts';
+
+export interface ChromeOptions {
+  registry: Registry;
+  state: ViewState;
+  onToggleMode: (mode: Mode, on: boolean) => void;
+  onOperator: (op: string | null) => void;
+  onBasemap: (osm: boolean) => void;
+  onLang: (l: Lang) => void;
+  onSelect: (lineId: string) => void;
+  onFlyToStation: (lngLat: [number, number]) => void;
+  onReset: () => void;
+  onShare: () => void;
+  searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
+}
+
+const el = <K extends keyof HTMLElementTagNameMap>(
+  tag: K, cls?: string, html?: string,
+): HTMLElementTagNameMap[K] => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html !== undefined) n.innerHTML = html;
+  return n;
+};
+
+let opts: ChromeOptions;
+
+export function renderChrome(o: ChromeOptions) {
+  opts = o;
+  draw();
+}
+
+renderChrome.rerender = () => draw();
+
+function draw() {
+  const { registry, state } = opts;
+  const s = t();
+  const root = document.getElementById('sidebar')!;
+  root.innerHTML = '';
+
+  // --- header ---------------------------------------------------------------
+  const header = el('header', 'panel');
+  header.appendChild(el('h1', '', s.title));
+  header.appendChild(el('p', 'sub', s.subtitle));
+
+  const meta = el('p', 'meta',
+    `${registry.regionName} · ${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}`);
+  header.appendChild(meta);
+
+  const langRow = el('div', 'row');
+  (['de', 'en'] as Lang[]).forEach((l) => {
+    const b = el('button', `chip${lang() === l ? ' on' : ''}`, l.toUpperCase());
+    b.onclick = () => opts.onLang(l);
+    langRow.appendChild(b);
+  });
+  const share = el('button', 'chip', s.share);
+  share.onclick = () => opts.onShare();
+  langRow.appendChild(share);
+  const reset = el('button', 'chip', s.reset);
+  reset.onclick = () => opts.onReset();
+  langRow.appendChild(reset);
+  header.appendChild(langRow);
+  root.appendChild(header);
+
+  // --- search ---------------------------------------------------------------
+  const searchBox = el('div', 'panel');
+  const input = el('input', 'search');
+  input.type = 'search';
+  input.placeholder = s.search;
+  const results = el('div', 'results');
+  searchBox.append(input, results);
+  root.appendChild(searchBox);
+
+  let timer: number | undefined;
+  input.oninput = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => runSearch(input.value, results), 120);
+  };
+
+  // --- modes / legend -------------------------------------------------------
+  const modeBox = el('div', 'panel');
+  modeBox.appendChild(el('h2', '', s.modes));
+  for (const mode of MODES) {
+    const count = registry.counts.byMode[mode] ?? 0;
+    if (count === 0) continue;
+
+    const row = el('label', 'toggle');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = opts.state.modes.has(mode);
+    cb.onchange = () => opts.onToggleMode(mode, cb.checked);
+
+    const swatch = el('span', 'swatch');
+    swatch.style.background = MODE_SPECS[mode].defaultColour;
+    swatch.style.height = `${MODE_SPECS[mode].weightPt * 1.4}px`;
+
+    row.append(cb, swatch, el('span', 'label', s[mode]), el('span', 'count', String(count)));
+    modeBox.appendChild(row);
+  }
+
+  // Station symbology, matching the map.
+  const legend = el('div', 'legend');
+  legend.innerHTML = `
+    <div class="legend-row"><span class="dot interchange"></span>${s.interchange}</div>
+    <div class="legend-row"><span class="dot"></span>${s.station}</div>`;
+  modeBox.appendChild(legend);
+  root.appendChild(modeBox);
+
+  // --- operator -------------------------------------------------------------
+  const operators = [...new Set(registry.lines.map((l) => l.operator).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'de'));
+
+  const opBox = el('div', 'panel');
+  opBox.appendChild(el('h2', '', s.operator));
+  const sel = el('select', 'select');
+  sel.appendChild(new Option(s.allOperators, ''));
+  for (const o of operators) sel.appendChild(new Option(o, o));
+  sel.value = state.operator ?? '';
+  sel.onchange = () => opts.onOperator(sel.value || null);
+  opBox.appendChild(sel);
+  root.appendChild(opBox);
+
+  // --- basemap --------------------------------------------------------------
+  const baseBox = el('div', 'panel');
+  baseBox.appendChild(el('h2', '', s.basemap));
+  const baseRow = el('div', 'row');
+  ([[false, s.baseLnvg], [true, s.baseOsm]] as [boolean, string][]).forEach(([osm, label]) => {
+    const b = el('button', `chip${state.osmBasemap === osm ? ' on' : ''}`, label);
+    b.onclick = () => opts.onBasemap(osm);
+    baseRow.appendChild(b);
+  });
+  baseBox.appendChild(baseRow);
+  root.appendChild(baseBox);
+
+  // --- line index -----------------------------------------------------------
+  const linesBox = el('div', 'panel');
+  linesBox.appendChild(el('h2', '', s.lines));
+  const list = el('div', 'line-list');
+  const visible = registry.lines
+    .filter((l) => state.modes.has(l.mode))
+    .filter((l) => !state.operator || l.operator === state.operator)
+    .sort((a, b) => MODE_SPECS[b.mode].order - MODE_SPECS[a.mode].order
+      || a.ref.localeCompare(b.ref, 'de', { numeric: true }));
+
+  for (const l of visible) list.appendChild(lineRow(l));
+  linesBox.appendChild(list);
+  root.appendChild(linesBox);
+
+  root.appendChild(el('footer', 'panel attrib', `
+    <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
+    <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>`));
+}
+
+function lineRow(l: LineRecord): HTMLElement {
+  const row = el('button', 'line-row');
+  row.onclick = () => opts.onSelect(l.id);
+  const badge = el('span', 'badge', l.ref);
+  badge.style.background = l.colour;
+  row.append(badge, el('span', 'line-name', l.name || l.ref));
+  return row;
+}
+
+function runSearch(query: string, container: HTMLElement) {
+  container.innerHTML = '';
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return;
+
+  const lines = opts.registry.lines
+    .filter((l) => l.ref.toLowerCase().includes(q) || l.name.toLowerCase().includes(q))
+    .slice(0, 6);
+  for (const l of lines) container.appendChild(lineRow(l));
+
+  for (const st of opts.searchStations(query)) {
+    const row = el('button', 'line-row');
+    row.onclick = () => opts.onFlyToStation(st.lngLat);
+    row.append(el('span', 'dot'), el('span', 'line-name', st.name));
+    container.appendChild(row);
+  }
+
+  if (!container.childElementCount) {
+    container.appendChild(el('p', 'muted', t().noResults));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Line detail panel
+// ---------------------------------------------------------------------------
+
+export function renderLinePanel(line: LineRecord | null, handlers: { onClose: () => void }) {
+  const host = document.getElementById('detail')!;
+  host.innerHTML = '';
+  host.classList.toggle('open', !!line);
+  if (!line) return;
+
+  const s = t();
+  const head = el('div', 'detail-head');
+  const badge = el('span', 'badge big', line.ref);
+  badge.style.background = line.colour;
+  head.append(badge, el('div', 'detail-title', line.name || line.ref));
+
+  const close = el('button', 'close', '×');
+  close.title = s.close;
+  close.onclick = handlers.onClose;
+  head.appendChild(close);
+  host.appendChild(head);
+
+  const rows: [string, string][] = [
+    [s.modes, s[line.mode]],
+    [s.operator, line.operator || '—'],
+    [s.network, line.network || '—'],
+    [s.stations, String(line.stops)],
+  ];
+  const table = el('dl', 'detail-meta');
+  for (const [k, v] of rows) {
+    table.append(el('dt', '', k), el('dd', '', v));
+  }
+  host.appendChild(table);
+}
+
+export function setStatus(message: string) {
+  const node = document.getElementById('status');
+  if (!node) return;
+  node.textContent = message;
+  node.classList.add('show');
+  window.setTimeout(() => node.classList.remove('show'), 2400);
+}

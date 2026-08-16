@@ -1,0 +1,33 @@
+{
+  "name": "openrailtransitmap",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OSM-based rail transit map for Germany, styled after the LNVG Niedersachsen Streckenfahrplan",
+  "license": "MIT",
+  "scripts": {
+    "fetch": "bash pipeline/fetch.sh",
+    "extract": "bash pipeline/extract.sh",
+    "build:data": "tsx pipeline/build.ts && tsx pipeline/build-basemap.ts",
+    "build:fonts": "tsx pipeline/fonts.ts",
+    "build:tiles": "bash pipeline/tiles.sh",
+    "pipeline": "npm run fetch && npm run extract && npm run build:data && npm run build:fonts && npm run build:tiles && cp data/lines.json public/lines.json",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.14",
+    "@types/node": "^26.2.0",
+    "fontnik": "^0.7.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "yaml": "^2.6.1"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.0.0",
+    "pmtiles": "^4.1.0"
+  }
+}

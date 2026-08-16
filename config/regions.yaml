@@ -1,0 +1,26 @@
+# Region configuration.
+#
+# `active` selects which extract the pipeline builds. Flipping this single value
+# is the only change needed to move from a fast development build to the full
+# national build (see docs/pipeline.md).
+#
+#   niedersachsen : 479 MB extract, ~2 min pipeline. Use while iterating on style.
+#   germany       : 4.5 GB extract, ~20-30 min pipeline. The production target.
+
+active: niedersachsen
+
+regions:
+  niedersachsen:
+    name: Niedersachsen (mit Bremen)
+    url: https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf
+    # [west, south, east, north] - used for the initial map view and tile clipping.
+    bbox: [6.35, 51.29, 11.60, 54.20]
+    center: [9.73, 52.63]
+    zoom: 7
+
+  germany:
+    name: Deutschland
+    url: https://download.geofabrik.de/europe/germany-latest.osm.pbf
+    bbox: [5.87, 47.27, 15.04, 55.06]
+    center: [10.45, 51.16]
+    zoom: 5.6
