@@ -6,6 +6,7 @@
  *   ?modes=longdistance,regional
  *   ?op=DB%20Regio          operator filter
  *   ?base=osm               basemap choice
+ *   ?ui=map                 sidebar hidden, map fills the window
  *   ?lang=de
  */
 
@@ -18,6 +19,7 @@ export interface ViewState {
   modes: Set<Mode>;
   operator: string | null;
   osmBasemap: boolean;
+  chromeHidden: boolean;
 }
 
 export function readState(fallback: { center: [number, number]; zoom: number }): ViewState {
@@ -46,6 +48,7 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     modes: modes.size ? modes : new Set<Mode>(MODES),
     operator: q.get('op'),
     osmBasemap: q.get('base') === 'osm',
+    chromeHidden: q.get('ui') === 'map',
   };
 }
 
@@ -56,6 +59,7 @@ export function writeState(s: ViewState, langCode: string) {
   if (s.modes.size !== MODES.length) q.set('modes', [...s.modes].join(','));
   if (s.operator) q.set('op', s.operator);
   if (s.osmBasemap) q.set('base', 'osm');
+  if (s.chromeHidden) q.set('ui', 'map');
   q.set('lang', langCode);
 
   const hash = `#${s.zoom.toFixed(2)}/${s.center[1].toFixed(4)}/${s.center[0].toFixed(4)}`;

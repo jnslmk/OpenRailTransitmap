@@ -10,6 +10,10 @@ export interface Strings {
   lines: string; servedBy: string; close: string; clearSelection: string;
   network: string; share: string; copied: string; legend: string;
   interchange: string; station: string; reset: string;
+  hideChrome: string; showChrome: string;
+  fullscreen: string; exitFullscreen: string;
+  locate: string; locateDenied: string; locateError: string;
+  zoomIn: string; zoomOut: string;
   lineCount: (n: number) => string;
   stationCount: (n: number) => string;
   loading: string; dataDate: string;
@@ -44,6 +48,15 @@ const STRINGS: Record<Lang, Strings> = {
     interchange: 'Umsteigebahnhof',
     station: 'Station',
     reset: 'Ansicht zurücksetzen',
+    hideChrome: 'Bedienfeld ausblenden',
+    showChrome: 'Bedienfeld einblenden',
+    fullscreen: 'Vollbild',
+    exitFullscreen: 'Vollbild beenden',
+    locate: 'Eigenen Standort anzeigen',
+    locateDenied: 'Standortzugriff verweigert',
+    locateError: 'Standort nicht verfügbar',
+    zoomIn: 'Vergrößern',
+    zoomOut: 'Verkleinern',
     lineCount: (n: number) => `${n} Linien`,
     stationCount: (n: number) => `${n} Stationen`,
     loading: 'Karte wird geladen…',
@@ -77,6 +90,15 @@ const STRINGS: Record<Lang, Strings> = {
     interchange: 'Interchange',
     station: 'Station',
     reset: 'Reset view',
+    hideChrome: 'Hide panel',
+    showChrome: 'Show panel',
+    fullscreen: 'Fullscreen',
+    exitFullscreen: 'Exit fullscreen',
+    locate: 'Show my location',
+    locateDenied: 'Location access denied',
+    locateError: 'Location unavailable',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
     lineCount: (n: number) => `${n} lines`,
     stationCount: (n: number) => `${n} stations`,
     loading: 'Loading map…',

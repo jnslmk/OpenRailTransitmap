@@ -7,6 +7,7 @@ import { buildStyle, selectionOpacity, highlightOpacity } from './style.ts';
 import { readState, writeState, type ViewState } from './state.ts';
 import { t, lang, setLang, type Lang } from './i18n.ts';
 import { renderChrome, renderLinePanel, setStatus, compareLines } from './ui.ts';
+import { ChromeToggleControl, localiseControls } from './controls.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -33,6 +34,8 @@ async function main() {
   const initial = { center: [9.73, 52.63] as [number, number], zoom: 7 };
   const state: ViewState = readState(initial);
   document.documentElement.lang = lang();
+  // Before the map is constructed, so it measures the final container size.
+  document.body.classList.toggle('chrome-hidden', state.chromeHidden);
 
   const map = new MLMap({
     container: 'map',
@@ -44,7 +47,40 @@ async function main() {
     attributionControl: false,
   });
 
+  // --- map chrome -----------------------------------------------------------
+
+  const chromeToggle = new ChromeToggleControl(
+    () => state.chromeHidden,
+    () => setChromeHidden(!state.chromeHidden),
+  );
+  map.addControl(chromeToggle, 'top-left');
+
+  function setChromeHidden(hidden: boolean) {
+    state.chromeHidden = hidden;
+    document.body.classList.toggle('chrome-hidden', hidden);
+    chromeToggle.sync();
+    // The sidebar is a flex sibling, so hiding it changes the canvas size.
+    map.resize();
+    persist();
+  }
+
+  const geolocate = new maplibregl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+    showUserLocation: true,
+    showAccuracyCircle: true,
+  });
+  map.addControl(geolocate, 'bottom-right');
+  geolocate.on('error', (e: GeolocationPositionError) => {
+    setStatus(e?.code === 1 ? t().locateDenied : t().locateError);
+  });
+
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+  if (document.fullscreenEnabled) {
+    // Fullscreen the whole document, not just the canvas: the detail panel and
+    // the status toast live outside the map container and would be hidden.
+    map.addControl(new maplibregl.FullscreenControl({ container: document.body }), 'bottom-right');
+  }
   map.addControl(
     new maplibregl.AttributionControl({
       compact: true,
@@ -53,6 +89,9 @@ async function main() {
     }),
     'bottom-right',
   );
+  localiseControls();
+  // MapLibre relabels the fullscreen button in English when it flips state.
+  document.addEventListener('fullscreenchange', () => localiseControls());
 
   // --- selection & filtering ------------------------------------------------
 
@@ -177,6 +216,8 @@ async function main() {
       setLang(l);
       renderChrome.rerender();
       applySelection();
+      chromeToggle.sync();
+      localiseControls();
       persist();
     },
     onSelect: (id) => {

@@ -25,6 +25,8 @@ html, body {
 
 #map {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   background: var(--ground);
 }
@@ -185,6 +187,31 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 .detail-meta dt { color: var(--muted); }
 .detail-meta dd { margin: 0; }
 
+/* --- map controls --------------------------------------------------------- */
+
+/* The map fills the window; the toggle button stays put so it can come back. */
+body.chrome-hidden #sidebar { display: none; }
+
+.maplibregl-ctrl-group button.maplibregl-ctrl-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+/* MapLibre's 29px buttons are below the comfortable touch target on a phone. */
+@media (pointer: coarse) {
+  .maplibregl-ctrl-group button { width: 38px; height: 38px; }
+}
+
+/* Own location, in the map's accent rather than MapLibre's default blue.
+   A stale fix (no update for a while) keeps MapLibre's grey. */
+.maplibregl-user-location-dot,
+.maplibregl-user-location-dot::before { background-color: var(--accent); }
+.maplibregl-user-location-dot-stale,
+.maplibregl-user-location-dot-stale::before { background-color: #aaa; }
+.maplibregl-user-location-accuracy-circle { background-color: rgba(1, 72, 149, 0.15); }
+
 /* --- popup ---------------------------------------------------------------- */
 
 .maplibregl-popup-content { border-radius: 6px; padding: 10px 12px; font-family: inherit; }
@@ -222,5 +249,6 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
     border-right: 0;
     border-top: 1px solid var(--grey);
   }
-  #detail { width: auto; left: 12px; right: 12px; }
+  /* Clear of the chrome toggle, which sits at the map's top-left. */
+  #detail { width: auto; left: 12px; right: 12px; top: 60px; }
 }

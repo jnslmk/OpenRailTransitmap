@@ -19,6 +19,12 @@ GitHub Pages and rebuilt nightly.
   station** for every line calling there.
 - **Search, mode and operator filters, a live legend**, and deep-linkable URLs
   that restore position, filters and selection.
+- **Full-screen map.** A button on the map collapses the whole sidebar so the
+  map fills the window — the difference between usable and unusable on a phone —
+  and a second one goes to browser fullscreen. The collapsed state is part of
+  the URL (`?ui=map`), so a shared link opens map-only.
+- **Own location.** GPS positioning with an accuracy circle and continuous
+  tracking, drawn in the map's own accent colour.
 - **Bilingual** (DE/EN), with a minimal LNVG-styled basemap and an OpenStreetMap
   raster toggle.
 
@@ -35,7 +41,7 @@ pipeline/
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
   tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
-src/                       MapLibre app (style, state, UI, i18n)
+src/                       MapLibre app (style, state, UI, controls, i18n)
 ```
 
 ### Region switching
