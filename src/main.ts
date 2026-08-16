@@ -4,9 +4,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
 import { buildStyle, selectionOpacity, highlightOpacity } from './style.ts';
-import { readState, writeState, type ViewState } from './state.ts';
+import { readState, writeState, type ViewState, type ChromeMode } from './state.ts';
 import { t, lang, setLang, type Lang } from './i18n.ts';
-import { renderChrome, renderLinePanel, setStatus, compareLines } from './ui.ts';
+import { renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle } from './ui.ts';
 import { ChromeToggleControl, localiseControls } from './controls.ts';
 import './styles.css';
 
@@ -35,11 +35,11 @@ async function main() {
   const state: ViewState = readState(initial);
   document.documentElement.lang = lang();
   // Before the map is constructed, so it measures the final container size.
-  document.body.classList.toggle('chrome-hidden', state.chromeHidden);
+  applyChromeClasses();
 
   const map = new MLMap({
     container: 'map',
-    style: buildStyle({ base: BASE, osmBasemap: state.osmBasemap }),
+    style: buildStyle({ base: BASE, osmBasemap: state.osmBasemap, streets: state.streets }),
     center: state.center,
     zoom: state.zoom,
     maxZoom: 15,
@@ -50,16 +50,26 @@ async function main() {
   // --- map chrome -----------------------------------------------------------
 
   const chromeToggle = new ChromeToggleControl(
-    () => state.chromeHidden,
-    () => setChromeHidden(!state.chromeHidden),
+    () => state.chrome === 'hidden',
+    // Hiding and showing returns to whatever fold the sheet was left at.
+    () => setChrome(state.chrome === 'hidden' ? lastVisible : 'hidden'),
   );
   map.addControl(chromeToggle, 'top-left');
 
-  function setChromeHidden(hidden: boolean) {
-    state.chromeHidden = hidden;
-    document.body.classList.toggle('chrome-hidden', hidden);
+  let lastVisible: ChromeMode = state.chrome === 'hidden' ? 'full' : state.chrome;
+
+  function applyChromeClasses() {
+    document.body.classList.toggle('chrome-hidden', state.chrome === 'hidden');
+    document.body.classList.toggle('sheet-collapsed', state.chrome === 'peek');
+  }
+
+  function setChrome(mode: ChromeMode) {
+    state.chrome = mode;
+    if (mode !== 'hidden') lastVisible = mode;
+    applyChromeClasses();
     chromeToggle.sync();
-    // The sidebar is a flex sibling, so hiding it changes the canvas size.
+    syncSheetHandle(mode === 'peek');
+    // The sidebar is a flex sibling, so folding it changes the canvas size.
     map.resize();
     persist();
   }
@@ -75,7 +85,9 @@ async function main() {
     setStatus(e?.code === 1 ? t().locateDenied : t().locateError);
   });
 
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+  // The compass doubles as the reset: a two-finger twist is easy to trigger by
+  // accident on a phone, and clicking it puts the map back to north-up.
+  map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
   if (document.fullscreenEnabled) {
     // Fullscreen the whole document, not just the canvas: the detail panel and
     // the status toast live outside the map container and would be hidden.
@@ -131,6 +143,18 @@ async function main() {
         map.setFilter(`route-${mode}`, ['==', ['get', 'mode'], mode] as never);
       }
     }
+    persist();
+  }
+
+  /**
+   * Basemap and street underlay are style-level choices, so both go through a
+   * full rebuild. The sidebar is redrawn with it: the basemap chips and the
+   * street checkbox read their state at draw time.
+   */
+  function rebuildStyle() {
+    map.setStyle(buildStyle({ base: BASE, osmBasemap: state.osmBasemap, streets: state.streets }));
+    map.once('styledata', () => { applyFilters(); applySelection(); });
+    renderChrome.rerender();
     persist();
   }
 
@@ -206,12 +230,9 @@ async function main() {
       applyFilters();
     },
     onOperator: (op) => { state.operator = op; applyFilters(); },
-    onBasemap: (osm) => {
-      state.osmBasemap = osm;
-      map.setStyle(buildStyle({ base: BASE, osmBasemap: osm }));
-      map.once('styledata', () => { applyFilters(); applySelection(); });
-      persist();
-    },
+    onBasemap: (osm) => { state.osmBasemap = osm; rebuildStyle(); },
+    onStreets: (on) => { state.streets = on; rebuildStyle(); },
+    onToggleSheet: () => setChrome(state.chrome === 'peek' ? 'full' : 'peek'),
     onLang: (l: Lang) => {
       setLang(l);
       renderChrome.rerender();

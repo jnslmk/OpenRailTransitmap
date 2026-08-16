@@ -348,14 +348,36 @@ function placeLayers(): LayerSpecification[] {
   return [major, minor];
 }
 
+/**
+ * Zoom at which the street underlay starts to fade in.
+ *
+ * The vector basemap carries water, borders and place labels and nothing else,
+ * so once you are close enough to read tram stop names there is no context left
+ * to place them against. Streets come from the OSM standard raster rather than
+ * the pipeline: Germany's highway network at this zoom is orders of magnitude
+ * larger than the whole rail extract and could not be tiled nightly. Gating it
+ * to the top two zoom levels keeps the request volume off that tile server for
+ * ordinary browsing of the network.
+ */
+const STREETS_MINZOOM = 13;
+
+const osmRasterSource = () => ({
+  type: 'raster' as const,
+  tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+  tileSize: 256,
+  maxzoom: 19,
+});
+
 export interface StyleOptions {
   /** Base path the site is served from, e.g. "/OpenRailTransitmap/". */
   base: string;
   /** Draw the OSM standard raster underneath instead of the flat LNVG ground. */
   osmBasemap: boolean;
+  /** Fade the OSM raster in at high zoom for street-level context. */
+  streets: boolean;
 }
 
-export function buildStyle({ base, osmBasemap }: StyleOptions): StyleSpecification {
+export function buildStyle({ base, osmBasemap, streets }: StyleOptions): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
     name: 'OpenRailTransitmap',
@@ -368,13 +390,7 @@ export function buildStyle({ base, osmBasemap }: StyleOptions): StyleSpecificati
   };
 
   if (osmBasemap) {
-    style.sources.osm = {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    };
+    style.sources.osm = osmRasterSource();
     style.layers = [
       { id: 'background', type: 'background', paint: { 'background-color': LNVG.ground } },
       // Desaturated so the rail bands still dominate.
@@ -387,6 +403,27 @@ export function buildStyle({ base, osmBasemap }: StyleOptions): StyleSpecificati
     ];
   } else {
     style.layers = baseLayers();
+
+    if (streets) {
+      style.sources.osm = osmRasterSource();
+      // Above the vector water and borders, below every rail layer.
+      style.layers.push({
+        id: 'streets',
+        type: 'raster',
+        source: 'osm',
+        minzoom: STREETS_MINZOOM,
+        paint: {
+          'raster-opacity': [
+            'interpolate', ['linear'], ['zoom'],
+            STREETS_MINZOOM, 0,
+            STREETS_MINZOOM + 1, 0.5,
+            STREETS_MINZOOM + 2, 0.62,
+          ],
+          // Nearly grey: streets are there to locate a stop, not to be read.
+          'raster-saturation': -0.85,
+        },
+      });
+    }
   }
 
   // Symbol placement priority runs from the *top* layer down, so whatever is

@@ -19,12 +19,16 @@ GitHub Pages and rebuilt nightly.
   station** for every line calling there.
 - **Search, mode and operator filters, a live legend**, and deep-linkable URLs
   that restore position, filters and selection.
-- **Full-screen map.** A button on the map collapses the whole sidebar so the
-  map fills the window — the difference between usable and unusable on a phone —
-  and a second one goes to browser fullscreen. The collapsed state is part of
-  the URL (`?ui=map`), so a shared link opens map-only.
-- **Own location.** GPS positioning with an accuracy circle and continuous
-  tracking, drawn in the map's own accent colour.
+- **Full-screen map.** A button on the map hides the whole sidebar so the map
+  fills the window — the difference between usable and unusable on a phone — and
+  a second one goes to browser fullscreen. On narrow screens the sidebar is a
+  bottom sheet that folds to its handle by tap or drag, for a big map that still
+  has search one tap away. Both states are part of the URL (`?ui=map`, `?ui=peek`).
+- **Own location**, with an accuracy circle and continuous tracking, and a
+  compass that puts the map back to north after an accidental twist.
+- **Streets where they help.** From zoom 13 the OSM standard raster fades in
+  under the network, heavily desaturated, so a tram stop can be placed on an
+  actual street. Off with one checkbox (`?streets=0`).
 - **Bilingual** (DE/EN), with a minimal LNVG-styled basemap and an OpenStreetMap
   raster toggle.
 

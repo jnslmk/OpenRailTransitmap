@@ -6,11 +6,19 @@
  *   ?modes=longdistance,regional
  *   ?op=DB%20Regio          operator filter
  *   ?base=osm               basemap choice
- *   ?ui=map                 sidebar hidden, map fills the window
+ *   ?streets=0              street underlay off
+ *   ?ui=map|peek            sidebar hidden / collapsed to its handle
  *   ?lang=de
  */
 
 import { MODES, type Mode } from '../shared/lnvg.ts';
+
+/**
+ * How much of the chrome is showing. `peek` only differs from `full` in the
+ * narrow layout, where the sidebar is a bottom sheet that collapses to its
+ * handle; `hidden` drops it entirely at any width.
+ */
+export type ChromeMode = 'full' | 'peek' | 'hidden';
 
 export interface ViewState {
   center: [number, number];
@@ -19,7 +27,8 @@ export interface ViewState {
   modes: Set<Mode>;
   operator: string | null;
   osmBasemap: boolean;
-  chromeHidden: boolean;
+  streets: boolean;
+  chrome: ChromeMode;
 }
 
 export function readState(fallback: { center: [number, number]; zoom: number }): ViewState {
@@ -48,7 +57,8 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     modes: modes.size ? modes : new Set<Mode>(MODES),
     operator: q.get('op'),
     osmBasemap: q.get('base') === 'osm',
-    chromeHidden: q.get('ui') === 'map',
+    streets: q.get('streets') !== '0',
+    chrome: q.get('ui') === 'map' ? 'hidden' : q.get('ui') === 'peek' ? 'peek' : 'full',
   };
 }
 
@@ -59,7 +69,9 @@ export function writeState(s: ViewState, langCode: string) {
   if (s.modes.size !== MODES.length) q.set('modes', [...s.modes].join(','));
   if (s.operator) q.set('op', s.operator);
   if (s.osmBasemap) q.set('base', 'osm');
-  if (s.chromeHidden) q.set('ui', 'map');
+  if (!s.streets) q.set('streets', '0');
+  if (s.chrome === 'hidden') q.set('ui', 'map');
+  if (s.chrome === 'peek') q.set('ui', 'peek');
   q.set('lang', langCode);
 
   const hash = `#${s.zoom.toFixed(2)}/${s.center[1].toFixed(4)}/${s.center[0].toFixed(4)}`;

@@ -11,9 +11,11 @@ export interface Strings {
   network: string; share: string; copied: string; legend: string;
   interchange: string; station: string; reset: string;
   hideChrome: string; showChrome: string;
+  collapsePanel: string; expandPanel: string; panelPeek: string;
   fullscreen: string; exitFullscreen: string;
   locate: string; locateDenied: string; locateError: string;
-  zoomIn: string; zoomOut: string;
+  zoomIn: string; zoomOut: string; northUp: string;
+  streets: string;
   lineCount: (n: number) => string;
   stationCount: (n: number) => string;
   loading: string; dataDate: string;
@@ -50,6 +52,9 @@ const STRINGS: Record<Lang, Strings> = {
     reset: 'Ansicht zurücksetzen',
     hideChrome: 'Bedienfeld ausblenden',
     showChrome: 'Bedienfeld einblenden',
+    collapsePanel: 'Bedienfeld einklappen',
+    expandPanel: 'Bedienfeld ausklappen',
+    panelPeek: 'Suche, Filter und Linien',
     fullscreen: 'Vollbild',
     exitFullscreen: 'Vollbild beenden',
     locate: 'Eigenen Standort anzeigen',
@@ -57,6 +62,8 @@ const STRINGS: Record<Lang, Strings> = {
     locateError: 'Standort nicht verfügbar',
     zoomIn: 'Vergrößern',
     zoomOut: 'Verkleinern',
+    northUp: 'Nach Norden ausrichten',
+    streets: 'Straßen ab Zoom 13',
     lineCount: (n: number) => `${n} Linien`,
     stationCount: (n: number) => `${n} Stationen`,
     loading: 'Karte wird geladen…',
@@ -92,6 +99,9 @@ const STRINGS: Record<Lang, Strings> = {
     reset: 'Reset view',
     hideChrome: 'Hide panel',
     showChrome: 'Show panel',
+    collapsePanel: 'Collapse panel',
+    expandPanel: 'Expand panel',
+    panelPeek: 'Search, filters and lines',
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit fullscreen',
     locate: 'Show my location',
@@ -99,6 +109,8 @@ const STRINGS: Record<Lang, Strings> = {
     locateError: 'Location unavailable',
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
+    northUp: 'Reset bearing to north',
+    streets: 'Streets from zoom 13',
     lineCount: (n: number) => `${n} lines`,
     stationCount: (n: number) => `${n} stations`,
     loading: 'Loading map…',

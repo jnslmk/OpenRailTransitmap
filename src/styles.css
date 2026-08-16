@@ -46,6 +46,50 @@ html, body {
   gap: 10px;
 }
 
+/* --- bottom-sheet handle -------------------------------------------------- */
+
+/* Only the narrow layout puts the sidebar under the map, so only it folds. */
+.sheet-handle { display: none; }
+
+@media (max-width: 820px) {
+  .sheet-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    position: sticky;
+    top: -12px;
+    z-index: 2;
+    margin: -12px -12px 0;
+    padding: 10px 12px;
+    border: 0;
+    background: var(--ground);
+    font: inherit;
+    color: var(--muted);
+    cursor: pointer;
+    /* The handle is a drag target; leave the scroll to the panels below it. */
+    touch-action: none;
+  }
+  .sheet-handle .grabber {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--grey);
+    flex: 0 0 auto;
+  }
+  .sheet-handle .sheet-label:empty { display: none; }
+  .sheet-handle .sheet-label { font-size: 12px; }
+
+  body.sheet-collapsed #sidebar {
+    /* `height` has to go with the basis, or the sidebar falls back to the
+       100% it is given at desktop width and swallows the map. */
+    flex: 0 0 auto;
+    height: auto;
+    overflow: hidden;
+  }
+  body.sheet-collapsed #sidebar > *:not(.sheet-handle) { display: none; }
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--grey);

@@ -78,6 +78,7 @@ export function localiseControls(): void {
   const labels: [string, string][] = [
     ['.maplibregl-ctrl-zoom-in', s.zoomIn],
     ['.maplibregl-ctrl-zoom-out', s.zoomOut],
+    ['.maplibregl-ctrl-compass', s.northUp],
     ['.maplibregl-ctrl-geolocate', s.locate],
     ['.maplibregl-ctrl-fullscreen', s.fullscreen],
     ['.maplibregl-ctrl-shrink', s.exitFullscreen],

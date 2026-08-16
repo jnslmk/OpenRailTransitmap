@@ -13,6 +13,8 @@ export interface ChromeOptions {
   onToggleMode: (mode: Mode, on: boolean) => void;
   onOperator: (op: string | null) => void;
   onBasemap: (osm: boolean) => void;
+  onStreets: (on: boolean) => void;
+  onToggleSheet: () => void;
   onLang: (l: Lang) => void;
   onSelect: (lineId: string) => void;
   onFlyToStation: (lngLat: [number, number]) => void;
@@ -72,11 +74,65 @@ export function renderChrome(o: ChromeOptions) {
 
 renderChrome.rerender = () => draw();
 
+// ---------------------------------------------------------------------------
+// Bottom-sheet handle
+//
+// In the narrow layout the sidebar is a sheet under the map. The handle
+// collapses it to a strip so the map gets the screen without losing the way
+// back — the map's own toggle hides the chrome entirely, this only folds it.
+// ---------------------------------------------------------------------------
+
+let handleEl: HTMLButtonElement | null = null;
+
+function sheetHandle(): HTMLElement {
+  const btn = el('button', 'sheet-handle');
+  btn.type = 'button';
+
+  // A drag on the handle is the gesture people try before they try a tap, so
+  // both work; `dragged` keeps the pointerup from also firing the click.
+  let startY = 0;
+  let dragged = false;
+
+  btn.addEventListener('pointerdown', (e) => {
+    startY = e.clientY;
+    dragged = false;
+    // Without capture the pointerup lands on whatever the drag ended over.
+    btn.setPointerCapture(e.pointerId);
+  });
+  btn.addEventListener('pointerup', (e) => {
+    const dy = e.clientY - startY;
+    if (Math.abs(dy) < 24) return;
+    dragged = true;
+    const collapsed = opts.state.chrome === 'peek';
+    const wantsCollapsed = dy > 0;
+    if (wantsCollapsed !== collapsed) opts.onToggleSheet();
+  });
+  btn.onclick = () => { if (!dragged) opts.onToggleSheet(); };
+
+  btn.append(el('span', 'grabber'), el('span', 'sheet-label'));
+  handleEl = btn;
+  syncSheetHandle(opts.state.chrome === 'peek');
+  return btn;
+}
+
+/** Update the handle in place; redrawing the sidebar for a fold is wasteful. */
+export function syncSheetHandle(collapsed: boolean) {
+  if (!handleEl) return;
+  const s = t();
+  const label = collapsed ? s.expandPanel : s.collapsePanel;
+  handleEl.title = label;
+  handleEl.setAttribute('aria-label', label);
+  handleEl.setAttribute('aria-expanded', String(!collapsed));
+  handleEl.querySelector('.sheet-label')!.textContent = collapsed ? s.panelPeek : '';
+}
+
 function draw() {
   const { registry, state } = opts;
   const s = t();
   const root = document.getElementById('sidebar')!;
   root.innerHTML = '';
+
+  root.appendChild(sheetHandle());
 
   // --- header ---------------------------------------------------------------
   const header = el('header', 'panel');
@@ -170,6 +226,16 @@ function draw() {
     baseRow.appendChild(b);
   });
   baseBox.appendChild(baseRow);
+
+  // The raster basemap already is streets, so the underlay has nothing to add.
+  const streetsRow = el('label', 'toggle');
+  const streetsBox = el('input');
+  streetsBox.type = 'checkbox';
+  streetsBox.checked = state.streets;
+  streetsBox.disabled = state.osmBasemap;
+  streetsBox.onchange = () => opts.onStreets(streetsBox.checked);
+  streetsRow.append(streetsBox, el('span', 'label', s.streets));
+  baseBox.appendChild(streetsRow);
   root.appendChild(baseBox);
 
   // --- line index -----------------------------------------------------------
