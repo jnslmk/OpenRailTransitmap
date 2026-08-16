@@ -6,8 +6,9 @@
  * with the rail lines for attention.
  */
 
-import { createReadStream, writeFileSync, mkdirSync } from 'node:fs';
+import { createReadStream, mkdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { writeFeatures } from './lib/write.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const EXTRACT = `${WORK}/extract`;
@@ -90,10 +91,9 @@ async function main() {
     }
   }
 
-  const fc = (features: unknown[]) => JSON.stringify({ type: 'FeatureCollection', features });
-  writeFileSync(`${OUT}/water.geojson`, fc(water));
-  writeFileSync(`${OUT}/boundaries.geojson`, fc(boundaries));
-  writeFileSync(`${OUT}/places.geojson`, fc(places));
+  await writeFeatures(`${OUT}/water.geojsonl`, water);
+  await writeFeatures(`${OUT}/boundaries.geojsonl`, boundaries);
+  await writeFeatures(`${OUT}/places.geojsonl`, places);
 
   console.log(`==> basemap: ${water.length} water, ${boundaries.length} borders, ${places.length} places`);
 }

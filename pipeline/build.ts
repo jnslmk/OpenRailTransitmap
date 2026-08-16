@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { createReadStream } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
+import { writeFeatures } from './lib/write.ts';
 import {
   MODE_SPECS, fallbackColour, normaliseColour, type Mode,
 } from '../shared/lnvg.ts';
@@ -496,9 +497,8 @@ async function main() {
   console.log(`==> ${stationFeatures.length} stations (${servedCount} with at least one line)`);
 
   // --- write ----------------------------------------------------------------
-  const geojson = (fs: unknown[]) => JSON.stringify({ type: 'FeatureCollection', features: fs });
-  writeFileSync(`${OUT}/routes.geojson`, geojson(features));
-  writeFileSync(`${OUT}/stations.geojson`, geojson(stationFeatures));
+  await writeFeatures(`${OUT}/routes.geojsonl`, features);
+  await writeFeatures(`${OUT}/stations.geojsonl`, stationFeatures);
 
   // The committed registry: small, diffable, and the thing a human reviews when
   // a nightly rebuild changes something.

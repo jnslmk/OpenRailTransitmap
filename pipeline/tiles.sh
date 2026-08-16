@@ -23,26 +23,28 @@ echo "==> building rail.pmtiles"
 tippecanoe \
   -o "$OUT/rail.pmtiles" --force \
   --minimum-zoom=4 --maximum-zoom=13 \
+  -P \
   --drop-densest-as-needed \
   --extend-zooms-if-still-dropping \
   --simplification=2 \
   --no-tiny-polygon-reduction \
   --detect-shared-borders \
-  -L routes:"$BUILD/routes.geojson" \
-  -L stations:"$BUILD/stations.geojson" \
+  -L routes:"$BUILD/routes.geojsonl" \
+  -L stations:"$BUILD/stations.geojsonl" \
   2>&1 | tail -3
 
 echo "==> building base.pmtiles"
 tippecanoe \
   -o "$OUT/base.pmtiles" --force \
   --minimum-zoom=4 --maximum-zoom=10 \
+  -P \
   --drop-densest-as-needed \
   --coalesce-densest-as-needed \
   --simplification=4 \
-  -L ocean:"$BUILD/ocean.geojson" \
-  -L water:"$BUILD/water.geojson" \
-  -L boundaries:"$BUILD/boundaries.geojson" \
-  -L places:"$BUILD/places.geojson" \
+  -L ocean:"$BUILD/ocean.geojsonl" \
+  -L water:"$BUILD/water.geojsonl" \
+  -L boundaries:"$BUILD/boundaries.geojsonl" \
+  -L places:"$BUILD/places.geojsonl" \
   2>&1 | tail -3
 
 echo "==> tiles:"

@@ -11,13 +11,14 @@
  * projected back to WGS84 here rather than pulling in GDAL for one job.
  */
 
-import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { open as openShapefile } from 'shapefile';
+import { writeFeatures } from './lib/write.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const OUT = `${WORK}/build`;
@@ -121,10 +122,7 @@ async function main() {
     }
   }
 
-  writeFileSync(
-    `${OUT}/ocean.geojson`,
-    JSON.stringify({ type: 'FeatureCollection', features }),
-  );
+  await writeFeatures(`${OUT}/ocean.geojsonl`, features);
   console.log(`==> ocean: ${features.length} polygons kept of ${total}`);
 }
 
