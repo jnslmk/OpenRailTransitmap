@@ -1,0 +1,15 @@
+# Manual corrections applied on top of the OSM-derived line registry.
+#
+# Keys are line ids as they appear in data/lines.json (`mode|network|ref`,
+# lower-cased). Both fields are optional.
+#
+# Colours come from the OSM `colour` tag verbatim where one exists; lines
+# without one get a deterministic colour from the LNVG palette. Use this file
+# when neither result is right.
+#
+# lines:
+#   regional|niedersachsentarif;gvh;vbn|re1:
+#     colour: '#e30513'
+#     name: Norddeich (Mole) – Hannover Hbf
+
+lines: {}

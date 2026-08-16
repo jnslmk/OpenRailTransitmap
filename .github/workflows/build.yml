@@ -1,0 +1,109 @@
+name: Build and deploy map
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly, after Geofabrik publishes the day's extracts.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Region override (niedersachsen | germany)'
+        required: false
+        type: string
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install osmium and tippecanoe
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool tippecanoe
+
+      - run: npm ci
+
+      # Block scalar because the command contains ": ", which would otherwise
+      # terminate the YAML value early.
+      - name: Select region
+        if: github.event_name == 'workflow_dispatch' && inputs.region != ''
+        run: |
+          sed -i "s/^active: .*/active: ${{ inputs.region }}/" config/regions.yaml
+          grep '^active:' config/regions.yaml
+
+      # The extract is the slowest part of the job, so it is cached per day and
+      # per region. `fetch.sh` still revalidates with a conditional request.
+      - name: Restore extract cache
+        id: pbf-cache
+        uses: actions/cache@v4
+        with:
+          path: .work/*.osm.pbf
+          key: pbf-${{ hashFiles('config/regions.yaml') }}-${{ github.run_id }}
+          restore-keys: pbf-${{ hashFiles('config/regions.yaml') }}-
+
+      - name: Fetch OSM extract
+        run: bash pipeline/fetch.sh
+
+      - name: Extract rail network
+        run: bash pipeline/extract.sh
+
+      - name: Build data
+        # The national route set needs more than Node's default heap.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          npx tsx pipeline/build.ts
+          npx tsx pipeline/build-basemap.ts
+          npx tsx pipeline/coastline.ts
+
+      - name: Generate glyphs
+        run: npx tsx pipeline/fonts.ts
+
+      - name: Build tiles
+        run: bash pipeline/tiles.sh
+
+      # The registry is small and diffable; the tiles are not committed at all.
+      - name: Publish line registry to the site
+        run: cp data/lines.json public/lines.json
+
+      - name: Free disk before the site build
+        run: rm -rf .work/extract .work/build
+
+      - name: Build site
+        run: npx tsc --noEmit && npx vite build
+        env:
+          PAGES_BASE: /${{ github.event.repository.name }}/
+
+      - name: Report artifact size
+        run: du -sh dist && du -sh dist/tiles
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
