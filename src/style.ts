@@ -13,6 +13,7 @@
 
 import type {
   StyleSpecification, LayerSpecification, ExpressionSpecification,
+  SymbolLayerSpecification,
 } from 'maplibre-gl';
 import { LNVG, MODES, MODE_SPECS, PT_TO_PX, type Mode } from '../shared/lnvg.ts';
 
@@ -44,6 +45,23 @@ const scaled = (pt: number, multiplier = 1): ExpressionSpecification =>
   ] as ExpressionSpecification;
 
 /**
+ * Bundle spread, which deliberately does *not* follow the width curve.
+ *
+ * Germany's busiest corridors carry 20+ lines. At national zoom a proportional
+ * spread turns those into wide coloured blobs that read as noise, so the offset
+ * collapses to zero below z6: bundles stack on the true alignment and the map
+ * shows one trunk per corridor, which is what the reference poster does at that
+ * scale. The bands fan out again as soon as there is room for them.
+ */
+const OFFSET_STOPS: [number, number][] = [
+  [5, 0],
+  [6, 0.08],
+  [8, 0.4],
+  [11, 1.0],
+  [14, 1.6],
+];
+
+/**
  * Perpendicular displacement for one band of a bundle. `offset` is centred
  * (…-1, 0, 1…) so a bundle straddles the true alignment rather than growing
  * to one side. 1.02 leaves a hairline between bands.
@@ -53,7 +71,7 @@ const scaled = (pt: number, multiplier = 1): ExpressionSpecification =>
  */
 const bandOffset: ExpressionSpecification = [
   'interpolate', ['linear'], ['zoom'],
-  ...ZOOM_STOPS.flatMap(([z, f]) => [
+  ...OFFSET_STOPS.flatMap(([z, f]) => [
     z, ['*', ['get', 'offset'], PITCH_PT * PT_TO_PX * 1.02 * f],
   ]),
 ] as ExpressionSpecification;
@@ -273,27 +291,61 @@ function baseLayers(): LayerSpecification[] {
         'line-dasharray': [3, 2],
       },
     },
-    {
-      id: 'places',
-      type: 'symbol',
-      source: 'base',
-      'source-layer': 'places',
-      maxzoom: 11,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-font': FONT_REGULAR,
-        'text-size': ['interpolate', ['linear'], ['zoom'], 5, 10, 10, 14],
-        'text-transform': 'uppercase',
-        'text-letter-spacing': 0.08,
-        'symbol-sort-key': ['get', 'rank'] as ExpressionSpecification,
-      },
-      paint: {
-        'text-color': '#8a8a8a',
-        'text-halo-color': LNVG.ground,
-        'text-halo-width': 1.5,
-      },
-    },
   ];
+}
+
+/**
+ * City labels, appended last so they hold the highest symbol-placement priority.
+ *
+ * Placement runs from the top layer down, so when these sat at the bottom of the
+ * style every rail label outranked them and Berlin, Hamburg and München lost
+ * their labels to whichever village happened to be nearby.
+ *
+ * Major and minor are separate layers so the two can be zoom-gated apart: at
+ * national zoom only the big cities appear, which is all there is room for.
+ */
+function placeLayers(): LayerSpecification[] {
+  const MAJOR = 250000;
+
+  // Lower sort keys are placed first, so negating population makes the largest
+  // city win any collision.
+  const byPopulation: ExpressionSpecification =
+    ['-', 0, ['get', 'population']];
+
+  const label = (id: string, size: ExpressionSpecification): SymbolLayerSpecification => ({
+    id,
+    type: 'symbol',
+    source: 'base',
+    'source-layer': 'places',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': FONT_REGULAR,
+      'text-size': size,
+      'text-transform': 'uppercase',
+      'text-letter-spacing': 0.08,
+      'text-padding': 6,
+      'symbol-sort-key': byPopulation,
+    },
+    paint: {
+      'text-color': '#8a8a8a',
+      'text-halo-color': LNVG.ground,
+      'text-halo-width': 1.5,
+    },
+  });
+
+  const major = label('places-major',
+    ['interpolate', ['linear'], ['zoom'], 4, 10, 8, 13, 11, 15]);
+  major.minzoom = 4;
+  major.maxzoom = 11;
+  major.filter = ['>=', ['get', 'population'], MAJOR];
+
+  const minor = label('places-minor',
+    ['interpolate', ['linear'], ['zoom'], 7, 9, 10, 12]);
+  minor.minzoom = 7;
+  minor.maxzoom = 10;
+  minor.filter = ['<', ['get', 'population'], MAJOR];
+
+  return [major, minor];
 }
 
 export interface StyleOptions {
@@ -339,8 +391,12 @@ export function buildStyle({ base, osmBasemap }: StyleOptions): StyleSpecificati
 
   // Symbol placement priority runs from the *top* layer down, so whatever is
   // pushed last wins collisions. Station names matter more than repeated line
-  // badges, so the badge layer goes underneath them.
+  // badges, so the badge layer goes underneath them, and city labels sit above
+  // both - they are the map's orientation anchors and there are few of them.
   style.layers.push(...routeLayers(), badgeLayer(), ...stationLayers());
+
+  // Place labels live in the vector basemap, which the raster mode replaces.
+  if (!osmBasemap) style.layers.push(...placeLayers());
   return style;
 }
 

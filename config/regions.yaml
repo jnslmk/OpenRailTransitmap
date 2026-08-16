@@ -5,9 +5,9 @@
 # national build (see docs/pipeline.md).
 #
 #   niedersachsen : 479 MB extract, ~2 min pipeline. Use while iterating on style.
-#   germany       : 4.5 GB extract, ~20-30 min pipeline. The production target.
+#   germany       : 4.5 GB extract, ~8 min pipeline. The production target.
 
-active: niedersachsen
+active: germany
 
 regions:
   niedersachsen:

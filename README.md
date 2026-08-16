@@ -40,12 +40,15 @@ src/                       MapLibre app (style, state, UI, i18n)
 
 ### Region switching
 
-`config/regions.yaml` selects the extract. Niedersachsen (479 MB) runs the whole
-pipeline in about a minute, which is what makes style iteration bearable;
-Germany (4.5 GB) is the production target. Same code either way.
+`config/regions.yaml` selects the extract. Germany (4.5 GB) is the deployed
+default and runs the whole pipeline in about 8 minutes — 6m30s of that is the
+osmium extraction — producing 1,413 lines, 20,830 stations and 23 MB of tiles.
+Niedersachsen (479 MB) runs in about a minute and is what makes style iteration
+bearable. Same code either way, and `REGION=niedersachsen` overrides the file
+for a one-off run.
 
 ```yaml
-active: niedersachsen   # or: germany
+active: germany   # or: niedersachsen
 ```
 
 ### Route stitching and bundling
@@ -69,7 +72,7 @@ keyed on `mode | network | ref`.
 PTv2 relations reference `public_transport=stop_position` nodes rather than the
 `railway=station` node, so stop members are snapped to the nearest station within
 300 m using a grid index. This lifted station coverage from 11 to 1,264 of 1,748
-stations on the Niedersachsen extract.
+stations on the Niedersachsen extract, and yields 16,865 of 20,830 nationally.
 
 ### The sea
 
@@ -87,7 +90,7 @@ deterministic colour hashed on `network` + `ref` from the reference palette, so 
 line keeps its colour across nightly rebuilds. Long-distance stays red as one
 family. `data/overrides.yaml` overrides either.
 
-On the Niedersachsen extract, 43% of lines carry an OSM `colour`.
+Nationally, 55% of lines carry an OSM `colour` (43% on the Niedersachsen extract).
 
 ## Running it locally
 

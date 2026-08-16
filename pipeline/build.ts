@@ -137,9 +137,23 @@ interface Line {
 
 function lineKey(tags: Record<string, string>, mode: Mode): string {
   const network = tags['network:short'] ?? tags.network ?? '';
-  const ref = (tags.ref ?? '').trim();
+  const ref = pickRef(tags.ref ?? '');
   const ident = ref || (tags.name ?? '').split(':')[0].trim();
   return `${mode}|${network}|${ident}`.toLowerCase();
+}
+
+/**
+ * Some routes carry several refs at once, e.g. `661A;ICE 83` for a train that
+ * runs under a French and a German number, or `P11;RB 28` across a tariff
+ * border. Prefer the token that looks like a German passenger line number,
+ * since that is what a rider recognises; otherwise keep the first.
+ */
+const PASSENGER_REF = /^(ICE|IC|EC|ECE|RE|RB|S|U|STR|FLX|NJ|EN|RJ|TGV)\s?\d/i;
+
+function pickRef(raw: string): string {
+  const tokens = raw.split(';').map((t) => t.trim()).filter(Boolean);
+  if (tokens.length <= 1) return raw.trim();
+  return tokens.find((t) => PASSENGER_REF.test(t)) ?? tokens[0];
 }
 
 /** A route's name is usually "S5: A => B"; keep only the descriptive half. */
@@ -251,7 +265,7 @@ async function main() {
     let line = lines.get(key);
     if (!line) {
       const network = rel.tags['network:short'] ?? rel.tags.network ?? '';
-      const ref = (rel.tags.ref ?? '').trim();
+      const ref = pickRef(rel.tags.ref ?? '');
       line = {
         id: key,
         ref: ref || cleanName(rel.tags).slice(0, 24),

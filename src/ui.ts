@@ -5,6 +5,8 @@ import { t, lang, type Lang } from './i18n.ts';
 import type { LineRecord, Registry } from './main.ts';
 import type { ViewState } from './state.ts';
 
+export { compareLines };
+
 export interface ChromeOptions {
   registry: Registry;
   state: ViewState;
@@ -17,6 +19,39 @@ export interface ChromeOptions {
   onReset: () => void;
   onShare: () => void;
   searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
+}
+
+/**
+ * Ordering for the line index.
+ *
+ * A plain localeCompare on `ref` puts oddities like `661A` and `8358` above
+ * `ICE 1`, because digits sort before letters. Riders look for the service
+ * prefix first, so known prefixes lead in service order and everything else
+ * falls to the end, with the number compared numerically within each group.
+ */
+const REF_PREFIXES = [
+  'ICE', 'IC', 'EC', 'ECE', 'FLX', 'NJ', 'EN', 'RJ', 'TGV',
+  'RE', 'RB', 'S', 'U', 'STR',
+];
+
+function refSortKey(ref: string): [number, string, number, string] {
+  const m = /^([A-Za-zÄÖÜäöü]*)\s*(\d*)(.*)$/.exec(ref.trim()) ?? [];
+  const prefix = (m[1] ?? '').toUpperCase();
+  const num = m[2] ? parseInt(m[2], 10) : Number.MAX_SAFE_INTEGER;
+  const known = REF_PREFIXES.indexOf(prefix);
+  // Unknown prefixes (and bare numbers) sort after every known service.
+  return [known >= 0 ? known : REF_PREFIXES.length, prefix, num, m[3] ?? ''];
+}
+
+function compareLines(a: LineRecord, b: LineRecord): number {
+  const byMode = MODE_SPECS[b.mode].order - MODE_SPECS[a.mode].order;
+  if (byMode !== 0) return byMode;
+
+  const ka = refSortKey(a.ref), kb = refSortKey(b.ref);
+  return ka[0] - kb[0]
+    || ka[1].localeCompare(kb[1], 'de')
+    || ka[2] - kb[2]
+    || ka[3].localeCompare(kb[3], 'de');
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -144,8 +179,7 @@ function draw() {
   const visible = registry.lines
     .filter((l) => state.modes.has(l.mode))
     .filter((l) => !state.operator || l.operator === state.operator)
-    .sort((a, b) => MODE_SPECS[b.mode].order - MODE_SPECS[a.mode].order
-      || a.ref.localeCompare(b.ref, 'de', { numeric: true }));
+    .sort(compareLines);
 
   for (const l of visible) list.appendChild(lineRow(l));
   linesBox.appendChild(list);

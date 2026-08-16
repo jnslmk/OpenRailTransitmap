@@ -25,6 +25,21 @@ function ringArea(ring: [number, number][]): number {
 
 const MIN_WATER_AREA = 2e-5; // ~ a few hundred metres across
 
+/**
+ * Zoom at which a water body first appears, by area.
+ *
+ * Without this the low-zoom tiles carried every pond in the country - over 2000
+ * water polygons in a single z5 tile - which blew tippecanoe's 500 KB tile
+ * budget and got city labels silently dropped to make room. Only the Bodensee
+ * and the big Mecklenburg lakes are legible at z5 anyway.
+ */
+function waterMinzoom(area: number): number {
+  if (area >= 5e-3) return 4;
+  if (area >= 5e-4) return 6;
+  if (area >= 5e-5) return 8;
+  return 9;
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
 
@@ -52,6 +67,12 @@ async function main() {
       places.push({
         type: 'Feature',
         geometry: g,
+        // No per-feature minzoom here on purpose. Combining one with
+        // tippecanoe's point drop rate is what reduced a national tile to a
+        // single city: the drop rate thins whatever candidates remain, so
+        // narrowing the candidates first makes it worse, not better. Instead
+        // tiles.sh passes -r1 to keep every place, and the style layers filter
+        // by population and zoom.
         properties: {
           name: p.name,
           place: p.place,
@@ -78,16 +99,22 @@ async function main() {
     }
 
     if (p.natural === 'water' || p.waterway === 'riverbank') {
+      let area = 0;
       if (g.type === 'Polygon') {
-        if (ringArea(g.coordinates[0]) < MIN_WATER_AREA) continue;
+        area = ringArea(g.coordinates[0]);
       } else if (g.type === 'MultiPolygon') {
-        const total = g.coordinates.reduce(
-          (s: number, poly: [number, number][][]) => s + ringArea(poly[0]), 0);
-        if (total < MIN_WATER_AREA) continue;
+        area = g.coordinates.reduce(
+          (sum: number, poly: [number, number][][]) => sum + ringArea(poly[0]), 0);
       } else {
         continue;
       }
-      water.push({ type: 'Feature', geometry: g, properties: { kind: 'water' } });
+      if (area < MIN_WATER_AREA) continue;
+      water.push({
+        type: 'Feature',
+        geometry: g,
+        tippecanoe: { minzoom: waterMinzoom(area) },
+        properties: { kind: 'water' },
+      });
     }
   }
 

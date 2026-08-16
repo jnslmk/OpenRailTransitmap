@@ -6,7 +6,7 @@ import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
 import { buildStyle, selectionOpacity, highlightOpacity } from './style.ts';
 import { readState, writeState, type ViewState } from './state.ts';
 import { t, lang, setLang, type Lang } from './i18n.ts';
-import { renderChrome, renderLinePanel, setStatus } from './ui.ts';
+import { renderChrome, renderLinePanel, setStatus, compareLines } from './ui.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -127,8 +127,7 @@ async function main() {
     const p = f.properties as Record<string, string>;
     const served = String(p.lines ?? '').split(',').filter(Boolean)
       .map((id) => byId.get(id)).filter((l): l is LineRecord => !!l)
-      .sort((a, b) => MODE_SPECS[b.mode].order - MODE_SPECS[a.mode].order
-        || a.ref.localeCompare(b.ref, 'de', { numeric: true }));
+      .sort(compareLines);
 
     const badges = served.map((l) =>
       `<button class="badge" data-line="${l.id}" style="background:${l.colour}" title="${l.name}">${l.ref}</button>`,

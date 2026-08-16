@@ -33,13 +33,22 @@ tippecanoe \
   -L stations:"$BUILD/stations.geojsonl" \
   2>&1 | tail -3
 
+# -r1 disables tippecanoe's point drop rate, which defaults to 2.5 and thins
+# points at low zoom by pseudo-random sampling. Left on, a tile covering the
+# whole country kept exactly one city - Nürnberg, not Berlin - which is why the
+# map used to label arbitrary villages. All 2324 places are cheap to carry, so
+# they all go in and the style layers filter by population and zoom instead.
+#
+# The density-based thinning flags are off for the same reason: the basemap is
+# only a few thousand features, and both discard or merge points by density.
+# Water is still zoom-gated per feature in build-basemap.ts - that is polygons,
+# which the drop rate does not touch.
 echo "==> building base.pmtiles"
 tippecanoe \
   -o "$OUT/base.pmtiles" --force \
   --minimum-zoom=4 --maximum-zoom=10 \
   -P \
-  --drop-densest-as-needed \
-  --coalesce-densest-as-needed \
+  -r1 \
   --simplification=4 \
   -L ocean:"$BUILD/ocean.geojsonl" \
   -L water:"$BUILD/water.geojsonl" \

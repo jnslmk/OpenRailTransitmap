@@ -64,6 +64,9 @@ jobs:
         run: bash pipeline/extract.sh
 
       - name: Build data
+        # The national route set needs more than Node's default heap.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
         run: |
           npx tsx pipeline/build.ts
           npx tsx pipeline/build-basemap.ts
