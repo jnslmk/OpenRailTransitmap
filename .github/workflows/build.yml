@@ -41,9 +41,13 @@ jobs:
 
       - run: npm ci
 
+      # Block scalar because the command contains ": ", which would otherwise
+      # terminate the YAML value early.
       - name: Select region
-        if: inputs.region != ''
-        run: sed -i "s/^active: .*/active: ${{ inputs.region }}/" config/regions.yaml
+        if: github.event_name == 'workflow_dispatch' && inputs.region != ''
+        run: |
+          sed -i "s/^active: .*/active: ${{ inputs.region }}/" config/regions.yaml
+          grep '^active:' config/regions.yaml
 
       # The extract is the slowest part of the job, so it is cached per day and
       # per region. `fetch.sh` still revalidates with a conditional request.
