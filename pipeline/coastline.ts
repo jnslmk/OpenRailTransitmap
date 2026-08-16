@@ -65,7 +65,11 @@ async function main() {
   mkdirSync(CACHE, { recursive: true });
 
   const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8'));
-  const region = cfg.regions[cfg.active];
+  // REGION overrides the committed default, so a one-off national run needs no
+  // config change. CI sets it only via the workflow_dispatch input.
+  const active: string = process.env.REGION || cfg.active;
+  const region = cfg.regions[active];
+  if (!region) throw new Error(`unknown region '${active}'`);
 
   // Whole polygons are kept or dropped rather than clipped, so a tight box
   // leaves a straight edge where the sea simply stops. The margin is generous

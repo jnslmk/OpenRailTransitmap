@@ -223,8 +223,12 @@ async function main() {
   mkdirSync(DATA, { recursive: true });
 
   const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8'));
-  const region = cfg.regions[cfg.active];
-  console.log(`==> region: ${region.name}`);
+  // REGION overrides the committed default, so a one-off national run needs no
+  // config change. CI sets it only via the workflow_dispatch input.
+  const active: string = process.env.REGION || cfg.active;
+  const region = cfg.regions[active];
+  if (!region) throw new Error(`unknown region '${active}'`);
+  console.log(`==> region: ${active} (${region.name})`);
 
   const overrides: Record<string, { colour?: string; name?: string }> =
     existsSync(`${DATA}/overrides.yaml`)
@@ -322,7 +326,9 @@ async function main() {
       const d = MODE_SPECS[lb.mode].order - MODE_SPECS[la.mode].order;
       return d !== 0 ? d : la.ref.localeCompare(lb.ref, 'de', { numeric: true });
     });
-    const key = sorted.join(' ');
+    // NUL separator: network names contain spaces, so a space could in principle
+    // merge two distinct route sets into one bundle key.
+    const key = sorted.join('\u0000');
     const seg = segments.get(key);
     if (seg) seg.wayIds.push(wayId);
     else segments.set(key, { lineIds: sorted, wayIds: [wayId] });
@@ -519,7 +525,7 @@ async function main() {
   writeFileSync(
     `${DATA}/lines.json`,
     JSON.stringify({
-      region: cfg.active,
+      region: active,
       regionName: region.name,
       counts: { lines: registry.length, stations: stationFeatures.length, byMode },
       colourCoverage: { osmTagged: tagged, total: registry.length },

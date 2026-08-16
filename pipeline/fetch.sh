@@ -11,7 +11,7 @@ WORK="${WORK_DIR:-.work}"
 mkdir -p "$WORK"
 
 # Minimal YAML read - the file is a fixed, known shape.
-ACTIVE="$(grep -E '^active:' config/regions.yaml | awk '{print $2}')"
+ACTIVE="${REGION:-$(grep -E '^active:' config/regions.yaml | awk '{print $2}')}"
 URL="$(awk -v region="  $ACTIVE:" '
   $0 == region { found = 1; next }
   found && /^    url:/ { print $2; exit }

@@ -2,9 +2,7 @@ name: Build and deploy map
 
 on:
   push:
-    # The feature branch is listed so the pipeline and the Pages deploy can be
-    # validated before this is merged. Drop it once it lands on main.
-    branches: [main, claude/osm-rail-transit-map-niykpf]
+    branches: [main]
   schedule:
     # Nightly, after Geofabrik publishes the day's extracts.
     - cron: '0 4 * * *'
