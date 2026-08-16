@@ -69,6 +69,7 @@ jobs:
         run: |
           npx tsx pipeline/build.ts
           npx tsx pipeline/build-basemap.ts
+          npx tsx pipeline/coastline.ts
 
       - name: Generate glyphs
         run: npx tsx pipeline/fonts.ts

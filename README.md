@@ -31,6 +31,7 @@ pipeline/
   extract.sh               osmium -> route relations, ways, stations, basemap
   build.ts                 stitch routes, bundle corridors, snap stops
   build-basemap.ts         water, state borders, place labels
+  coastline.ts             ocean polygons (the sea is not natural=water)
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
   tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
@@ -70,6 +71,14 @@ PTv2 relations reference `public_transport=stop_position` nodes rather than the
 300 m using a grid index. This lifted station coverage from 11 to 1,264 of 1,748
 stations on the Niedersachsen extract.
 
+### The sea
+
+OSM models the sea as `natural=coastline` *ways* that must be assembled into
+polygons, so a `natural=water` filter yields no ocean at all and the coast
+renders as flat land. `coastline.ts` pulls the pre-assembled simplified water
+polygons from osmdata.openstreetmap.de and reprojects them from EPSG:3857 to
+WGS84 in pure JS, which avoids adding GDAL to CI for a single job.
+
 ### Colours
 
 OSM `colour` is used **verbatim** where tagged, so Hamburg and Berlin S-Bahn and
@@ -90,6 +99,7 @@ bash pipeline/fetch.sh          # download the extract
 bash pipeline/extract.sh        # osmium filtering
 npx tsx pipeline/build.ts       # routes, bundling, stations
 npx tsx pipeline/build-basemap.ts
+npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
 npx tsx pipeline/fonts.ts       # glyphs (cached after the first run)
 bash pipeline/tiles.sh          # PMTiles
 cp data/lines.json public/lines.json

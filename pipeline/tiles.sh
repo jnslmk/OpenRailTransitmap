@@ -39,6 +39,7 @@ tippecanoe \
   --drop-densest-as-needed \
   --coalesce-densest-as-needed \
   --simplification=4 \
+  -L ocean:"$BUILD/ocean.geojson" \
   -L water:"$BUILD/water.geojson" \
   -L boundaries:"$BUILD/boundaries.geojson" \
   -L places:"$BUILD/places.geojson" \

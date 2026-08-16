@@ -246,6 +246,15 @@ function baseLayers(): LayerSpecification[] {
       type: 'background',
       paint: { 'background-color': LNVG.ground },
     },
+    // The sea comes from assembled coastline polygons, not from natural=water,
+    // which contains no ocean at all (see pipeline/coastline.ts).
+    {
+      id: 'ocean',
+      type: 'fill',
+      source: 'base',
+      'source-layer': 'ocean',
+      paint: { 'fill-color': LNVG.paleBlue },
+    },
     {
       id: 'water',
       type: 'fill',
