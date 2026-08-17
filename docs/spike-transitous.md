@@ -83,5 +83,9 @@ itself. A staging instance exists at `https://staging.api.transitous.org/api/`.
 | `/api/v1/geocode`, `/api/v1/reverse-geocode` | origin/destination autocomplete |
 
 Geocoding returns DELFI stop ids (e.g. `de-DELFI_de:03355:8000238`) alongside
-`lat`/`lon`, `modes` and admin areas — enough to match map stations, which is
-why the pipeline preserves `uic_ref` and `ref:IFOPT`.
+`lat`/`lon`, `modes` and admin areas, which is how a map station is matched to a
+stop. The pipeline preserves `uic_ref` and `ref:IFOPT` for the same purpose — but
+note that the OSM `ref:IFOPT` value is *not* the MOTIS stop id with a feed prefix
+glued on, so the match has to go through `/geocode` or `/reverse-geocode` and be
+resolved at build time. See
+[`live-data.md`](live-data.md#matching-a-map-station-to-a-motis-stop--not-the-freebie-it-looked-like).
