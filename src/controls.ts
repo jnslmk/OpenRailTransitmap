@@ -2,7 +2,7 @@
 
 import type { IControl, Map as MLMap } from 'maplibre-gl';
 
-import { t } from './i18n.ts';
+import { t } from './strings.ts';
 
 /**
  * A panel icon rather than fullscreen arrows: the two buttons sit on the same
@@ -54,7 +54,7 @@ export class ChromeToggleControl implements IControl {
     this.button = null;
   }
 
-  /** Refresh icon and label after a toggle or a language change. */
+  /** Refresh icon and label after a toggle. */
   sync(): void {
     const btn = this.button;
     if (!btn) return;
@@ -68,12 +68,12 @@ export class ChromeToggleControl implements IControl {
 }
 
 /**
- * MapLibre ships English control labels; the rest of the chrome is bilingual,
- * so relabel them from the DOM after they are added and on every language
- * change. Missing buttons (fullscreen is unsupported on some browsers) are
- * simply skipped.
+ * MapLibre's own control labels are close but not ours - the compass reads
+ * "Reset bearing to north" whatever the map is for - so relabel them from the
+ * DOM once they are added. Missing buttons (fullscreen is unsupported on some
+ * browsers) are simply skipped.
  */
-export function localiseControls(): void {
+export function labelControls(): void {
   const s = t();
   const labels: [string, string][] = [
     ['.maplibregl-ctrl-zoom-in', s.zoomIn],

@@ -8,7 +8,6 @@
  *   ?base=osm               basemap choice
  *   ?streets=0              street underlay off
  *   ?ui=map|peek            sidebar hidden / collapsed to its handle
- *   ?lang=de
  */
 
 import { MODES, type Mode } from '../shared/lnvg.ts';
@@ -63,7 +62,7 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
 }
 
 /** Replace (never push) so panning does not fill the browser history. */
-export function writeState(s: ViewState, langCode: string) {
+export function writeState(s: ViewState) {
   const q = new URLSearchParams();
   if (s.selected) q.set('line', s.selected);
   if (s.modes.size !== MODES.length) q.set('modes', [...s.modes].join(','));
@@ -72,8 +71,8 @@ export function writeState(s: ViewState, langCode: string) {
   if (!s.streets) q.set('streets', '0');
   if (s.chrome === 'hidden') q.set('ui', 'map');
   if (s.chrome === 'peek') q.set('ui', 'peek');
-  q.set('lang', langCode);
 
   const hash = `#${s.zoom.toFixed(2)}/${s.center[1].toFixed(4)}/${s.center[0].toFixed(4)}`;
-  history.replaceState(null, '', `${location.pathname}?${q}${hash}`);
+  const query = q.size ? `?${q}` : '';
+  history.replaceState(null, '', `${location.pathname}${query}${hash}`);
 }

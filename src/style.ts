@@ -165,6 +165,36 @@ function badgeLayer(): LayerSpecification {
   };
 }
 
+// Tram stops outnumber rail stations by an order of magnitude, so they are
+// held back to high zoom rather than being allowed to swamp the network.
+const isRail: ExpressionSpecification =
+  ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 0]];
+const isTram: ExpressionSpecification =
+  ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 1]];
+
+/** Station layers and the base filter each one is built with. */
+export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
+  stations: isRail,
+  'station-labels': isRail,
+  'stations-tram': isTram,
+  'station-labels-tram': isTram,
+};
+
+/**
+ * Stations that at least one of `modes` calls at.
+ *
+ * A station carries `lines` - the comma-joined ids of the lines serving it -
+ * and an id is `mode|network|ref`, so a substring test for `mode|` is enough to
+ * tell which modes stop there without shipping a second property. Without this
+ * the stop dots and their names survived a mode being switched off, which left
+ * a place like Braunschweig looking untouched when the trams were hidden.
+ */
+export function servedByModes(modes: Mode[]): ExpressionSpecification {
+  return ['any', ...modes.map((m) =>
+    ['>=', ['index-of', `${m}|`, ['to-string', ['get', 'lines']]], 0],
+  )] as ExpressionSpecification;
+}
+
 function stationLayers(): LayerSpecification[] {
   // Interchanges are the map's anchors, so they get the larger white-filled
   // symbol; ordinary halts stay small ticks.
@@ -183,13 +213,6 @@ function stationLayers(): LayerSpecification[] {
       'interpolate', ['linear'], ['zoom'], 7, 0.7, 14, 1.8,
     ] as ExpressionSpecification,
   };
-
-  // Tram stops outnumber rail stations by an order of magnitude, so they are
-  // held back to high zoom rather than being allowed to swamp the network.
-  const isRail: ExpressionSpecification =
-    ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 0]];
-  const isTram: ExpressionSpecification =
-    ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 1]];
 
   return [
     {

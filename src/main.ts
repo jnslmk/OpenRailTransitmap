@@ -3,11 +3,15 @@ import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
-import { buildStyle, selectionOpacity, highlightOpacity } from './style.ts';
+import {
+  buildStyle, selectionOpacity, highlightOpacity, servedByModes, STATION_FILTERS,
+} from './style.ts';
 import { readState, writeState, type ViewState, type ChromeMode } from './state.ts';
-import { t, lang, setLang, type Lang } from './i18n.ts';
-import { renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle } from './ui.ts';
-import { ChromeToggleControl, localiseControls } from './controls.ts';
+import { t } from './strings.ts';
+import {
+  renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle, setVisibleModes,
+} from './ui.ts';
+import { ChromeToggleControl, labelControls } from './controls.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -33,7 +37,6 @@ async function main() {
 
   const initial = { center: [9.73, 52.63] as [number, number], zoom: 7 };
   const state: ViewState = readState(initial);
-  document.documentElement.lang = lang();
   // Before the map is constructed, so it measures the final container size.
   applyChromeClasses();
 
@@ -101,9 +104,9 @@ async function main() {
     }),
     'bottom-right',
   );
-  localiseControls();
-  // MapLibre relabels the fullscreen button in English when it flips state.
-  document.addEventListener('fullscreenchange', () => localiseControls());
+  labelControls();
+  // MapLibre rewrites the fullscreen button's own title when it flips state.
+  document.addEventListener('fullscreenchange', () => labelControls());
 
   // --- selection & filtering ------------------------------------------------
 
@@ -143,8 +146,51 @@ async function main() {
         map.setFilter(`route-${mode}`, ['==', ['get', 'mode'], mode] as never);
       }
     }
+
+    // Stations follow the mode filter too. Without this the stop dots and their
+    // names stayed put when a mode was switched off, so switching one off often
+    // looked as though nothing had happened at all.
+    const served = servedByModes([...state.modes]);
+    for (const [id, base] of Object.entries(STATION_FILTERS)) {
+      map.setFilter(id, ['all', base, served] as never);
+    }
+
+    // Not refreshLegend() here: the layers have changed but nothing has been
+    // drawn yet, so a query now returns the old frame. Drop the guard instead
+    // and let the `idle` that follows the redraw do the counting.
+    legendKey = '';
     persist();
   }
+
+  /**
+   * The legend lists what is on screen, so it is recomputed whenever the view
+   * settles. `idle` fires once per settled view rather than per frame, and the
+   * signature guard drops the repeats that survive that (a resize, a hover).
+   */
+  let legendKey = '';
+
+  function refreshLegend() {
+    const layers = MODES.map((m) => `route-${m}`).filter((id) => map.getLayer(id));
+    if (!layers.length) return;
+
+    const c = map.getCenter();
+    const key = `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}/` +
+      `${[...state.modes].sort().join(',')}/${state.operator ?? ''}`;
+    if (key === legendKey) return;
+    legendKey = key;
+
+    // Count distinct lines, not features: one line is many tile segments.
+    const lines = new Map<Mode, Set<string>>();
+    for (const f of map.queryRenderedFeatures({ layers })) {
+      const mode = f.properties.mode as Mode;
+      const set = lines.get(mode) ?? new Set<string>();
+      set.add(String(f.properties.line));
+      lines.set(mode, set);
+    }
+    setVisibleModes(new Map([...lines].map(([mode, set]) => [mode, set.size])));
+  }
+
+  map.on('idle', refreshLegend);
 
   /**
    * Basemap and street underlay are style-level choices, so both go through a
@@ -164,7 +210,7 @@ async function main() {
     persist();
   }
 
-  const persist = () => writeState(state, lang());
+  const persist = () => writeState(state);
 
   // --- interactions ---------------------------------------------------------
 
@@ -233,14 +279,6 @@ async function main() {
     onBasemap: (osm) => { state.osmBasemap = osm; rebuildStyle(); },
     onStreets: (on) => { state.streets = on; rebuildStyle(); },
     onToggleSheet: () => setChrome(state.chrome === 'peek' ? 'full' : 'peek'),
-    onLang: (l: Lang) => {
-      setLang(l);
-      renderChrome.rerender();
-      applySelection();
-      chromeToggle.sync();
-      localiseControls();
-      persist();
-    },
     onSelect: (id) => {
       select(id);
       const l = byId.get(id);
@@ -248,10 +286,6 @@ async function main() {
     },
     onFlyToStation: (lngLat) => map.flyTo({ center: lngLat, zoom: 12 }),
     onReset: () => map.flyTo({ center: initial.center, zoom: initial.zoom }),
-    onShare: async () => {
-      await navigator.clipboard.writeText(location.href);
-      setStatus(t().copied);
-    },
     searchStations: (q) => searchStations(map, q),
   });
 

@@ -1,7 +1,7 @@
 /** Sidebar, legend, filters, search and the line detail panel. */
 
 import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
-import { t, lang, type Lang } from './i18n.ts';
+import { t } from './strings.ts';
 import type { LineRecord, Registry } from './main.ts';
 import type { ViewState } from './state.ts';
 
@@ -15,11 +15,9 @@ export interface ChromeOptions {
   onBasemap: (osm: boolean) => void;
   onStreets: (on: boolean) => void;
   onToggleSheet: () => void;
-  onLang: (l: Lang) => void;
   onSelect: (lineId: string) => void;
   onFlyToStation: (lngLat: [number, number]) => void;
   onReset: () => void;
-  onShare: () => void;
   searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
 }
 
@@ -126,6 +124,64 @@ export function syncSheetHandle(collapsed: boolean) {
   handleEl.querySelector('.sheet-label')!.textContent = collapsed ? s.panelPeek : '';
 }
 
+// ---------------------------------------------------------------------------
+// Legend
+//
+// The legend describes what is on the screen, not what exists in the country:
+// only modes with lines in the current view get a row, and the count is how
+// many of them are in view. A mode that is switched off keeps its row whatever
+// the view holds - it is the only way back.
+// ---------------------------------------------------------------------------
+
+let modeBox: HTMLElement | null = null;
+/** Lines in view per mode, or null until the map has first settled. */
+let inView: Map<Mode, number> | null = null;
+
+export function setVisibleModes(counts: Map<Mode, number>) {
+  inView = counts;
+  drawModes();
+}
+
+function drawModes() {
+  if (!modeBox) return;
+  const s = t();
+  modeBox.innerHTML = '';
+  modeBox.appendChild(el('h2', '', s.modes));
+
+  const rows = MODES.filter((mode) => {
+    if (!opts.state.modes.has(mode)) return true;
+    if (!inView) return (opts.registry.counts.byMode[mode] ?? 0) > 0;
+    return (inView.get(mode) ?? 0) > 0;
+  });
+
+  for (const mode of rows) {
+    const on = opts.state.modes.has(mode);
+    const row = el('label', 'toggle');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = on;
+    cb.onchange = () => opts.onToggleMode(mode, cb.checked);
+
+    const swatch = el('span', 'swatch');
+    swatch.style.background = MODE_SPECS[mode].defaultColour;
+    swatch.style.height = `${MODE_SPECS[mode].weightPt * 1.4}px`;
+
+    // A hidden mode has no count: nothing of it is drawn to count.
+    const count = on ? String(inView?.get(mode) ?? opts.registry.counts.byMode[mode] ?? 0) : '';
+    row.append(cb, swatch, el('span', 'label', s[mode]), el('span', 'count', count));
+    modeBox.appendChild(row);
+  }
+
+  if (!rows.length) modeBox.appendChild(el('p', 'muted', s.noLinesInView));
+
+  // Station symbology, matching the map.
+  const legend = el('div', 'legend');
+  legend.innerHTML = `
+    <div class="legend-row"><span class="dot interchange"></span>${s.interchange}</div>
+    <div class="legend-row"><span class="dot"></span>${s.station}</div>`;
+  modeBox.appendChild(legend);
+}
+
 function draw() {
   const { registry, state } = opts;
   const s = t();
@@ -136,26 +192,14 @@ function draw() {
 
   // --- header ---------------------------------------------------------------
   const header = el('header', 'panel');
-  header.appendChild(el('h1', '', s.title));
-  header.appendChild(el('p', 'sub', s.subtitle));
+  header.appendChild(el('p', 'meta',
+    `${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}`));
 
-  const meta = el('p', 'meta',
-    `${registry.regionName} · ${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}`);
-  header.appendChild(meta);
-
-  const langRow = el('div', 'row');
-  (['de', 'en'] as Lang[]).forEach((l) => {
-    const b = el('button', `chip${lang() === l ? ' on' : ''}`, l.toUpperCase());
-    b.onclick = () => opts.onLang(l);
-    langRow.appendChild(b);
-  });
-  const share = el('button', 'chip', s.share);
-  share.onclick = () => opts.onShare();
-  langRow.appendChild(share);
+  const headRow = el('div', 'row');
   const reset = el('button', 'chip', s.reset);
   reset.onclick = () => opts.onReset();
-  langRow.appendChild(reset);
-  header.appendChild(langRow);
+  headRow.appendChild(reset);
+  header.appendChild(headRow);
   root.appendChild(header);
 
   // --- search ---------------------------------------------------------------
@@ -174,32 +218,8 @@ function draw() {
   };
 
   // --- modes / legend -------------------------------------------------------
-  const modeBox = el('div', 'panel');
-  modeBox.appendChild(el('h2', '', s.modes));
-  for (const mode of MODES) {
-    const count = registry.counts.byMode[mode] ?? 0;
-    if (count === 0) continue;
-
-    const row = el('label', 'toggle');
-    const cb = el('input');
-    cb.type = 'checkbox';
-    cb.checked = opts.state.modes.has(mode);
-    cb.onchange = () => opts.onToggleMode(mode, cb.checked);
-
-    const swatch = el('span', 'swatch');
-    swatch.style.background = MODE_SPECS[mode].defaultColour;
-    swatch.style.height = `${MODE_SPECS[mode].weightPt * 1.4}px`;
-
-    row.append(cb, swatch, el('span', 'label', s[mode]), el('span', 'count', String(count)));
-    modeBox.appendChild(row);
-  }
-
-  // Station symbology, matching the map.
-  const legend = el('div', 'legend');
-  legend.innerHTML = `
-    <div class="legend-row"><span class="dot interchange"></span>${s.interchange}</div>
-    <div class="legend-row"><span class="dot"></span>${s.station}</div>`;
-  modeBox.appendChild(legend);
+  modeBox = el('div', 'panel');
+  drawModes();
   root.appendChild(modeBox);
 
   // --- operator -------------------------------------------------------------

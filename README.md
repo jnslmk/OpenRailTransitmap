@@ -17,8 +17,13 @@ GitHub Pages and rebuilt nightly.
   bands instead of stacking into one indistinguishable stroke.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
   station** for every line calling there.
-- **Search, mode and operator filters, a live legend**, and deep-linkable URLs
-  that restore position, filters and selection.
+- **Search, mode and operator filters**, and deep-linkable URLs that restore
+  position, filters and selection.
+- **A legend of what is actually on screen.** Only modes with lines in the
+  current view get a row, and the number beside each is how many of them are in
+  view — not a national total that says nothing about where you are looking.
+  Switching a mode off hides its lines *and* its stops, and keeps its row so it
+  can come back.
 - **Full-screen map.** A button on the map hides the whole sidebar so the map
   fills the window — the difference between usable and unusable on a phone — and
   a second one goes to browser fullscreen. On narrow screens the sidebar is a
@@ -29,8 +34,8 @@ GitHub Pages and rebuilt nightly.
 - **Streets where they help.** From zoom 13 the OSM standard raster fades in
   under the network, heavily desaturated, so a tram stop can be placed on an
   actual street. Off with one checkbox (`?streets=0`).
-- **Bilingual** (DE/EN), with a minimal LNVG-styled basemap and an OpenStreetMap
-  raster toggle.
+- **A minimal LNVG-styled basemap** with an OpenStreetMap raster toggle. The
+  interface is English; station and line names stay as OSM has them, in German.
 
 ## How it is built
 
@@ -45,7 +50,7 @@ pipeline/
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
   tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
-src/                       MapLibre app (style, state, UI, controls, i18n)
+src/                       MapLibre app (style, state, UI, controls, strings)
 ```
 
 ### Region switching
