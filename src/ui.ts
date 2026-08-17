@@ -1,6 +1,6 @@
 /** Sidebar, legend, filters, search and the line detail panel. */
 
-import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
+import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import { t } from './strings.ts';
 import type { LineRecord, Registry } from './main.ts';
 import type { ViewState } from './state.ts';
@@ -366,6 +366,7 @@ function lineRow(l: LineRecord): HTMLElement {
   row.onclick = () => opts.onSelect(l.id);
   const badge = el('span', 'badge', l.ref);
   badge.style.background = l.colour;
+  badge.style.color = textOn(l.colour);
   row.append(badge, el('span', 'line-name', l.name || l.ref));
   return row;
 }
@@ -406,6 +407,7 @@ export function renderLinePanel(line: LineRecord | null, handlers: { onClose: ()
   const head = el('div', 'detail-head');
   const badge = el('span', 'badge big', line.ref);
   badge.style.background = line.colour;
+  badge.style.color = textOn(line.colour);
   head.append(badge, el('div', 'detail-title', line.name || line.ref));
 
   const close = el('button', 'close', '×');

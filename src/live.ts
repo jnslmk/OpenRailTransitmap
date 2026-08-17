@@ -15,6 +15,8 @@
  * `fetchDepartures` below.
  */
 
+import { normaliseColour } from '../shared/lnvg.ts';
+
 const BASE_URL = 'https://api.transitous.org/api/v1';
 
 /** Rail-borne mode filter for the request: heavy rail, light rail, tram, and
@@ -83,6 +85,7 @@ interface RawPlace {
 
 interface RawStopTime {
   routeShortName?: string;
+  routeColor?: string;
   headsign?: string;
   mode?: string;
   realTime?: boolean;
@@ -97,6 +100,13 @@ interface RawStopTimesResponse {
 
 export interface Departure {
   line: string;
+  /**
+   * The feed's own `route_color` as `#rrggbb`, or null - most German feeds
+   * only set it for city networks, and regional/long-distance entries come
+   * back with none. It is a fallback: a line this map already draws should be
+   * badged in the colour it is drawn in, not in whatever the feed carries.
+   */
+  colour: string | null;
   headsign: string;
   /** Cancelled at either the stop-time or the whole-trip level - both read as cancelled. */
   cancelled: boolean;
@@ -127,6 +137,10 @@ function toDeparture(raw: RawStopTime): Departure {
 
   return {
     line: raw.routeShortName ?? '',
+    // GTFS carries `route_color` as a bare `rrggbb`; everything downstream
+    // works in CSS hex, and normalising here also rejects the empty strings
+    // and junk values feeds put in the column.
+    colour: normaliseColour(raw.routeColor ? `#${raw.routeColor.replace(/^#/, '')}` : undefined),
     headsign: raw.headsign ?? '',
     cancelled: !!(raw.cancelled || raw.tripCancelled),
     realTime: !!raw.realTime,

@@ -2,7 +2,7 @@ import maplibregl, { Map as MLMap, Popup, type MapGeoJSONFeature } from 'maplibr
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { MODES, MODE_SPECS, type Mode } from '../shared/lnvg.ts';
+import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import {
   buildStyle, selectionOpacity, highlightOpacity, servedByModes, STATION_FILTERS,
 } from './style.ts';
@@ -280,8 +280,15 @@ async function main() {
       .sort(compareLines);
 
     const badges = served.map((l) =>
-      `<button class="badge" data-line="${l.id}" style="background:${l.colour}" title="${l.name}">${l.ref}</button>`,
+      `<button class="badge" data-line="${l.id}" style="background:${l.colour};color:${textOn(l.colour)}" title="${l.name}">${l.ref}</button>`,
     ).join('');
+
+    // Departure badges are painted from the lines this station serves, so a
+    // board sitting under the "lines serving this station" row uses the same
+    // colour for the same line - the feed's own colour is only a fallback for
+    // services the map does not draw (see Departure.colour).
+    const stationColours = new Map(served.map((l) => [lineKey(l.ref), l.colour]));
+    const colourOf = (d: Departure) => stationColours.get(lineKey(d.line)) ?? d.colour;
 
     const stopId = String(p.stopId ?? '');
 
@@ -313,11 +320,13 @@ async function main() {
     // A station with no resolved stopId (most of them, until the pipeline
     // ships one) shows exactly what it always has - no departures section.
     const liveEl = stopId ? popup.getElement()?.querySelector<HTMLElement>('.pop-live') : null;
-    if (liveEl) loadDepartures(liveEl, stopId);
+    if (liveEl) loadDepartures(liveEl, stopId, colourOf);
   }
 
   /** Fetches and renders the departure board into an already-open popup. */
-  function loadDepartures(container: HTMLElement, stopId: string) {
+  function loadDepartures(
+    container: HTMLElement, stopId: string, colourOf: (d: Departure) => string | null,
+  ) {
     // showStation already bumped liveToken and cleared liveController just
     // above, synchronously, so this read sees that same generation.
     const token = liveToken;
@@ -337,7 +346,7 @@ async function main() {
         // departureRow throw, this rejects and falls to .catch below instead
         // of crediting Transitous for a board that never actually rendered.
         const body = departures.length
-          ? departures.map(departureRow).join('')
+          ? departures.map((d) => departureRow(d, colourOf(d))).join('')
           : `<p class="muted">${t().noDepartures}</p>`;
         markLiveDataUsed();
         container.innerHTML = departuresSection(body);
@@ -452,15 +461,32 @@ function formatTime(date: Date, tz: string | null): string {
   }).format(date);
 }
 
-function departureRow(d: Departure): string {
+/**
+ * Key a line label so the registry and the feed agree on it, across the two
+ * ways they disagree in practice: feeds append the train number of the
+ * individual run (`RB45 (14253)` is the line OSM knows as `RB 45`), and
+ * spacing inside a ref is tagged inconsistently even within one network -
+ * the Braunschweig registry carries both `RB44` and `RB 45`.
+ *
+ * Note this deliberately does *not* strip trailing digits: `ICE 276` is a
+ * train number rather than a line, and must not collapse onto `ICE 12`.
+ */
+function lineKey(ref: string): string {
+  return ref.replace(/\s*\([^()]*\)\s*$/, '').replace(/\s+/g, '').toLowerCase();
+}
+
+function departureRow(d: Departure, colour: string | null): string {
   const s = t();
   const track = d.track ? `<span class="dep-track">${esc(s.platform(d.track))}</span>` : '';
+  // No colour anywhere for this service (a feed that doesn't set one, for a
+  // line off this map) leaves the badge on its neutral CSS default.
+  const lineStyle = colour ? ` style="background:${colour};color:${textOn(colour)}"` : '';
 
   if (d.cancelled) {
     const time = d.scheduled ? formatTime(d.scheduled, d.tz) : '';
     return `
       <div class="dep-row cancelled">
-        <span class="dep-line">${esc(d.line)}</span>
+        <span class="dep-line"${lineStyle}>${esc(d.line)}</span>
         <span class="dep-dest">${esc(d.headsign)}</span>
         ${track}
         <span class="dep-time">${time}</span>
@@ -483,7 +509,7 @@ function departureRow(d: Departure): string {
 
   return `
     <div class="dep-row${delayed ? ' delayed' : ''}">
-      <span class="dep-line">${esc(d.line)}</span>
+      <span class="dep-line"${lineStyle}>${esc(d.line)}</span>
       <span class="dep-dest">${esc(d.headsign)}</span>
       ${track}
       <span class="dep-time">${timeHtml}</span>

@@ -94,6 +94,26 @@ export function fallbackColour(key: string, mode: Mode): string {
   return FALLBACK_PALETTE[Math.abs(h) % FALLBACK_PALETTE.length];
 }
 
+/**
+ * Readable label colour for a badge painted `colour` (a `#rrggbb` value):
+ * white on a dark line, near-black on a light one. The threshold is the
+ * luminance at which contrast against white and against black is equal, so
+ * every badge picks whichever of the two it actually reads better on -
+ * needed because line colours span the full range from `#006531` to a pale
+ * yellow, and a single hard-coded label colour is unreadable on one end.
+ *
+ * Deliberately computed rather than taken from a feed's `route_text_color`,
+ * which is routinely absent or left at white over a light background.
+ */
+export function textOn(colour: string): string {
+  const channel = (i: number) => {
+    const c = parseInt(colour.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  return luminance > 0.179 ? '#1a1a1a' : '#ffffff';
+}
+
 /** Normalise an OSM `colour` value to `#rrggbb`, or null if unusable. */
 export function normaliseColour(raw: string | undefined): string | null {
   if (!raw) return null;
