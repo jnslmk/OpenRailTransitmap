@@ -9,6 +9,7 @@
     "fetch": "bash pipeline/fetch.sh",
     "extract": "bash pipeline/extract.sh",
     "build:data": "tsx pipeline/build.ts && tsx pipeline/build-basemap.ts && tsx pipeline/coastline.ts",
+    "resolve:stop-ids": "tsx pipeline/stop-ids.ts",
     "build:fonts": "tsx pipeline/fonts.ts",
     "build:tiles": "bash pipeline/tiles.sh",
     "pipeline": "npm run fetch && npm run extract && npm run build:data && npm run build:fonts && npm run build:tiles && cp data/lines.json public/lines.json",

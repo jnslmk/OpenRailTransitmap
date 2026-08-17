@@ -18,6 +18,7 @@ import { createInterface } from 'node:readline';
 import { createReadStream } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { writeFeatures } from './lib/write.ts';
+import { resolveStopIds } from './stop-ids.ts';
 import {
   MODE_SPECS, fallbackColour, normaliseColour, type Mode,
 } from '../shared/lnvg.ts';
@@ -482,6 +483,28 @@ async function main() {
   }
   console.log(`==> stop members: ${direct} direct, ${snapped} snapped, ${unmatched} unmatched`);
 
+  // Resolve OSM stations to Transitous/MOTIS stop ids for the live departure
+  // board. Run against the full station list (not just served ones) so an
+  // unserved station that later gains a line doesn't need a fresh resolve
+  // pass; see pipeline/stop-ids.ts for the cache/budget/validation design.
+  // Belt-and-braces: stop-ids.ts already degrades internally (tolerant cache
+  // load, atomic save, per-station try/catch), but a station lookup board is
+  // a nice-to-have next to the whole map build - nothing in this module may
+  // ever be allowed to fail the build, so an unforeseen bug here still can't.
+  let stopIds = new Map<string, string>();
+  try {
+    ({ stopIds } = await resolveStopIds(
+      stations.map((st) => ({
+        id: st.id,
+        name: st.props.name,
+        lon: st.geometry.coordinates[0],
+        lat: st.geometry.coordinates[1],
+      })),
+    ));
+  } catch (err) {
+    console.log(`==> stop id resolution failed, continuing without it: ${(err as Error).message}`);
+  }
+
   const stationFeatures = stations.map((st) => {
     const served = [...st.served];
     const modes = [...new Set(served.map((id) => lines.get(id)!.mode))];
@@ -495,6 +518,10 @@ async function main() {
         uic_ref: st.props.uic_ref ?? '',
         ifopt: st.props['ref:IFOPT'] ?? '',
         wikidata: st.props.wikidata ?? '',
+        // Resolved against Transitous at build time; '' when unmatched, in
+        // which case the departure board simply doesn't render - see
+        // pipeline/stop-ids.ts.
+        stopId: stopIds.get(st.id) ?? '',
         lines: served.join(','),
         lineCount: served.length,
         modes: modes.join(','),
