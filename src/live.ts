@@ -17,19 +17,21 @@
 
 const BASE_URL = 'https://api.transitous.org/api/v1';
 
-/** Rail-only mode filter for the request. Mandatory: an unfiltered query
- *  against a Hauptbahnhof returns mostly buses departing the forecourt ZOB,
- *  which is wrong for a rail map. */
-const RAIL_REQUEST_MODES = 'HIGHSPEED_RAIL,LONG_DISTANCE,REGIONAL_RAIL,SUBURBAN';
+/** Rail-borne mode filter for the request: heavy rail, light rail, tram, and
+ *  subway. Mandatory: an unfiltered query against a Hauptbahnhof returns
+ *  mostly buses departing the forecourt ZOB, which is wrong for a rail map. */
+const RAIL_REQUEST_MODES =
+  'HIGHSPEED_RAIL,LONG_DISTANCE,REGIONAL_RAIL,SUBURBAN,TRAM,SUBWAY';
 
 /**
- * Response `mode` values accepted as rail. The request and response mode
+ * Response `mode` values accepted. The request and response mode
  * vocabularies do not line up - asking for SUBURBAN yields entries whose
  * response `mode` reads METRO - so entries are matched against this set,
  * never by equality with the mode that was requested.
  */
 const RAIL_RESPONSE_MODES = new Set([
   'HIGHSPEED_RAIL', 'LONG_DISTANCE', 'REGIONAL_RAIL', 'SUBURBAN', 'METRO',
+  'TRAM', 'SUBWAY',
 ]);
 
 /**
