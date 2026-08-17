@@ -10,9 +10,10 @@ import { readState, writeState, type ViewState, type ChromeMode } from './state.
 import { t } from './strings.ts';
 import {
   renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle, setVisibleModes,
-  unpinModes,
+  unpinModes, setLiveAttributionUsed,
 } from './ui.ts';
 import { ChromeToggleControl, labelControls } from './controls.ts';
+import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -97,14 +98,36 @@ async function main() {
     // the status toast live outside the map container and would be hidden.
     map.addControl(new maplibregl.FullscreenControl({ container: document.body }), 'bottom-right');
   }
-  map.addControl(
-    new maplibregl.AttributionControl({
+  const OSM_ATTRIBUTION =
+    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
+  let attribution = new maplibregl.AttributionControl({ compact: true, customAttribution: OSM_ATTRIBUTION });
+  map.addControl(attribution, 'bottom-right');
+
+  /**
+   * Transitous attribution is added only once its data is actually shown, not
+   * unconditionally - a build that never resolves a `stopId` has nothing to
+   * credit. `AttributionControl` has no supported way to change its own
+   * `customAttribution` after construction and force a re-render - mutating
+   * `options.customAttribution` in place only takes effect on the control's
+   * own `sourcedata`/`styledata`/`terrain` listeners, none of which a station
+   * click guarantees. So this drops the old control and adds a new one with
+   * both credits - `removeControl`/`addControl` are the public, stable API
+   * MapLibre offers for changing what a control shows, unlike reaching into
+   * `_updateAttributions()` (underscore-prefixed, not in the public surface,
+   * and free to disappear on any `^5.0.0` bump with no compiler warning).
+   */
+  let liveAttributed = false;
+  function markLiveDataUsed() {
+    if (liveAttributed) return;
+    liveAttributed = true;
+    map.removeControl(attribution);
+    attribution = new maplibregl.AttributionControl({
       compact: true,
-      customAttribution:
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)',
-    }),
-    'bottom-right',
-  );
+      customAttribution: [OSM_ATTRIBUTION, t().liveAttribution],
+    });
+    map.addControl(attribution, 'bottom-right');
+    setLiveAttributionUsed();
+  }
   labelControls();
   // MapLibre rewrites the fullscreen button's own title when it flips state.
   document.addEventListener('fullscreenchange', () => labelControls());
@@ -219,6 +242,19 @@ async function main() {
   const STATION_LAYERS = ['stations', 'stations-tram'];
   const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
+  // A slow departures response must never paint into a popup that has moved
+  // on: `liveToken` identifies the request that is currently allowed to
+  // write, and is bumped whenever the popup closes or another station is
+  // clicked, which also aborts whatever was still in flight.
+  let liveController: AbortController | null = null;
+  let liveToken = 0;
+
+  popup.on('close', () => {
+    liveController?.abort();
+    liveController = null;
+    liveToken++;
+  });
+
   map.on('click', (e) => {
     const hits = map.queryRenderedFeatures(e.point, { layers: [...routeLayers, ...STATION_LAYERS] });
     const station = hits.find((f) => STATION_LAYERS.includes(f.layer.id));
@@ -243,6 +279,16 @@ async function main() {
       `<button class="badge" data-line="${l.id}" style="background:${l.colour}" title="${l.name}">${l.ref}</button>`,
     ).join('');
 
+    const stopId = String(p.stopId ?? '');
+
+    // Whatever departures request was in flight belongs to the popup that is
+    // about to be replaced, whether or not the new station has its own
+    // stopId - a click on a plain station must still cancel a slow fetch
+    // from the previous one.
+    liveController?.abort();
+    liveController = null;
+    liveToken++;
+
     const geom = f.geometry as GeoJSON.Point;
     popup
       .setLngLat(geom.coordinates as [number, number])
@@ -252,12 +298,61 @@ async function main() {
           ${p.uic_ref ? `<span class="uic">UIC ${p.uic_ref}</span>` : ''}
           <div class="pop-lines-label">${t().servedBy}</div>
           <div class="pop-lines">${badges || '—'}</div>
+          ${stopId ? '<div class="pop-live"></div>' : ''}
         </div>`)
       .addTo(map);
 
     popup.getElement()?.querySelectorAll<HTMLElement>('.badge').forEach((el) => {
       el.onclick = () => { select(el.dataset.line!); popup.remove(); };
     });
+
+    // A station with no resolved stopId (most of them, until the pipeline
+    // ships one) shows exactly what it always has - no departures section.
+    const liveEl = stopId ? popup.getElement()?.querySelector<HTMLElement>('.pop-live') : null;
+    if (liveEl) loadDepartures(liveEl, stopId);
+  }
+
+  /** Fetches and renders the departure board into an already-open popup. */
+  function loadDepartures(container: HTMLElement, stopId: string) {
+    // showStation already bumped liveToken and cleared liveController just
+    // above, synchronously, so this read sees that same generation.
+    const token = liveToken;
+    const controller = new AbortController();
+    liveController = controller;
+    // The API has no timeout of its own; abort a request that never
+    // resolves rather than leave the popup loading forever.
+    const timer = window.setTimeout(() => controller.abort(), 8000);
+
+    container.innerHTML = departuresSection(`<p class="muted">${t().loadingDepartures}</p>`);
+
+    fetchDepartures(stopId, controller.signal)
+      .then((departures) => {
+        window.clearTimeout(timer);
+        if (token !== liveToken) return; // superseded - popup has moved on
+        // Built before marking anything "used": if a malformed entry makes
+        // departureRow throw, this rejects and falls to .catch below instead
+        // of crediting Transitous for a board that never actually rendered.
+        const body = departures.length
+          ? departures.map(departureRow).join('')
+          : `<p class="muted">${t().noDepartures}</p>`;
+        markLiveDataUsed();
+        container.innerHTML = departuresSection(body);
+      })
+      .catch((err: unknown) => {
+        window.clearTimeout(timer);
+        if (token !== liveToken) return;
+        // Quiet degrade either way - the popup works without departures,
+        // plus a brief note, no retry. But only a LiveDataError (a bad
+        // status, a network failure, an unparseable body - see live.ts) or
+        // our own timeout abort is an *expected* reason for this to fail.
+        // Anything else is a bug in the render path, and swallowing it here
+        // would make every future call look identical to "the API is down"
+        // with nothing anywhere pointing at the real cause.
+        const expected = err instanceof LiveDataError
+          || (err instanceof DOMException && err.name === 'AbortError');
+        if (!expected) console.error('[live] departures render failed unexpectedly:', err);
+        container.innerHTML = departuresSection(`<p class="muted">${t().departuresUnavailable}</p>`);
+      });
   }
 
   map.on('moveend', () => {
@@ -333,6 +428,63 @@ function searchStations(map: MLMap, query: string) {
       name: String(f.properties!.name),
       lngLat: (f.geometry as GeoJSON.Point).coordinates as [number, number],
     }));
+}
+
+function departuresSection(bodyHtml: string): string {
+  return `<div class="pop-live-label">${t().departures}</div>${bodyHtml}`;
+}
+
+/** Departure text (headsigns, line refs) comes from an external API - escape
+ *  it before it lands in innerHTML, unlike the tile-sourced strings above
+ *  which are our own build output. */
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
+}
+
+function formatTime(date: Date, tz: string | null): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz ?? undefined,
+  }).format(date);
+}
+
+function departureRow(d: Departure): string {
+  const s = t();
+  const track = d.track ? `<span class="dep-track">${esc(s.platform(d.track))}</span>` : '';
+
+  if (d.cancelled) {
+    const time = d.scheduled ? formatTime(d.scheduled, d.tz) : '';
+    return `
+      <div class="dep-row cancelled">
+        <span class="dep-line">${esc(d.line)}</span>
+        <span class="dep-dest">${esc(d.headsign)}</span>
+        ${track}
+        <span class="dep-time">${time}</span>
+        <span class="dep-status">${s.cancelled}</span>
+      </div>`;
+  }
+
+  // A delay under a minute reads as on-time - MOTIS timestamps carry
+  // seconds, and rounding noise shouldn't make an on-time train look late.
+  const delayed = d.delayMinutes !== null && d.delayMinutes >= 1;
+  const time = d.actual ?? d.scheduled;
+  // `realTime` distinguishes a confirmed live estimate from a bare schedule -
+  // shown as a quiet italic, since "no live data yet" is a different fact
+  // from "on time" and shouldn't read the same as either that or a delay.
+  const timeHtml = time
+    ? `<span class="dep-time-value${d.realTime ? '' : ' scheduled-only'}"` +
+      `${d.realTime ? '' : ` title="${esc(s.scheduledOnly)}"`}>${formatTime(time, d.tz)}</span>` +
+      (delayed ? ` <span class="dep-delay">+${d.delayMinutes}</span>` : '')
+    : '';
+
+  return `
+    <div class="dep-row${delayed ? ' delayed' : ''}">
+      <span class="dep-line">${esc(d.line)}</span>
+      <span class="dep-dest">${esc(d.headsign)}</span>
+      ${track}
+      <span class="dep-time">${timeHtml}</span>
+    </div>`;
 }
 
 main().catch((err) => {

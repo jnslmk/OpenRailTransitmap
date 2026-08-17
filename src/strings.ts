@@ -17,6 +17,10 @@ export interface Strings {
   lineCount: (n: number) => string;
   stationCount: (n: number) => string;
   loading: string; dataDate: string;
+  departures: string; loadingDepartures: string; departuresUnavailable: string;
+  noDepartures: string; cancelled: string; scheduledOnly: string;
+  platform: (n: string) => string;
+  liveAttribution: string;
 }
 
 const STRINGS: Strings = {
@@ -62,6 +66,14 @@ const STRINGS: Strings = {
   stationCount: (n: number) => `${n} stations`,
   loading: 'Loading map…',
   dataDate: 'Data as of',
+  departures: 'Next departures',
+  loadingDepartures: 'Loading departures…',
+  departuresUnavailable: 'Departures unavailable right now',
+  noDepartures: 'No departures found',
+  cancelled: 'Cancelled',
+  scheduledOnly: 'No live estimate — scheduled time shown',
+  platform: (n: string) => `Pl. ${n}`,
+  liveAttribution: 'Departures via <a href="https://transitous.org">Transitous</a>',
 };
 
 export const t = (): Strings => STRINGS;

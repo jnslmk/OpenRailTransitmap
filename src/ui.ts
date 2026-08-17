@@ -312,9 +312,29 @@ function draw() {
   linesBox.appendChild(lineList);
   root.appendChild(linesBox);
 
-  root.appendChild(el('footer', 'panel attrib', `
+  const footer = el('footer', 'panel attrib', `
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
-    <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>`));
+    <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>
+    <span class="live-attrib" hidden>${s.liveAttribution}</span>`);
+  root.appendChild(footer);
+  liveAttribEl = footer.querySelector('.live-attrib');
+  liveAttribEl!.hidden = !liveDataUsed;
+}
+
+/**
+ * Transitous requires visible attribution, but only while its data is
+ * actually on screen - a static build that never resolves a `stopId` has
+ * nothing to attribute. Set once, on the first successful departure fetch;
+ * the flag survives a sidebar redraw so the line does not flicker in and out
+ * on every toggle.
+ */
+let liveAttribEl: HTMLElement | null = null;
+let liveDataUsed = false;
+
+export function setLiveAttributionUsed() {
+  if (liveDataUsed) return;
+  liveDataUsed = true;
+  if (liveAttribEl) liveAttribEl.hidden = false;
 }
 
 /**

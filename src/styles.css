@@ -198,6 +198,7 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 
 .attrib { font-size: 11px; color: var(--muted); line-height: 1.5; }
 .attrib a { color: var(--accent); }
+.attrib .live-attrib { display: block; }
 
 /* --- detail panel --------------------------------------------------------- */
 
@@ -266,6 +267,40 @@ body.chrome-hidden #sidebar { display: none; }
 .pop .uic { font-size: 11px; color: var(--muted); }
 .pop-lines-label { font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
 .pop-lines { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
+
+/* --- live departures ------------------------------------------------------ */
+
+.pop-live { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--grey); max-width: 260px; }
+.pop-live-label { font-size: 11px; color: var(--muted); margin: 0 0 4px; }
+
+.dep-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: 12px; }
+.dep-line {
+  flex: 0 0 auto;
+  min-width: 32px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--grey);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+.dep-dest { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep-track { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+.dep-time { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+/* No confirmed live estimate yet - distinct from both "on time" and
+   "delayed", so it gets its own quiet treatment rather than reading as either. */
+.dep-time-value.scheduled-only { font-style: italic; color: var(--muted); }
+/* LNVG red, the same attention colour the reference map gives long-distance
+   spines - the one place in the popup that should read as "look at this". */
+.dep-delay { color: #e30513; font-weight: 600; }
+
+.dep-row.cancelled { color: var(--muted); }
+.dep-row.cancelled .dep-line, .dep-row.cancelled .dep-dest,
+.dep-row.cancelled .dep-track, .dep-row.cancelled .dep-time {
+  text-decoration: line-through;
+}
+.dep-status { flex: 0 0 auto; color: #e30513; font-size: 11px; font-weight: 600; }
 
 /* --- status toast --------------------------------------------------------- */
 
