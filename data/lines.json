@@ -2,19 +2,19 @@
   "region": "germany",
   "regionName": "Deutschland",
   "counts": {
-    "lines": 1412,
-    "stations": 20830,
+    "lines": 1413,
+    "stations": 20832,
     "byMode": {
       "longdistance": 124,
       "regional": 692,
       "suburban": 207,
       "subway": 52,
-      "tram": 337
+      "tram": 338
     }
   },
   "colourCoverage": {
-    "osmTagged": 780,
-    "total": 1412
+    "osmTagged": 781,
+    "total": 1413
   },
   "lines": [
     {
@@ -183,7 +183,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 15,
-      "ways": 1234
+      "ways": 1237
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 82",
@@ -195,7 +195,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 15,
-      "ways": 1230
+      "ways": 1234
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 83",
@@ -207,7 +207,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 14,
-      "ways": 1103
+      "ways": 1106
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 84",
@@ -219,7 +219,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 17,
-      "ways": 1342
+      "ways": 1346
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 85",
@@ -231,7 +231,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 17,
-      "ways": 1347
+      "ways": 1350
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 86",
@@ -255,7 +255,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 18,
-      "ways": 1297
+      "ways": 1300
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 88",
@@ -267,7 +267,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 15,
-      "ways": 1230
+      "ways": 1234
     },
     {
       "id": "longdistance|db intercity;eurocity;öbb|ec 89",
@@ -279,7 +279,7 @@
       "operator": "DB Fernverkehr AG;ÖBB",
       "network": "DB InterCity;EuroCity;ÖBB",
       "stops": 15,
-      "ways": 1234
+      "ways": 1237
     },
     {
       "id": "longdistance|db intercity;eurocity|ec 95",
@@ -615,7 +615,7 @@
       "operator": "DB Fernverkehr",
       "network": "DB InterCityExpress",
       "stops": 17,
-      "ways": 3090
+      "ways": 3088
     },
     {
       "id": "longdistance|db intercityexpress|ice 2",
@@ -723,7 +723,7 @@
       "operator": "DB Fernverkehr",
       "network": "DB InterCityExpress",
       "stops": 17,
-      "ways": 2436
+      "ways": 2435
     },
     {
       "id": "longdistance|db intercityexpress|ice 4",
@@ -1095,7 +1095,7 @@
       "operator": "",
       "network": "EuroNight",
       "stops": 14,
-      "ways": 2587
+      "ways": 2582
     },
     {
       "id": "longdistance|euronight|en 462",
@@ -1131,7 +1131,7 @@
       "operator": "",
       "network": "EuroNight",
       "stops": 10,
-      "ways": 1514
+      "ways": 1509
     },
     {
       "id": "longdistance|euronight|en 50463",
@@ -1143,7 +1143,7 @@
       "operator": "",
       "network": "EuroNight",
       "stops": 12,
-      "ways": 1550
+      "ways": 1544
     },
     {
       "id": "longdistance|flixtrain|flx 10",
@@ -3519,7 +3519,7 @@
       "operator": "Hanseatische Eisenbahn GmbH",
       "network": "Gemeinschaftstarif Mecklenburgische Seenplatte",
       "stops": 7,
-      "ways": 29
+      "ways": 30
     },
     {
       "id": "regional|grenzüberschreitendes freizeitverkehrsnetz donau - ilz - moldau|12888",
@@ -4935,7 +4935,7 @@
       "operator": "DB Regio AG NRW",
       "network": "NRW-Tarif;VRM;VRR;VRS",
       "stops": 65,
-      "ways": 1012
+      "ways": 1010
     },
     {
       "id": "regional|nrw-tarif;vrm;vrr;vrs|re 5 (rrx)",
@@ -4959,7 +4959,7 @@
       "operator": "DB Regio NRW",
       "network": "NRW-Tarif;VRM;VRR;VRS",
       "stops": 71,
-      "ways": 1145
+      "ways": 1143
     },
     {
       "id": "regional|nrw-tarif;vrm;vrs|rb30",
@@ -6195,7 +6195,7 @@
       "operator": "DB Regio Mitte",
       "network": "RMV;VRN",
       "stops": 45,
-      "ways": 533
+      "ways": 532
     },
     {
       "id": "regional|rmv;vrn|re60",
@@ -6507,7 +6507,7 @@
       "operator": "DB Regio AG Mitte",
       "network": "RMV",
       "stops": 25,
-      "ways": 524
+      "ways": 523
     },
     {
       "id": "regional|rmv|re55",
@@ -13586,8 +13586,8 @@
       "colourSource": "osm",
       "operator": "Leipziger Verkehrsbetriebe",
       "network": "MDV",
-      "stops": 115,
-      "ways": 240
+      "stops": 110,
+      "ways": 220
     },
     {
       "id": "tram|mdv|10",
@@ -13682,8 +13682,8 @@
       "colourSource": "osm",
       "operator": "HAVAG",
       "network": "MDV",
-      "stops": 123,
-      "ways": 227
+      "stops": 140,
+      "ways": 242
     },
     {
       "id": "tram|mdv|3",
@@ -13694,8 +13694,8 @@
       "colourSource": "osm",
       "operator": "Leipziger Verkehrsbetriebe",
       "network": "MDV",
-      "stops": 121,
-      "ways": 242
+      "stops": 118,
+      "ways": 233
     },
     {
       "id": "tram|mdv|39",
@@ -13718,8 +13718,8 @@
       "colourSource": "osm",
       "operator": "Leipziger Verkehrsbetriebe",
       "network": "MDV",
-      "stops": 71,
-      "ways": 156
+      "stops": 68,
+      "ways": 147
     },
     {
       "id": "tram|mdv|3e/16",
@@ -13736,14 +13736,26 @@
     {
       "id": "tram|mdv|4",
       "ref": "4",
-      "name": "Naunhofer Straße – Hauptbahnhof > Linie 9",
+      "name": "Naunhofer Straße – Gohlis, Landsberger Straße über Westplatz",
       "mode": "tram",
       "colour": "#0e4094",
       "colourSource": "osm",
       "operator": "Leipziger Verkehrsbetriebe",
       "network": "MDV",
-      "stops": 66,
-      "ways": 185
+      "stops": 75,
+      "ways": 227
+    },
+    {
+      "id": "tram|mdv|4e",
+      "ref": "4E",
+      "name": "Tram 4E: Goerdelerring – Riebeckstraße/Stötteritzer Straße",
+      "mode": "tram",
+      "colour": "#0e4094",
+      "colourSource": "osm",
+      "operator": "Leipziger Verkehrsbetriebe",
+      "network": "MDV",
+      "stops": 17,
+      "ways": 56
     },
     {
       "id": "tram|mdv|5",
@@ -14499,7 +14511,7 @@
       "operator": "Mainzer Verkehrsgesellschaft",
       "network": "RMV",
       "stops": 70,
-      "ways": 375
+      "ways": 377
     },
     {
       "id": "tram|rmv|52",
@@ -14511,7 +14523,7 @@
       "operator": "Mainzer Verkehrsgesellschaft",
       "network": "RMV",
       "stops": 33,
-      "ways": 164
+      "ways": 166
     },
     {
       "id": "tram|rmv|53",
@@ -14523,7 +14535,7 @@
       "operator": "Mainzer Verkehrsgesellschaft",
       "network": "RMV",
       "stops": 60,
-      "ways": 377
+      "ways": 379
     },
     {
       "id": "tram|rmv|59",
@@ -14535,7 +14547,7 @@
       "operator": "Mainzer Verkehrsgesellschaft",
       "network": "RMV",
       "stops": 23,
-      "ways": 120
+      "ways": 122
     },
     {
       "id": "tram|rmv|6",
