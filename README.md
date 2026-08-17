@@ -23,7 +23,9 @@ GitHub Pages and rebuilt nightly.
   current view get a row, and the number beside each is how many of them are in
   view — not a national total that says nothing about where you are looking.
   Switching a mode off hides its lines *and* its stops, and keeps its row so it
-  can come back.
+  can come back. A row you have just ticked is held open until you move the map,
+  even where that mode runs nowhere near the view — a toggle that deleted the
+  row it was made on could not be undone.
 - **Full-screen map.** A button on the map hides the whole sidebar so the map
   fills the window — the difference between usable and unusable on a phone — and
   a second one goes to browser fullscreen. On narrow screens the sidebar is a
@@ -124,6 +126,25 @@ cp data/lines.json public/lines.json
 
 npm run dev                     # http://localhost:5173
 ```
+
+## Checking the deployed map
+
+`e2e/` drives a real browser against a real deployment — the published site by
+default — and covers the legend, which is the fiddliest part of the interface
+because it is scoped to the view. It has its own `package.json` so the nightly
+build never installs a browser to build tiles.
+
+```bash
+npm --prefix e2e install
+npx playwright install chromium     # once, unless a browser is already present
+
+node e2e/legend.mjs                                # https://jnslmk.github.io/OpenRailTransitmap/
+node e2e/legend.mjs --url http://127.0.0.1:5173/   # a local dev server
+node e2e/legend.mjs --headed                       # watch it run
+```
+
+A local run needs tiles, which the pipeline builds; the quickest way to get
+them without running it is to copy the deployed ones into `public/`.
 
 ## What is committed
 

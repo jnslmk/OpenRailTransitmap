@@ -1,0 +1,13 @@
+{
+  "name": "openrailtransitmap-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser checks, run against a deployment rather than a bundle. Kept out of the site's own package.json so the nightly build never installs a browser.",
+  "scripts": {
+    "test": "node legend.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}

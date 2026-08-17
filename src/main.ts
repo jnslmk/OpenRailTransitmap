@@ -10,6 +10,7 @@ import { readState, writeState, type ViewState, type ChromeMode } from './state.
 import { t } from './strings.ts';
 import {
   renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle, setVisibleModes,
+  unpinModes,
 } from './ui.ts';
 import { ChromeToggleControl, labelControls } from './controls.ts';
 import './styles.css';
@@ -263,6 +264,8 @@ async function main() {
     const c = map.getCenter();
     state.center = [c.lng, c.lat];
     state.zoom = map.getZoom();
+    // A legend row held open by a toggle belongs to the view it was toggled in.
+    unpinModes();
     persist();
   });
 
@@ -273,6 +276,13 @@ async function main() {
     state,
     onToggleMode: (mode: Mode, on: boolean) => {
       if (on) state.modes.add(mode); else state.modes.delete(mode);
+      // Everything but the selected line paints dimmed, so a selection whose
+      // own mode has just been switched off would leave the map greyed out
+      // with nothing lit. Drop it with the mode that carried it.
+      if (!on && state.selected && byId.get(state.selected)?.mode === mode) {
+        state.selected = null;
+        applySelection();
+      }
       applyFilters();
     },
     onOperator: (op) => { state.operator = op; applyFilters(); },
