@@ -7,7 +7,7 @@ export interface Strings {
   basemap: string; baseLnvg: string; baseOsm: string; stations: string;
   lines: string; servedBy: string; close: string; clearSelection: string;
   network: string; legend: string; noLinesInView: string;
-  interchange: string; station: string; reset: string;
+  interchange: string; station: string;
   hideChrome: string; showChrome: string;
   collapsePanel: string; expandPanel: string; panelPeek: string;
   fullscreen: string; exitFullscreen: string;
@@ -47,7 +47,6 @@ const STRINGS: Strings = {
   noLinesInView: 'No lines in view',
   interchange: 'Interchange',
   station: 'Station',
-  reset: 'Reset view',
   hideChrome: 'Hide panel',
   showChrome: 'Show panel',
   collapsePanel: 'Collapse panel',

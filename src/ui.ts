@@ -17,7 +17,6 @@ export interface ChromeOptions {
   onToggleSheet: () => void;
   onSelect: (lineId: string) => void;
   onFlyToStation: (lngLat: [number, number]) => void;
-  onReset: () => void;
   searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
 }
 
@@ -238,18 +237,6 @@ function draw() {
 
   root.appendChild(sheetHandle());
 
-  // --- header ---------------------------------------------------------------
-  const header = el('header', 'panel');
-  header.appendChild(el('p', 'meta',
-    `${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}`));
-
-  const headRow = el('div', 'row');
-  const reset = el('button', 'chip', s.reset);
-  reset.onclick = () => opts.onReset();
-  headRow.appendChild(reset);
-  header.appendChild(headRow);
-  root.appendChild(header);
-
   // --- search ---------------------------------------------------------------
   const searchBox = el('div', 'panel');
   const input = el('input', 'search');
@@ -313,6 +300,7 @@ function draw() {
   root.appendChild(linesBox);
 
   const footer = el('footer', 'panel attrib', `
+    <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
     <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>
     <span class="live-attrib" hidden>${s.liveAttribution}</span>`);

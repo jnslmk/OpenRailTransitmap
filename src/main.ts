@@ -390,7 +390,6 @@ async function main() {
       if (l) setStatus(`${l.ref} — ${l.name}`);
     },
     onFlyToStation: (lngLat) => map.flyTo({ center: lngLat, zoom: 12 }),
-    onReset: () => map.flyTo({ center: initial.center, zoom: initial.zoom }),
     searchStations: (q) => searchStations(map, q),
   });
 
