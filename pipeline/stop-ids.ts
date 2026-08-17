@@ -158,8 +158,11 @@ const AMBIGUOUS_MARKER = '#ambiguous';
  *      out of its own coordinate search by the addresses around it.
  *   4  + abbreviation-aware name matching (see `tokensMatch`), for the feed
  *      names that shorten what OSM spells out in full.
+ *   5  + an exact-name tier in `bestMatch`, town-prefix-tolerant duplicate
+ *      collapsing, and a name comparison that survives a station called
+ *      nothing but "Hauptbahnhof".
  */
-const RESOLVER_VERSION = 4;
+const RESOLVER_VERSION = 5;
 
 // osmId -> MOTIS stop id, '' = confirmed no match, AMBIGUOUS_MARKER = see T1-8 below.
 type Cache = Record<string, string>;
@@ -268,15 +271,32 @@ async function fetchJson(url: string): Promise<unknown> {
 
 const UMLAUT: Record<string, string> = { ü: 'ue', ö: 'oe', ä: 'ae', ß: 'ss' };
 
-function normaliseName(raw: string): string {
+/**
+ * `keepStationWords` retains "Hauptbahnhof"/"Hbf"/"Bahnhof"/"Bf" instead of
+ * stripping them. Stripping is what lets "Bremen Hbf" and "Bremen
+ * Hauptbahnhof" compare equal, but a name built from nothing else - OSM has
+ * 43 of them, "Hauptbahnhof", "Hauptbahnhof (tief)", "Hauptbahnhof (U)",
+ * usually the tram or U-Bahn stop outside the main station - strips down to
+ * the empty string, which matches nothing at all. Not one resolved station in
+ * the cache normalises to empty: that is what a guaranteed-fail path looks
+ * like from the outside. See `namesMatch` for when the flag is set.
+ */
+function normaliseName(raw: string, keepStationWords = false): string {
   let s = raw.replace(/\([^)]*\)/g, ' ').toLowerCase(); // "(b Wunstorf)" style suffixes
   s = s.replace(/[üöäß]/g, (c) => UMLAUT[c]);
   s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // any remaining diacritics
-  s = s
-    .replace(/\bhauptbahnhof\b/g, ' ')
-    .replace(/\bhbf\.?\b/g, ' ')
-    .replace(/\bbahnhof\b/g, ' ')
-    .replace(/\bbf\.?\b/g, ' ');
+  if (keepStationWords) {
+    // Kept, but spelled one way: the point of the fallback is to compare
+    // "Hauptbahnhof" against "Bielefeld Hbf", which only works if the two
+    // spellings of the same word survive as the same token.
+    s = s.replace(/\bhbf\.?\b/g, 'hauptbahnhof').replace(/\bbf\.?\b/g, 'bahnhof');
+  } else {
+    s = s
+      .replace(/\bhauptbahnhof\b/g, ' ')
+      .replace(/\bhbf\.?\b/g, ' ')
+      .replace(/\bbahnhof\b/g, ' ')
+      .replace(/\bbf\.?\b/g, ' ');
+  }
   return s.replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
@@ -312,8 +332,33 @@ function tokensMatch(station: string[], candidate: string[]): boolean {
   return false;
 }
 
-function namesMatch(a: string, b: string): boolean {
+/**
+ * Do the two names compare equal outright? Kept separate from the looser
+ * tests in `namesMatch` because `bestMatch` ranks by it: an exact hit beats
+ * any number of merely plausible neighbours.
+ */
+export function namesEqual(a: string, b: string): boolean {
+  const [na, nb] = comparableNames(a, b);
+  return !!na && na === nb;
+}
+
+/**
+ * The pair of normalised forms to compare, stripping station words unless
+ * that would empty one side out. "Hauptbahnhof" vs "Darmstadt Hauptbahnhof"
+ * strips to "" vs "darmstadt" - two names with nothing in common where the
+ * unstripped pair, "hauptbahnhof" vs "darmstadt hauptbahnhof", is an obvious
+ * containment match. Both sides have to switch together: comparing a stripped
+ * name against an unstripped one puts the very word in question on one side
+ * only.
+ */
+function comparableNames(a: string, b: string): [string, string] {
   const na = normaliseName(a), nb = normaliseName(b);
+  if (na && nb) return [na, nb];
+  return [normaliseName(a, true), normaliseName(b, true)];
+}
+
+export function namesMatch(a: string, b: string): boolean {
+  const [na, nb] = comparableNames(a, b);
   if (!na || !nb) return false;
   if (na === nb) return true;
   // Feeds sometimes qualify a name with its town or drop/add a suffix;
@@ -326,6 +371,24 @@ function namesMatch(a: string, b: string): boolean {
 // ---------------------------------------------------------------------------
 // Geo + candidate selection
 // ---------------------------------------------------------------------------
+
+/**
+ * Are two candidate names the same stop name, for the purpose of collapsing
+ * feed duplicates? Byte equality of the normalised form is not enough,
+ * because the duplicate that needs collapsing is usually the one feed that
+ * prefixes the town: "Forchheim (b Karlsruhe)" from de-KVV and "Rheinstetten,
+ * Forchheim (b Karlsruhe)" from de-amarillo-bw are one stop 22 m across, and
+ * left uncollapsed they are two rivals inside the ambiguity margin - so the
+ * station gets no id at all. Both names are already normalised here.
+ *
+ * Only ever consulted together with DUPLICATE_DISTANCE_M (20 m), which is
+ * what keeps the town-prefix skip from merging two genuinely different stops.
+ */
+function sameStopName(a: string, b: string): boolean {
+  if (a === b) return true;
+  const ta = a.split(' '), tb = b.split(' ');
+  return tokensMatch(ta, tb) || tokensMatch(tb, ta);
+}
 
 /** Equirectangular approximation - accurate enough at a 500 m radius. */
 function metres(aLon: number, aLat: number, bLon: number, bLat: number): number {
@@ -358,17 +421,35 @@ interface Candidate {
  */
 type MatchResult = { id: string } | { ambiguous: true } | null;
 
-function bestMatch(candidates: Candidate[], station: StationInput): MatchResult {
+export function bestMatch(candidates: Candidate[], station: StationInput): MatchResult {
   interface Match { id: string; d: number; name: string; lon: number; lat: number; }
-  const matches: Match[] = [];
+  const all: (Match & { exact: boolean })[] = [];
   for (const c of candidates) {
     if (c.type !== 'STOP') continue;
     const d = metres(c.lon, c.lat, station.lon, station.lat);
     if (d > MAX_DISTANCE_M) continue;
     if (!namesMatch(c.name, station.name)) continue;
-    matches.push({ id: c.id, d, name: normaliseName(c.name), lon: c.lon, lat: c.lat });
+    all.push({
+      id: c.id, d, name: normaliseName(c.name), lon: c.lon, lat: c.lat,
+      exact: namesEqual(c.name, station.name),
+    });
   }
-  if (matches.length === 0) return null;
+  if (all.length === 0) return null;
+
+  // An exact name beats a merely plausible one, and once any candidate is
+  // exact the others stop counting towards ambiguity. Without this tier the
+  // loose tests below turn a clean hit into a decline: around "Sondern" (the
+  // station) sit "Sondern Kirche", "Sondern Diehlberg" and "Sondern
+  // Seebahnhof", each of which contains the station's whole name and so
+  // validates, and the resulting crowd of rivals within AMBIGUITY_MARGIN_M
+  // buries "Sondern Bf" 54 m away - an exact match on the normalised form.
+  // Sampling put this shape behind 8 of 10 ambiguous verdicts.
+  //
+  // A tie between two *exact* names is still a genuine ambiguity and is still
+  // declined below: Torgau really does have a station and a bus stop of that
+  // name, and picking one would be a guess.
+  const exact = all.filter((m) => m.exact);
+  const matches: Match[] = exact.length ? exact : all;
 
   // Collapse feed duplicates (see file header) before judging ambiguity:
   // group candidates that share a normalised name AND sit within
@@ -410,7 +491,7 @@ function bestMatch(candidates: Candidate[], station: StationInput): MatchResult 
   for (let i = 0; i < matches.length; i++) {
     for (let j = i + 1; j < matches.length; j++) {
       if (
-        matches[i].name === matches[j].name
+        sameStopName(matches[i].name, matches[j].name)
         && metres(matches[i].lon, matches[i].lat, matches[j].lon, matches[j].lat) <= DUPLICATE_DISTANCE_M
       ) union(i, j);
     }

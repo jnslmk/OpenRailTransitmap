@@ -16,7 +16,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx 'pipeline/*.test.ts'"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.14",
