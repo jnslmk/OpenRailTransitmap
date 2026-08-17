@@ -161,8 +161,13 @@ const AMBIGUOUS_MARKER = '#ambiguous';
  *   5  + an exact-name tier in `bestMatch`, town-prefix-tolerant duplicate
  *      collapsing, and a name comparison that survives a station called
  *      nothing but "Hauptbahnhof".
+ *   6  + a spatial sweep (`/map/stops`, see `lookup`) as the primary candidate
+ *      source, ahead of the geocoder, which is what finally resolves the
+ *      stations the geocoder could only decline as ambiguous: it also returns
+ *      unserved parent and stop-area records that tie with the real stop,
+ *      and the sweep does not list them.
  */
-const RESOLVER_VERSION = 5;
+const RESOLVER_VERSION = 6;
 
 // osmId -> MOTIS stop id, '' = confirmed no match, AMBIGUOUS_MARKER = see T1-8 below.
 type Cache = Record<string, string>;
@@ -545,36 +550,218 @@ function locality(candidates: Candidate[]): string | null {
 }
 
 /**
- * Geocode-by-name first (best hit rate - see report). If that alone doesn't
- * produce a clean single match (nothing found, or an unresolved ambiguity),
- * also try reverse-geocode by coordinate and re-run the match over the
- * *union* of both candidate lists - a station missing from one search or
- * looking ambiguous in isolation may be disambiguated by candidates only the
- * other search surfaces. Both lists are validated identically.
+ * One element of a `/map/stops` response. A different shape from the
+ * geocoder's `Candidate`: the id arrives as `stopId` rather than `id`, and
+ * there is no `type` field at all - see `boxCandidates` for the reconciliation
+ * and why it happens here rather than in `bestMatch`.
+ */
+export interface MapStop { stopId: string; name: string; lat: number; lon: number; modes?: string[] }
+
+/**
+ * The `min`/`max` query pair for a box centred on the station, sized so the
+ * MAX_DISTANCE_M disc that `bestMatch` enforces is fully inscribed in it: a
+ * half-extent of MAX_DISTANCE_M on each axis puts every point within
+ * MAX_DISTANCE_M of the station inside the box, whatever the bearing. The
+ * corners reach ~1.41x that and so bring in some stops that are too far away,
+ * which costs nothing - `bestMatch` re-checks the distance and drops them.
  *
- * Every call passes `type=STOP`. A candidate of any other type is thrown out
- * by `bestMatch` anyway, and without the filter a response spends its ten
- * (five, for reverse-geocode) slots on whatever POI happens to share the name
- * or the pavement: unfiltered, the coordinate search at Braunschweig's
- * "Botanischer Garten" returns four addresses and a bakery, and the stop 12 m
- * away never appears at all. Filtered, that same call returns the five
- * nearest *stops* in distance order - which is what this function has wanted
- * from it all along.
+ * Sizing the box off MAX_DISTANCE_M rather than a constant of its own is
+ * deliberate: the two must not drift apart. A box smaller than the match
+ * radius would silently hide candidates the matcher would have accepted, which
+ * looks exactly like "MOTIS has no stop here" and would be cached as a
+ * permanent negative.
+ *
+ * The longitude term uses the same equirectangular cos(lat) scaling as
+ * `metres`, so the box and the distance filter agree about what 500 m is. The
+ * cos floor binds above 89.43° of latitude - within ~64 km of a pole - which
+ * is nowhere this project has stations; it is there so the expression cannot
+ * divide by ~0.
+ */
+export function stopsBox(station: StationInput): string {
+  const dLat = MAX_DISTANCE_M / 111320;
+  const dLon = MAX_DISTANCE_M / (111320 * Math.max(Math.cos((station.lat * Math.PI) / 180), 0.01));
+  return `min=${station.lat - dLat},${station.lon - dLon}`
+    + `&max=${station.lat + dLat},${station.lon + dLon}`;
+}
+
+/**
+ * Re-shapes `/map/stops` results into the `Candidate` shape `bestMatch` reads.
+ *
+ * Done here, at the fetch boundary, rather than by teaching `bestMatch` a
+ * second input shape: the matcher is the part of this file that must not
+ * wobble - its thresholds are justified against measured distances and its
+ * verdicts are what the committed cache is made of - so the endpoint that
+ * happens to spell the id `stopId` is the one that adapts.
+ *
+ * `type: 'STOP'` is stamped on rather than read, because there is nothing to
+ * read: `/map/stops` returns transit stops exclusively (every observed element
+ * carries `vertexType: "TRANSIT"`), so unlike the geocoder it has no addresses
+ * or POIs to filter out and `bestMatch`'s `type !== 'STOP'` guard has no work
+ * to do. What `type=STOP` did for the geocoder is done for this endpoint by
+ * `grouped=true` instead - see `lookup`.
+ *
+ * `modes` is dropped, because nothing here matches on mode yet; it is left out
+ * rather than carried unused. Note it is not unique to this endpoint - the
+ * geocoder returns `modes` too - so a future mode-aware matcher would have to
+ * plumb it through both paths, not just this one, to behave consistently.
+ */
+export function boxCandidates(stops: MapStop[]): Candidate[] {
+  return stops.map((s) => ({ type: 'STOP', id: s.stopId, name: s.name, lat: s.lat, lon: s.lon }));
+}
+
+/**
+ * Four searches, tried in order, each one only reached because the one before
+ * it didn't produce a clean single id. Every list is validated by the same
+ * `bestMatch`, so "clean" means the same thing at every step.
+ *
+ * ## 1. The spatial sweep - the primary source
+ * `/map/stops` returns *every* transit stop inside a bounding box, so asking
+ * it for a box around the station's own coordinates yields the candidate set
+ * this resolver has always actually wanted: the stops that are near enough to
+ * be this station, rather than the stops that score well against its name.
+ *
+ * The gain, though, is not the one it is tempting to assume, and the wrong
+ * explanation is easy to reach for: it is *not* that the box is small enough
+ * to exclude far-away namesakes. The records it excludes are not far away.
+ * "Rammingen (Württ)" is cached ambiguous under v5 because the geocoder also
+ * returns `ch-opentransportdataswiss26_Parent8029711`, an exact name match
+ * that sits **6 m** from the OSM node - well inside any box worth drawing;
+ * "Lette (Kr Coesfeld)" has a Dutch `nl-OpenOV_stoparea:17880` at **23 m**.
+ * Nor are they in another country: both are `country=DE`, German locations
+ * that a foreign operator's feed happens to publish an entry for.
+ *
+ * What excludes them is that the two endpoints index different sets of stops.
+ * Every one of these records carries `modes: []` - no route calls there, they
+ * are unserved parent/stop-area rows - and `/map/stops` does not return them
+ * at any box size (checked out to ~11 km around both), while `/geocode` does.
+ * However such a record matches, it ends up tying with the real stop inside
+ * AMBIGUITY_MARGIN_M, and the station is declined as ambiguous and
+ * blackholed. Both routes in are real: the two above are exact matches, so
+ * they tie inside `bestMatch`'s exact tier; the third one below - an
+ * OSM-derived relation, "Freiburg im Breisgau, P+R Moosweiher" against an OSM
+ * "Moosweiher" - only matches by containment, so it ties through the general
+ * path instead. The sweep never sees any of them, so the tie never happens.
+ *
+ * Cross-tabulating 48 stations' worth of in-box geocoder hits against the
+ * sweep: 84 served stops, all present in the sweep; 3 unserved records, none
+ * present; no exception either way. That is the whole basis for the claim -
+ * it is a consistent observation, not something MOTIS documents, so treat
+ * "served" as a description of what was measured rather than a guarantee.
+ * Measured over 60 stations sitting on AMBIGUOUS_MARKER, the sweep clears
+ * this shape for about one in twelve.
+ *
+ * `grouped=true` is what `type=STOP` is to the geocoder: the parameter without
+ * which the response is the wrong thing. Ungrouped, `/map/stops` is a
+ * *leaf-level* view - it returns each platform and bus bay of a station as its
+ * own entry and omits the station itself, so at Idstein (Taunus) the box holds
+ * 14 entries, seven of them a separate "Idstein Bahnhof" (rail tracks 1-3, bus
+ * bays A-D), and not one of them is `de-DELFI_de:06439:11318`, the id the
+ * geocoder returns and the cache is made of. Worse, `parentId` is no help as a
+ * filter: at that same station the rail platforms carry one and the bus bays
+ * don't, so filtering on it deletes the platforms and leaves a bus bay to win.
+ * Grouped, the box holds five stops, one of them exactly that id.
+ *
+ * `grouped=true` collapses the feeds that publish a parent onto it; it does
+ * not promise that every id it returns is station-level. A feed that ships
+ * unparented bays gets them back unchanged - at Berlin Hbf the winning
+ * candidate is still a platform-suffixed id from a foreign feed - so read the
+ * parameter as "don't split a station across its platforms where the feed says
+ * how", not as a guarantee about the shape of the result.
+ *
+ * The sweep's candidates are matched on their own, *not* merged into the
+ * geocoder pool below. Merging would re-admit the very records the sweep
+ * excludes, and hand back the ambiguity it just resolved.
+ *
+ * ## 2-4. The geocoder - the fallback
+ * The sweep only knows about stops that are *there*; it can't rescue a station
+ * whose stop MOTIS places outside the box, and it says nothing at all where
+ * the box is empty. So the previous generation's three searches are kept
+ * behind it, unchanged and still earning their place:
+ *
+ * Geocode-by-name (2) had the best hit rate of the three on its own, and still
+ * resolves the stations whose box comes back empty or unmatched. If that alone
+ * doesn't produce a clean single match, reverse-geocode by coordinate (3) and
+ * re-run the match over the *union* of both lists - a station missing from one
+ * search or looking ambiguous in isolation may be disambiguated by candidates
+ * only the other surfaces.
+ *
+ * Both pass `type=STOP`. A candidate of any other type is thrown out by
+ * `bestMatch` anyway, and without the filter a response spends its ten (five,
+ * for reverse-geocode) slots on whatever POI happens to share the name or the
+ * pavement: unfiltered, the coordinate search at Braunschweig's "Botanischer
+ * Garten" returns four addresses and a bakery, and the stop 12 m away never
+ * appears at all.
  *
  * Failing that, geocode once more with the town name in front of the station
- * name. Neither search above can find an urban stop with a generic name: a
- * bare "Rathaus" is a name a hundred German towns use, and the geocoder
- * answers with its ten globally best-scoring "Rathaus" stops - Stuttgart,
- * Hamburg, Wien - none of them this one, and no location-bias parameter moves
- * it (`place`/`placeBias` were both measured against api.transitous.org and
- * neither surfaced the local stop). The coordinate search only rescues the
- * ones that sit within its handful of nearest stops. But
- * "Braunschweig Rathaus" returns the right stop as its first hit, and the
- * town name is free - it's already sitting in the `areas` of the
- * reverse-geocode results just fetched. Skipped when the station name already
- * carries its town, since that query is the one that already came back empty.
+ * name (4). This is the one search the sweep does *not* subsume, because it
+ * fixes the opposite problem: a stop whose MOTIS coordinates put it outside
+ * the box, whose bare name is too generic to geocode ("Rathaus" is a name a
+ * hundred German towns use, and the geocoder answers with its ten globally
+ * best-scoring ones - Stuttgart, Hamburg, Wien - none of them this one; no
+ * location-bias parameter moves it, `place`/`placeBias` were both measured
+ * against api.transitous.org and neither surfaced the local stop). But
+ * "Braunschweig Rathaus" returns the right stop as its first hit, and the town
+ * name is free - it's already sitting in the `areas` of the reverse-geocode
+ * results just fetched. Skipped when the station name already carries its
+ * town, since that query is the one that already came back empty.
+ *
+ * ## Why a verdict from the sweep is final, either way
+ * The sweep runs first and, whenever it reaches a verdict at all, that verdict
+ * is returned - an `{ambiguous}` from the box is *not* re-litigated by the
+ * geocoder below, and the fallbacks are not even requested.
+ *
+ * The asymmetric alternative is the tempting one, and it is wrong: letting a
+ * later `{id}` overrule the sweep's `{ambiguous}` would trust the source with
+ * the *narrower local view* on a question that is purely local - "are there
+ * two plausible stops near this station?". The sweep answers it from every
+ * served stop in the box, uncapped; the geocoder answers it from whichever of
+ * its ten globally-ranked hits (five for reverse-geocode) happen to fall
+ * nearby. Measured over 22 stations, the sweep returned 6.0 in-box stops on
+ * average against 4.2 distinct in-box stops from the two geocoder calls
+ * combined, and the geocoder saw more than the sweep at only 1 of the 22.
+ * The margin is smaller than the caps suggest, but it points one way: a
+ * geocoder `{id}` where the sweep saw a tie is more likely to mean the
+ * geocoder never received the rival than that the rival isn't there - and
+ * converting that into a confident, permanent id is the failure the
+ * AMBIGUITY_MARGIN_M note above calls worse than showing nothing.
+ *
+ * The reverse direction matters just as much and falls out of the same rule:
+ * a station the sweep found two plausible stops for, and the geocoder then
+ * finds none for, must not be written off as `''` on the geocoder's silence -
+ * `''` is never re-probed, while AMBIGUOUS_MARKER stays eligible (see the file
+ * header). Returning the sweep's verdict immediately gets both directions
+ * right without a reconciliation step.
+ *
+ * This is a deliberate trade, not a free win. `grouped=true` only collapses
+ * feeds that publish a parent, so a feed shipping several unparented bays
+ * under one name more than DUPLICATE_DISTANCE_M apart can make the sweep
+ * ambiguous where the geocoder would have answered cleanly; those stations now
+ * stay ambiguous. That is the safe direction to err in - ambiguity is
+ * re-probeable, a wrong id is not - and it appears to be rare: of 60 stations
+ * already sitting on AMBIGUOUS_MARKER the sweep returned `{ambiguous}` for 54,
+ * and running the full geocoder chain behind each of them produced a clean
+ * `{id}` for none.
+ *
+ * ## Cost
+ * This adds one request to every uncached lookup, and only the first of the
+ * four is new - a station the sweep resolves *or* declines outright now costs
+ * *one* request where it used to cost one to three. Only a station the sweep
+ * has no opinion on (an empty or unmatched box) costs one more than before.
+ * Budget accounting is unaffected either way: `attempt` spends one unit per
+ * station, not per request.
  */
 async function lookup(station: StationInput): Promise<MatchResult> {
+  // grouped=true: collapse each feed's platforms onto the parent it publishes,
+  // where it publishes one - see above.
+  const boxed = await fetchJson(
+    `${API}/map/stops?${stopsBox(station)}&grouped=true`,
+  ) as MapStop[];
+  // Any verdict from the box is final - an id *and* an ambiguity. Only `null`
+  // ("nothing in the box matched") falls through to the geocoder.
+  const spatial = bestMatch(boxCandidates(boxed), station);
+  if (spatial) return spatial;
+
+  await sleep(THROTTLE_MS);
   const byName = await fetchJson(
     `${API}/geocode?text=${encodeURIComponent(station.name)}&type=STOP`,
   ) as Candidate[];
@@ -589,6 +776,9 @@ async function lookup(station: StationInput): Promise<MatchResult> {
   const merged = bestMatch(pool, station);
   if (merged && 'id' in merged) return merged;
 
+  // Reached only when the sweep returned `null`, so there is no sweep verdict
+  // left to reconcile against: whatever the geocoder concludes here is the
+  // answer, exactly as it was before the sweep existed.
   const town = locality(nearby);
   if (!town || normaliseName(station.name).includes(normaliseName(town))) return merged;
 
