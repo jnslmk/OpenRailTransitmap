@@ -10,7 +10,7 @@ import { readState, writeState, type ViewState, type ChromeMode } from './state.
 import { t } from './strings.ts';
 import {
   renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle, setVisibleModes,
-  unpinModes, setLiveAttributionUsed,
+  unpinModes, setLiveAttributionUsed, setVisibleLines,
 } from './ui.ts';
 import { ChromeToggleControl, labelControls } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
@@ -205,13 +205,17 @@ async function main() {
 
     // Count distinct lines, not features: one line is many tile segments.
     const lines = new Map<Mode, Set<string>>();
+    const ids = new Set<string>();
     for (const f of map.queryRenderedFeatures({ layers })) {
       const mode = f.properties.mode as Mode;
+      const id = String(f.properties.line);
       const set = lines.get(mode) ?? new Set<string>();
-      set.add(String(f.properties.line));
+      set.add(id);
       lines.set(mode, set);
+      ids.add(id);
     }
     setVisibleModes(new Map([...lines].map(([mode, set]) => [mode, set.size])));
+    setVisibleLines(ids);
   }
 
   map.on('idle', refreshLegend);

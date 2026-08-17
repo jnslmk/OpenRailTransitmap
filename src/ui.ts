@@ -159,6 +159,19 @@ export function setVisibleModes(counts: Map<Mode, number>) {
   syncModes();
 }
 
+/**
+ * Line ids drawn in the current view, or null until the map has first settled.
+ * The index is scoped to the view for the same reason the mode rows are: it
+ * answers "what am I looking at", and a national list of every line the country
+ * runs cannot.
+ */
+let inViewLines: Set<string> | null = null;
+
+export function setVisibleLines(ids: Set<string>) {
+  inViewLines = ids;
+  fillLines();
+}
+
 /** Called when the map has moved: the pins only outlive the view they were set in. */
 export function unpinModes() {
   pinnedModes.clear();
@@ -326,9 +339,10 @@ export function setLiveAttributionUsed() {
 }
 
 /**
- * The line index lists what the current filters let through, so it is refilled
- * whenever one of them changes - in place, because redrawing the whole sidebar
- * for a checkbox would take the checkbox's focus with it.
+ * The line index lists what the current filters let through *and* what the
+ * current view holds, so it is refilled whenever either changes - in place,
+ * because redrawing the whole sidebar for a checkbox would take the checkbox's
+ * focus with it.
  */
 let lineList: HTMLElement | null = null;
 
@@ -339,8 +353,12 @@ function fillLines() {
   const visible = registry.lines
     .filter((l) => state.modes.has(l.mode))
     .filter((l) => !state.operator || l.operator === state.operator)
+    // A selected line keeps its row after being panned off screen: that row
+    // carries the selection, and dropping it drops the way to clear it.
+    .filter((l) => !inViewLines || inViewLines.has(l.id) || state.selected === l.id)
     .sort(compareLines);
   for (const l of visible) lineList.appendChild(lineRow(l));
+  if (!visible.length) lineList.appendChild(el('p', 'muted', t().noLinesInView));
 }
 
 function lineRow(l: LineRecord): HTMLElement {
