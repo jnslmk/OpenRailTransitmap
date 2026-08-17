@@ -341,10 +341,14 @@ async function run(page) {
 // ---------------------------------------------------------------------------
 
 // PLAYWRIGHT_CHROMIUM lets a preinstalled browser stand in for the one the
-// installed Playwright build would otherwise download.
+// installed Playwright build would otherwise download. Chromium does not read
+// HTTPS_PROXY, so a network that only goes out through a proxy has to be told
+// about it here.
+const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy;
 const browser = await chromium.launch({
   headless: !HEADED,
   ...(process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {}),
+  ...(proxy ? { proxy: { server: proxy } } : {}),
 });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 await context.addInitScript(() => {
