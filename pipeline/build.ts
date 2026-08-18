@@ -22,6 +22,7 @@ import { resolveStopIds } from './stop-ids.ts';
 import {
   MODE_SPECS, fallbackColour, normaliseColour, type Mode,
 } from '../shared/lnvg.ts';
+import { chainWays, collapseParallelTracks, type Coord } from './lib/track.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const EXTRACT = `${WORK}/extract`;
@@ -166,73 +167,20 @@ function cleanName(tags: Record<string, string>): string {
 }
 
 // ---------------------------------------------------------------------------
-// Geometry helpers
-// ---------------------------------------------------------------------------
-
-type Coord = [number, number];
-const endpointKey = (c: Coord) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`;
-
-/**
- * Chain a set of ways into as few continuous linestrings as possible, flipping
- * ways where needed. Consistent orientation matters: MapLibre's `line-offset`
- * is perpendicular to the drawing direction, so a reversed way in a corridor
- * would push its line to the wrong side of the bundle.
- */
-function chainWays(wayIds: string[], geom: Map<string, Coord[]>): Coord[][] {
-  const pending = new Map<string, Coord[]>();
-  for (const id of wayIds) {
-    const g = geom.get(id);
-    if (g && g.length >= 2) pending.set(id, g);
-  }
-  if (pending.size === 0) return [];
-
-  // Index way ends so we can walk the corridor instead of scanning repeatedly.
-  const byEnd = new Map<string, string[]>();
-  const index = (k: string, id: string) => {
-    const list = byEnd.get(k);
-    if (list) list.push(id); else byEnd.set(k, [id]);
-  };
-  for (const [id, g] of pending) {
-    index(endpointKey(g[0]), id);
-    index(endpointKey(g[g.length - 1]), id);
-  }
-
-  const take = (key: string): { id: string; coords: Coord[] } | null => {
-    for (const id of byEnd.get(key) ?? []) {
-      const g = pending.get(id);
-      if (!g) continue;
-      pending.delete(id);
-      // Orient so the chain continues from `key`.
-      return { id, coords: endpointKey(g[0]) === key ? g : [...g].reverse() };
-    }
-    return null;
-  };
-
-  const chains: Coord[][] = [];
-  while (pending.size > 0) {
-    const [seedId, seedGeom] = pending.entries().next().value as [string, Coord[]];
-    pending.delete(seedId);
-    let chain = [...seedGeom];
-
-    // Extend forwards, then backwards from the seed.
-    for (;;) {
-      const next = take(endpointKey(chain[chain.length - 1]));
-      if (!next) break;
-      chain = chain.concat(next.coords.slice(1));
-    }
-    for (;;) {
-      const prev = take(endpointKey(chain[0]));
-      if (!prev) break;
-      chain = [...prev.coords].reverse().slice(0, -1).concat(chain);
-    }
-    chains.push(chain);
-  }
-  return chains;
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+
+/**
+ * How far apart the two tracks of one corridor may sit before they stop counting
+ * as the same corridor. Heavy rail spreads wider than a tram does - Berlin's S1
+ * is still drawn twice at 15 m and reads as one line at 20 - while a tram is held
+ * tighter on purpose, so that a pair of one-way streets a block apart stays two
+ * streets rather than collapsing into one. Past 20 m the collapse starts cutting
+ * through junction throats and leaving the line in pieces for little further gain.
+ */
+const TRACK_PAIR_M: Record<Mode, number> = {
+  tram: 15, subway: 20, suburban: 20, regional: 20, longdistance: 20,
+};
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
@@ -320,6 +268,17 @@ async function main() {
     }
   }
   console.log(`==> ${geom.size} way geometries`);
+
+  // Collapse the second track of every double-track corridor, so each line is
+  // drawn once rather than as two strokes a lane apart. Must run after geometry
+  // is loaded and before bundling, which keys on the surviving way ids.
+  let dropped = 0;
+  for (const line of lines.values()) {
+    const before = line.wayIds.length;
+    line.wayIds = collapseParallelTracks(line.wayIds, geom, TRACK_PAIR_M[line.mode]);
+    dropped += before - line.wayIds.length;
+  }
+  console.log(`==> ${dropped} second-track ways collapsed`);
 
   // --- bundling -------------------------------------------------------------
   // Ways carrying an identical set of lines become one segment; each line in
