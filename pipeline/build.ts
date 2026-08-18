@@ -352,8 +352,11 @@ async function main() {
           colour: line.colour,
           operator: line.operator,
           network: line.network,
-          // Centred so a bundle straddles the true alignment.
-          offset: i - (n - 1) / 2,
+          // Floored so every slot lands on an integer lattice: a change in
+          // bundle membership can never produce a half-pitch parity slide.
+          // Even-sized bundles lean half a pitch to one side of the true
+          // alignment instead of straddling it - an accepted trade-off.
+          offset: i - Math.floor((n - 1) / 2),
           bundle: n,
         },
       });
