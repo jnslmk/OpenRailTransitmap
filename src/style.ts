@@ -110,7 +110,11 @@ function routeLayers(): LayerSpecification[] {
         'source-layer': 'routes',
         minzoom: spec.minzoom,
         filter: ['==', ['get', 'mode'], mode],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        // Round caps: route features are emitted per bundle segment, so one
+        // logical line is drawn as many chains that meet end to end. Where two
+        // consecutive chains sit at the same offset, a butt cap leaves a
+        // hairline notch at the join, and round caps close it.
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': LNVG.white,
           'line-width': scaled(spec.weightPt, 2.1),
@@ -125,7 +129,7 @@ function routeLayers(): LayerSpecification[] {
         'source-layer': 'routes',
         minzoom: spec.minzoom,
         filter: ['==', ['get', 'mode'], mode],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ['get', 'colour'] as ExpressionSpecification,
           'line-width': scaled(spec.weightPt),
