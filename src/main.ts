@@ -10,10 +10,12 @@ import { readState, writeState, type ViewState, type ChromeMode } from './state.
 import { t } from './strings.ts';
 import {
   renderChrome, renderLinePanel, setStatus, compareLines, syncSheetHandle, setVisibleModes,
-  unpinModes, setLiveAttributionUsed, setVisibleLines,
+  unpinModes, setLiveAttributionUsed, setVisibleLines, setLinePunctuality,
+  setPunctualityAttributionUsed,
 } from './ui.ts';
 import { ChromeToggleControl, labelControls } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
+import { loadPunctuality } from './punctuality.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -123,7 +125,13 @@ async function main() {
     map.removeControl(attribution);
     attribution = new maplibregl.AttributionControl({
       compact: true,
-      customAttribution: [OSM_ATTRIBUTION, t().liveAttribution],
+      customAttribution: [
+        OSM_ATTRIBUTION,
+        t().liveAttribution,
+        // Rebuilding the control drops whatever it was showing, so a credit
+        // already earned has to be carried across rather than re-earned.
+        ...(punctualityAttributed ? [t().punctualityAttribution] : []),
+      ],
     });
     map.addControl(attribution, 'bottom-right');
     setLiveAttributionUsed();
@@ -140,9 +148,47 @@ async function main() {
       map.setPaintProperty(`route-${mode}-highlight`, 'line-opacity', highlightOpacity(state.selected));
     }
     map.setPaintProperty('route-badges', 'text-opacity', selectionOpacity(state.selected));
-    renderLinePanel(state.selected ? byId.get(state.selected) ?? null : null, {
-      onClose: () => select(null),
+    const line = state.selected ? byId.get(state.selected) ?? null : null;
+    renderLinePanel(line, { onClose: () => select(null) });
+    if (line) showPunctuality(line.id);
+  }
+
+  /**
+   * The score file is fetched on the first selection and cached by
+   * punctuality.ts, so this is a no-op read on every selection after it. The
+   * guard is against the first one: the panel may have moved on to another
+   * line - or closed - while the file was in flight, and a late response must
+   * not paint one line's record under another line's name.
+   */
+  function showPunctuality(lineId: string) {
+    loadPunctuality(BASE).then((file) => {
+      if (state.selected !== lineId) return;
+      const score = file?.lines[lineId] ?? null;
+      setLinePunctuality(lineId, score, file);
+      if (score) markPunctualityUsed();
     });
+  }
+
+  /**
+   * The delay data's CC BY 4.0 licence wants Deutsche Bahn credited on the
+   * map itself, not only in the sidebar - the same once-only swap the live
+   * departures credit does above, and for the same MapLibre reason.
+   */
+  let punctualityAttributed = false;
+  function markPunctualityUsed() {
+    if (punctualityAttributed) return;
+    punctualityAttributed = true;
+    setPunctualityAttributionUsed();
+    map.removeControl(attribution);
+    attribution = new maplibregl.AttributionControl({
+      compact: true,
+      customAttribution: [
+        OSM_ATTRIBUTION,
+        ...(liveAttributed ? [t().liveAttribution] : []),
+        t().punctualityAttribution,
+      ],
+    });
+    map.addControl(attribution, 'bottom-right');
   }
 
   function applyFilters() {

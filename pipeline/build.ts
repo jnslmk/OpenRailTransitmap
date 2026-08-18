@@ -514,6 +514,21 @@ async function main() {
   const servedCount = stationFeatures.filter((f) => f.properties.lineCount > 0).length;
   console.log(`==> ${stationFeatures.length} stations (${servedCount} with at least one line)`);
 
+  // The station list of every line, keyed by line id: the join key the
+  // punctuality pipeline needs, since DB's delay feed names a station but has
+  // no notion of which of the 22 lines called "S1" it belongs to (see
+  // pipeline/punctuality.ts). Committed rather than left in .work/ so that
+  // pipeline is a standalone run - it would otherwise need a 4 GB OSM extract
+  // and a full rebuild just to learn which stations a line calls at.
+  const lineStations = new Map<string, Set<string>>();
+  for (const st of stations) {
+    for (const id of st.served) {
+      const names = lineStations.get(id);
+      if (names) names.add(st.props.name);
+      else lineStations.set(id, new Set([st.props.name]));
+    }
+  }
+
   // --- write ----------------------------------------------------------------
   await writeFeatures(`${OUT}/routes.geojsonl`, features);
   await writeFeatures(`${OUT}/stations.geojsonl`, stationFeatures);
@@ -550,6 +565,14 @@ async function main() {
       lines: registry,
     }, null, 2) + '\n',
   );
+
+  // One line per line id: the file is ~1 MB, and a rebuild that moves a single
+  // route should show up in review as a single changed row, not a reflow.
+  const stationLists = [...lineStations.keys()]
+    .sort()
+    .map((id) => `  ${JSON.stringify(id)}: ${JSON.stringify([...lineStations.get(id)!].sort())}`)
+    .join(',\n');
+  writeFileSync(`${DATA}/line-stations.json`, `{\n${stationLists}\n}\n`);
 
   console.log('==> by mode:', byMode);
   console.log(`==> OSM colour coverage: ${tagged}/${registry.length} (${Math.round(100 * tagged / registry.length)}%)`);

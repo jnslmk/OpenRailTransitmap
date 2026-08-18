@@ -3,6 +3,9 @@
 import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import { t } from './strings.ts';
 import type { LineRecord, Registry } from './main.ts';
+import {
+  worstFirst, bands, formatMinutes, type LineScore, type PunctualityFile,
+} from './punctuality.ts';
 import type { ViewState } from './state.ts';
 
 export { compareLines };
@@ -316,10 +319,13 @@ function draw() {
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
     <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>
-    <span class="live-attrib" hidden>${s.liveAttribution}</span>`);
+    <span class="live-attrib" hidden>${s.liveAttribution}</span>
+    <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>`);
   root.appendChild(footer);
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
+  punctAttribEl = footer.querySelector('.punct-attrib');
+  punctAttribEl!.hidden = !punctualityUsed;
 }
 
 /**
@@ -336,6 +342,20 @@ export function setLiveAttributionUsed() {
   if (liveDataUsed) return;
   liveDataUsed = true;
   if (liveAttribEl) liveAttribEl.hidden = false;
+}
+
+/**
+ * The delay data is CC BY 4.0, which requires crediting Deutsche Bahn wherever
+ * it is shown - so the credit appears with the first score displayed and, like
+ * the Transitous one, stays for the rest of the session.
+ */
+let punctAttribEl: HTMLElement | null = null;
+let punctualityUsed = false;
+
+export function setPunctualityAttributionUsed() {
+  if (punctualityUsed) return;
+  punctualityUsed = true;
+  if (punctAttribEl) punctAttribEl.hidden = false;
 }
 
 /**
@@ -427,6 +447,137 @@ export function renderLinePanel(line: LineRecord | null, handlers: { onClose: ()
     table.append(el('dt', '', k), el('dd', '', v));
   }
   host.appendChild(table);
+  // Filled in by setLinePunctuality once the score file has loaded. Empty
+  // until then rather than showing a spinner: the panel's own content is
+  // already on screen and complete, and a placeholder for a section that may
+  // turn out not to exist for this line is worse than a section that appears.
+  host.appendChild(el('div', 'detail-punctuality'));
+}
+
+/**
+ * Add the punctuality section to the open line panel, or leave it empty when
+ * this line has no score.
+ *
+ * A line is unscored for ordinary reasons - it is a tram, it runs too rarely
+ * to measure, DB publishes no realtime at the stations it calls at - so the
+ * absence is stated once, plainly, and not explained away. `line` is passed
+ * back in so a score arriving after the rider has selected something else can
+ * be discarded rather than painted onto the wrong line.
+ */
+export function setLinePunctuality(
+  lineId: string, score: LineScore | null, meta: PunctualityFile | null,
+) {
+  const host = document.getElementById('detail')?.querySelector<HTMLElement>('.detail-punctuality');
+  if (!host || host.dataset.line === lineId) return;
+  host.dataset.line = lineId;
+  host.innerHTML = '';
+  if (!meta) return; // No score file at all - say nothing, not "no data".
+
+  const s = t();
+  const head = el('div', 'punct-head');
+  head.append(
+    el('h3', '', s.punctuality),
+    el('span', 'punct-window', s.punctualityWindow(meta.window.months, formatMonth(meta.window.to))),
+  );
+  host.appendChild(head);
+
+  if (!score) {
+    host.appendChild(el('p', 'muted small', s.noPunctuality));
+    return;
+  }
+
+  const { aggregate } = score;
+  const pct = Math.round(aggregate.onTime * 100);
+  const headline = el('div', 'punct-headline');
+  headline.append(el('span', 'punct-pct', `${pct}%`), el('span', 'punct-unit', s.onTimeShare));
+  host.appendChild(headline);
+
+  // The band bar, not a bell curve. Departure delay is zero-inflated with a
+  // hard floor and a long right tail - a normal curve fitted to its mean and
+  // standard deviation would put nearly a third of departures at a *negative*
+  // delay - so the shape is shown as the measured shares themselves.
+  const bar = el('div', 'punct-bands');
+  bar.title = s.onTimeExplainer(meta.onTimeThresholdMin);
+  for (const band of bands(score, meta.bucketEdges, meta.onTimeThresholdMin)) {
+    const seg = el('span', `punct-band punct-band-${band.key}`);
+    seg.style.width = `${band.share * 100}%`;
+    seg.title = `${s.band[band.key]} — ${(band.share * 100).toFixed(1)}%`;
+    bar.appendChild(seg);
+  }
+  host.appendChild(bar);
+
+  const legend = el('div', 'punct-legend');
+  for (const band of bands(score, meta.bucketEdges, meta.onTimeThresholdMin)) {
+    const item = el('span', 'punct-legend-item');
+    item.append(el('span', `punct-swatch punct-band-${band.key}`), el('span', '', s.band[band.key]));
+    legend.appendChild(item);
+  }
+  host.appendChild(legend);
+
+  // Median and 90th percentile rather than mean and standard deviation: the
+  // mean of this distribution sits at about its 70th percentile, so it is
+  // worse than the trip most riders actually take, and reporting it as
+  // "typical" is wrong in both directions at once.
+  const facts = el('dl', 'detail-meta');
+  const mins = (v: number) => s.minutesLate(formatMinutes(v, meta.bucketEdges));
+  facts.append(
+    el('dt', '', s.typicalDelay), el('dd', '', mins(aggregate.median)),
+    el('dt', '', s.oneInTen), el('dd', '', mins(aggregate.p90)),
+    el('dt', '', s.cancelRate), el('dd', '', `${(aggregate.cancelRate * 100).toFixed(1)}%`),
+  );
+  host.append(facts, el('p', 'punct-n muted small', s.departureCount(aggregate.n)));
+
+  const stations = worstFirst(score);
+  if (!stations.length) return;
+  host.appendChild(el('h4', 'punct-sub', s.byStation));
+  const list = el('div', 'punct-stations');
+
+  const header = el('div', 'punct-row punct-row-head');
+  header.append(
+    el('span', '', ''),
+    el('span', '', s.onTimeShare),
+    el('span', '', s.typicalShort),
+    el('span', '', s.p90Short),
+  );
+  list.appendChild(header);
+
+  for (const [name, st] of stations) {
+    const row = el('div', 'punct-row');
+    const share = el('span', 'punct-value', `${Math.round(st.onTime * 100)}%`);
+    // The on-time column carries the ramp the gauge used, so the list still
+    // scans as a red-to-green ranking now that the per-row bar is gone.
+    share.style.color = punctualityColour(st.onTime);
+    row.append(
+      el('span', 'punct-station', name),
+      share,
+      el('span', 'punct-value muted', formatMinutes(st.median, meta.bucketEdges)),
+      el('span', 'punct-value muted', formatMinutes(st.p90, meta.bucketEdges)),
+    );
+    row.title = `${name} — ${s.departureCount(st.n)}`;
+    list.appendChild(row);
+  }
+  host.appendChild(list);
+}
+
+/** "2026-07" as the month a rider reads, not as a key. */
+function formatMonth(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m) return ym;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en', {
+    month: 'short', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
+/**
+ * On-time share to a colour, ramped over 50%-100%. LNVG red at the bottom -
+ * the same attention colour the reference map gives its long-distance spines,
+ * and the one the departure board already uses for a delay - through amber to
+ * green.
+ */
+function punctualityColour(onTime: number): string {
+  const scaled = Math.min(1, Math.max(0, (onTime - 0.5) / 0.5));
+  const hue = Math.round(scaled * 120); // 0 red -> 120 green
+  return `hsl(${hue} 70% 42%)`;
 }
 
 export function setStatus(message: string) {

@@ -78,9 +78,13 @@ jobs:
       - name: Build tiles
         run: bash pipeline/tiles.sh
 
-      # The registry is small and diffable; the tiles are not committed at all.
-      - name: Publish line registry to the site
-        run: cp data/lines.json public/lines.json
+      # The registry and the punctuality scores are small, diffable and
+      # committed; the tiles are not committed at all. Punctuality is not
+      # recomputed here - the upstream delay files are published monthly, so a
+      # human refreshes data/punctuality.json with `npm run build:punctuality`
+      # and commits it (see pipeline/punctuality.ts).
+      - name: Publish committed data to the site
+        run: npm run publish:data
 
       - name: Free disk before the site build
         run: rm -rf .work/extract .work/build

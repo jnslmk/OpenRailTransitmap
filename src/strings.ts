@@ -21,6 +21,14 @@ export interface Strings {
   noDepartures: string; cancelled: string; scheduledOnly: string;
   platform: (n: string) => string;
   liveAttribution: string;
+  punctuality: string; onTimeShare: string; cancelRate: string;
+  typicalDelay: string; oneInTen: string; typicalShort: string; p90Short: string;
+  byStation: string; noPunctuality: string; punctualityAttribution: string;
+  band: Record<'punctual' | 'slight' | 'late' | 'severe' | 'cancelled', string>;
+  punctualityWindow: (months: number, to: string) => string;
+  onTimeExplainer: (threshold: number) => string;
+  departureCount: (n: number) => string;
+  minutesLate: (n: string) => string;
 }
 
 const STRINGS: Strings = {
@@ -73,6 +81,32 @@ const STRINGS: Strings = {
   scheduledOnly: 'No live estimate — scheduled time shown',
   platform: (n: string) => `Pl. ${n}`,
   liveAttribution: 'Departures via <a href="https://transitous.org">Transitous</a>',
+  punctuality: 'Punctuality',
+  onTimeShare: 'on time',
+  cancelRate: 'Cancelled',
+  // Median, not mean: on this distribution the mean is worse than the trip
+  // about 70% of riders actually get.
+  typicalDelay: 'Typically',
+  oneInTen: '1 train in 10',
+  typicalShort: 'typ',
+  p90Short: 'p90',
+  band: {
+    punctual: 'To the minute',
+    slight: 'Under 6 min',
+    late: '6–15 min',
+    severe: '16 min or more',
+    cancelled: 'Cancelled',
+  },
+  byStation: 'By station, worst first — minutes late',
+  noPunctuality: 'No punctuality record for this line',
+  punctualityAttribution:
+    'Punctuality: <a href="https://huggingface.co/datasets/piebro/deutsche-bahn-data">Deutsche Bahn open data</a> (CC BY 4.0)',
+  punctualityWindow: (months, to) => `${months} month${months === 1 ? '' : 's'} to ${to}`,
+  onTimeExplainer: (threshold) => `Departures less than ${threshold} minutes late`,
+  // The interface is English, so its numbers are grouped and pointed the
+  // English way even though every name in them is German.
+  departureCount: (n) => `${n.toLocaleString('en')} departures`,
+  minutesLate: (n) => `${n} min late`,
 };
 
 export const t = (): Strings => STRINGS;

@@ -6,6 +6,7 @@ dist/
 public/tiles/
 public/fonts/
 public/lines.json
+public/punctuality.json
 
 # implement-review run ledgers
 .implement-review/

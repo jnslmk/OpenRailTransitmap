@@ -17,6 +17,16 @@ GitHub Pages and rebuilt nightly.
   bands instead of stacking into one indistinguishable stroke.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
   station** for every line calling there.
+- **Punctuality on the line panel.** How often the line actually departs on
+  time over a rolling 12 months, broken down by station, worst first — so
+  "RE70 runs at 73%" comes with the fact that it is 39% at Hannover-Linden and
+  96% at Bielefeld, where it starts. Reported as a median ("typically 1 min
+  late") and a 90th percentile ("1 train in 10 is 10+ min"), never a mean:
+  measured over 1.1 M departures the distribution is zero-inflated and
+  long-tailed, so its mean sits at the 70th percentile and a bell curve fitted
+  to it would put a third of departures at a negative delay. Built from
+  Deutsche Bahn's published delay record (CC BY 4.0); regional and S-Bahn only,
+  for now. See [`docs/punctuality.md`](docs/punctuality.md).
 - **Search, mode and operator filters**, and deep-linkable URLs that restore
   position, filters and selection.
 - **A legend of what is actually on screen.** Only modes with lines in the
@@ -122,9 +132,17 @@ npx tsx pipeline/build-basemap.ts
 npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
 npx tsx pipeline/fonts.ts       # glyphs (cached after the first run)
 bash pipeline/tiles.sh          # PMTiles
-cp data/lines.json public/lines.json
+npm run publish:data            # committed data -> public/
 
 npm run dev                     # http://localhost:5173
+```
+
+Punctuality is refreshed separately, because its upstream files change monthly
+rather than nightly and a pass costs ~0.9 GB of range requests:
+
+```bash
+npm run build:punctuality       # ~15 min; commit the data/punctuality.json it writes
+PUNCTUALITY_MONTHS=1 npm run build:punctuality   # one month, for development
 ```
 
 ## Checking the deployed map
@@ -148,10 +166,15 @@ them without running it is to copy the deployed ones into `public/`.
 
 ## What is committed
 
-Only `data/lines.json` — a small, diffable registry of every line with its
-colour, mode, operator and stop count — plus `data/overrides.yaml`. Tiles,
-glyphs and the extract are built in CI and shipped as the Pages artifact, so the
-repository does not grow by tens of megabytes a night.
+`data/lines.json` — a small, diffable registry of every line with its colour,
+mode, operator and stop count — plus `data/overrides.yaml`,
+`data/line-stations.json` (each line's stations, the key the punctuality join
+needs) and `data/punctuality.json` (the scores themselves). The last two are
+committed because CI runs with `contents: read` and cannot push, so anything it
+computed would be thrown away; a human refreshes them and commits the diff.
+
+Tiles, glyphs and the extract are built in CI and shipped as the Pages artifact,
+so the repository does not grow by tens of megabytes a night.
 
 ## Roadmap
 
@@ -174,6 +197,11 @@ returns zero regional journeys.
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors,
 licensed under the **ODbL**. The OpenStreetMap raster basemap toggle uses
 openstreetmap.org tiles and is subject to the OSMF tile usage policy.
+
+Punctuality is derived from Deutsche Bahn's published delay record via the
+[`piebro/deutsche-bahn-data`](https://huggingface.co/datasets/piebro/deutsche-bahn-data)
+dataset, licensed **CC BY 4.0** — attributed to Deutsche Bahn in the sidebar and
+in the map's own attribution control whenever a score is on screen.
 
 Labels are set in Fira Sans (SIL Open Font License) as a free stand-in for the
 reference document's proprietary DB Sans. This project is not affiliated with

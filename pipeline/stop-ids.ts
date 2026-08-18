@@ -285,8 +285,12 @@ const UMLAUT: Record<string, string> = { ü: 'ue', ö: 'oe', ä: 'ae', ß: 'ss' 
  * the empty string, which matches nothing at all. Not one resolved station in
  * the cache normalises to empty: that is what a guaranteed-fail path looks
  * like from the outside. See `namesMatch` for when the flag is set.
+ *
+ * Exported for pipeline/punctuality.ts, which indexes a line's stations by
+ * their normalised name so a delay-feed row can find its station without a
+ * linear scan.
  */
-function normaliseName(raw: string, keepStationWords = false): string {
+export function normaliseName(raw: string, keepStationWords = false): string {
   let s = raw.replace(/\([^)]*\)/g, ' ').toLowerCase(); // "(b Wunstorf)" style suffixes
   s = s.replace(/[üöäß]/g, (c) => UMLAUT[c]);
   s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // any remaining diacritics

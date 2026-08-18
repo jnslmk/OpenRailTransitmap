@@ -216,6 +216,10 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 }
 #detail.open { display: block; }
 
+/* A long line's station breakdown must not run off the bottom of the window;
+   the head and the aggregate stay put and the list scrolls under them. */
+#detail { max-height: calc(100% - 24px); overflow-y: auto; }
+
 .detail-head { display: flex; align-items: center; gap: 8px; }
 .detail-title { flex: 1; font-weight: 500; line-height: 1.3; }
 .close {
@@ -233,6 +237,85 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 }
 .detail-meta dt { color: var(--muted); }
 .detail-meta dd { margin: 0; }
+
+/* --- punctuality ---------------------------------------------------------- */
+
+.detail-punctuality:not(:empty) {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--grey);
+}
+.punct-head { display: flex; align-items: baseline; gap: 8px; }
+.punct-head h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.punct-window { flex: 1; text-align: right; font-size: 11px; color: var(--muted); }
+.small { font-size: 11px; }
+
+.punct-headline { display: flex; align-items: baseline; gap: 5px; margin-top: 6px; }
+.punct-pct { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.punct-unit { font-size: 12px; color: var(--muted); }
+
+/* The delay bands, as one bar the width of the whole timetable. Deliberately
+   not a fitted curve: the measured distribution is zero-inflated with a hard
+   floor at zero and a tail out to 291 minutes, so a bell curve drawn over it
+   would invent probability where there is none. */
+.punct-bands {
+  display: flex;
+  height: 10px;
+  margin: 6px 0 8px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--grey);
+}
+.punct-band { display: block; height: 100%; min-width: 1px; }
+
+/* Green through amber to red, matching the per-station ramp, with cancelled
+   pulled out of the scale entirely - it is a different kind of failure, not a
+   worse degree of lateness. */
+.punct-band-punctual { background: hsl(120 70% 38%); }
+.punct-band-slight   { background: hsl(88 60% 45%); }
+.punct-band-late     { background: hsl(38 85% 50%); }
+.punct-band-severe   { background: hsl(4 75% 50%); }
+.punct-band-cancelled { background: repeating-linear-gradient(
+  45deg, #8a8a8a, #8a8a8a 2px, #b5b5b5 2px, #b5b5b5 4px); }
+
+.punct-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-bottom: 10px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.punct-legend-item { display: flex; align-items: center; gap: 4px; }
+.punct-swatch { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+
+.punct-n { margin: 6px 0 0; }
+.punct-sub {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.punct-stations { display: flex; flex-direction: column; gap: 3px; }
+.punct-row {
+  display: grid;
+  grid-template-columns: 1fr 34px 26px 30px;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.punct-row-head { font-size: 10px; color: var(--muted); margin-bottom: 1px; }
+.punct-row-head span { text-align: right; }
+.punct-station { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.punct-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.punct-value.muted { font-weight: 400; }
+
+.attrib .punct-attrib { display: block; }
 
 /* --- map controls --------------------------------------------------------- */
 
