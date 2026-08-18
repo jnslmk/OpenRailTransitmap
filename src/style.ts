@@ -62,9 +62,10 @@ const OFFSET_STOPS: [number, number][] = [
 ];
 
 /**
- * Perpendicular displacement for one band of a bundle. `offset` is centred
- * (…-1, 0, 1…) so a bundle straddles the true alignment rather than growing
- * to one side. 1.02 leaves a hairline between bands.
+ * Perpendicular displacement for one band of a bundle. `offset` is an integer
+ * ordinal (…-1, 0, 1…): odd-sized bundles straddle the true alignment,
+ * even-sized ones lean half a pitch to one side of it. 1.02 leaves a hairline
+ * between bands.
  *
  * A data expression inside the stop outputs is allowed; only `zoom` itself is
  * constrained to the top level.
