@@ -14,10 +14,10 @@ export type Coord = [number, number];
 /** A way end, rounded to OSM's coordinate precision so shared nodes compare equal. */
 export const endpointKey = (c: Coord) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`;
 
-const M_PER_DEG = 111320;
+export const M_PER_DEG = 111320;
 
 /** Equirectangular approximation - accurate enough over a single way. */
-function metres(a: Coord, b: Coord): number {
+export function metres(a: Coord, b: Coord): number {
   const dx = (a[0] - b[0]) * M_PER_DEG * Math.cos((a[1] * Math.PI) / 180);
   return Math.hypot(dx, (a[1] - b[1]) * M_PER_DEG);
 }
