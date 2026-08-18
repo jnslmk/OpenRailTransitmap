@@ -270,12 +270,27 @@ async function main() {
   console.log(`==> ${geom.size} way geometries`);
 
   // Collapse the second track of every double-track corridor, so each line is
-  // drawn once rather than as two strokes a lane apart. Must run after geometry
-  // is loaded and before bundling, which keys on the surviving way ids.
+  // drawn once rather than as two strokes a lane apart. Once over the whole
+  // network settles which track of each corridor is the one to draw, so that
+  // lines sharing a street stay on the same ways and still bundle; then once
+  // per line, at its own mode's tolerance, keeping anything the network-wide
+  // choice does not cover for it. Must run after geometry is loaded and before
+  // bundling, which keys on the surviving way ids.
+  const useCount = new Map<string, number>();
+  for (const line of lines.values()) {
+    for (const w of line.wayIds) useCount.set(w, (useCount.get(w) ?? 0) + 1);
+  }
+  const everyWay = [...useCount.keys()];
+  const canonical = new Set(collapseParallelTracks(
+    everyWay, geom, Math.max(...Object.values(TRACK_PAIR_M)),
+    { linesOn: (w) => useCount.get(w) ?? 0 },
+  ));
+  console.log(`==> ${everyWay.length - canonical.size} of ${everyWay.length} ways are a second track`);
+
   let dropped = 0;
   for (const line of lines.values()) {
     const before = line.wayIds.length;
-    line.wayIds = collapseParallelTracks(line.wayIds, geom, TRACK_PAIR_M[line.mode]);
+    line.wayIds = collapseParallelTracks(line.wayIds, geom, TRACK_PAIR_M[line.mode], { canonical });
     dropped += before - line.wayIds.length;
   }
   console.log(`==> ${dropped} second-track ways collapsed`);
@@ -314,7 +329,10 @@ async function main() {
   const features: unknown[] = [];
   let maxBundle = 0;
   for (const { lineIds, wayIds } of segments.values()) {
-    const chains = chainWays(wayIds, geom);
+    // Snap up to the width the collapse could have left between two stretches
+    // of one corridor, so a track change does not read as a break in the line.
+    const snapM = Math.max(...lineIds.map((id) => TRACK_PAIR_M[lines.get(id)!.mode]));
+    const chains = chainWays(wayIds, geom, snapM);
     if (chains.length === 0) continue;
     const n = lineIds.length;
     maxBundle = Math.max(maxBundle, n);

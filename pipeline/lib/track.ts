@@ -27,8 +27,15 @@ function metres(a: Coord, b: Coord): number {
  * ways where needed. Consistent orientation matters: MapLibre's `line-offset`
  * is perpendicular to the drawing direction, so a reversed way in a corridor
  * would push its line to the wrong side of the bundle.
+ *
+ * `snapM` closes the seams the double-track collapse leaves behind. Where the
+ * collapse changes track, the two kept stretches carry on in the same direction
+ * but a track's width apart, sharing no node, and the line is drawn with a nick
+ * in it. Chains whose ends sit within `snapM` of each other and still head the
+ * same way are joined across that step; ends that meet at an angle are a real
+ * junction and are left alone.
  */
-export function chainWays(wayIds: string[], geom: Map<string, Coord[]>): Coord[][] {
+export function chainWays(wayIds: string[], geom: Map<string, Coord[]>, snapM = 0): Coord[][] {
   const pending = new Map<string, Coord[]>();
   for (const id of wayIds) {
     const g = geom.get(id);
@@ -77,7 +84,73 @@ export function chainWays(wayIds: string[], geom: Map<string, Coord[]>): Coord[]
     }
     chains.push(chain);
   }
-  return chains;
+  return snapM > 0 ? stitchChains(chains, snapM) : chains;
+}
+
+/** Widest angle between two chain ends that still counts as carrying straight on. */
+const STITCH_TURN = (25 * Math.PI) / 180;
+
+/** The direction a chain would continue in, taken at one of its ends. */
+function outwardBearing(chain: Coord[], atStart: boolean): number {
+  return atStart
+    ? bearing(chain[Math.min(1, chain.length - 1)], chain[0])
+    : bearing(chain[chain.length - 2], chain[chain.length - 1]);
+}
+
+function stitchChains(chains: Coord[][], snapM: number): Coord[][] {
+  // Every candidate join, shortest first, so a chain end takes its nearest
+  // partner rather than whichever it happens to be compared with first.
+  const joins: { from: string; to: string; gap: number }[] = [];
+  const endKey = (chain: number, atStart: boolean) => `${chain}:${atStart}`;
+  for (let a = 0; a < chains.length; a++) {
+    for (let b = a + 1; b < chains.length; b++) {
+      for (const aStart of [true, false]) {
+        for (const bStart of [true, false]) {
+          const ea = aStart ? chains[a][0] : chains[a][chains[a].length - 1];
+          const eb = bStart ? chains[b][0] : chains[b][chains[b].length - 1];
+          const gap = metres(ea, eb);
+          if (gap > snapM) continue;
+          // Carrying straight on means one chain leaves where the other arrives:
+          // their outward directions are opposite.
+          let turn = Math.abs(
+            outwardBearing(chains[a], aStart) - outwardBearing(chains[b], bStart) - Math.PI,
+          );
+          while (turn > Math.PI) turn = Math.abs(turn - 2 * Math.PI);
+          if (turn > STITCH_TURN) continue;
+          joins.push({ from: endKey(a, aStart), to: endKey(b, bStart), gap });
+        }
+      }
+    }
+  }
+  if (joins.length === 0) return chains;
+  joins.sort((x, y) => x.gap - y.gap);
+
+  // A piece remembers which original chain end sits at each of its own ends, so
+  // a later join still knows which way round to turn it.
+  interface Piece { coords: Coord[]; head: string; tail: string }
+  const pieces = new Map<string, Piece>(); // keyed by both of its end keys
+  const all: Piece[] = chains.map((coords, i) => ({
+    coords, head: endKey(i, true), tail: endKey(i, false),
+  }));
+  for (const piece of all) { pieces.set(piece.head, piece); pieces.set(piece.tail, piece); }
+
+  const live = new Set(all);
+  const used = new Set<string>(); // an end can only be joined onto once
+  for (const { from, to } of joins) {
+    if (used.has(from) || used.has(to)) continue;
+    const a = pieces.get(from)!, b = pieces.get(to)!;
+    if (a === b) continue; // already one chain: joining would close a ring
+
+    if (a.head === from) { a.coords.reverse(); [a.head, a.tail] = [a.tail, a.head]; }
+    if (b.tail === to) { b.coords.reverse(); [b.head, b.tail] = [b.tail, b.head]; }
+    a.coords = a.coords.concat(b.coords);
+    a.tail = b.tail;
+    pieces.set(a.tail, a);
+    live.delete(b);
+    used.add(from);
+    used.add(to);
+  }
+  return [...live].map((p) => p.coords);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,12 +258,35 @@ function bearing(from: Coord, to: Coord): number {
  * the only thing linking two stretches that are now separate. It is short and it
  * runs under geometry that is already drawn, so it costs nothing visually and
  * buys back a line that reads as one line.
+ *
+ * `canonical` is how lines sharing a corridor end up on the *same* track. Run
+ * over the whole network first, this returns one track per corridor; passed back
+ * in per line, those ways are kept outright and everything else is measured
+ * against them. Without it each line picks its own track and two lines down one
+ * street land a track's width apart, which loses the bundling that draws them as
+ * neat parallel bands. A way of the line's that the canonical choice does not
+ * cover - a corridor it rides in one direction only, a tram beside a railway the
+ * network-wide pass collapsed - is still kept, so this can only align lines, not
+ * take ground away from one.
  */
+export interface CollapseOptions {
+  /**
+   * The network-wide choice of track, from a first pass over every way any line
+   * uses. Ways in it are kept outright and everything else is measured against
+   * them, which is what puts lines sharing a corridor on the same ways.
+   */
+  canonical?: ReadonlySet<string>;
+  /** How many lines run over a way; the busier track is the one worth keeping. */
+  linesOn?: (wayId: string) => number;
+}
+
 export function collapseParallelTracks(
   wayIds: string[],
   geom: Map<string, Coord[]>,
   toleranceM: number,
+  options: CollapseOptions = {},
 ): string[] {
+  const { canonical, linesOn = () => 0 } = options;
   const ways = wayIds.filter((id) => (geom.get(id)?.length ?? 0) >= 2);
   if (ways.length === 0) return [];
 
@@ -208,12 +304,26 @@ export function collapseParallelTracks(
   const kept: string[] = [];
   const dropped: string[] = [];
   const decided = new Set<string>();
-  const longestFirst = [...ways].sort((a, b) => {
-    const d = wayLength(geom.get(b)!) - wayLength(geom.get(a)!);
-    return d !== 0 ? d : (a < b ? -1 : 1); // id break keeps rebuilds identical
+  // Busiest track first, then longest: where the two tracks of a corridor are
+  // not carried by the same lines, the one more lines actually have is the one
+  // to keep, since every line without it has to go its own way.
+  const bestFirst = [...ways].sort((a, b) => {
+    const busier = linesOn(b) - linesOn(a);
+    if (busier !== 0) return busier;
+    const longer = wayLength(geom.get(b)!) - wayLength(geom.get(a)!);
+    return longer !== 0 ? longer : (a < b ? -1 : 1); // id break keeps rebuilds identical
   });
 
-  for (const seed of longestFirst) {
+  // The network-wide choice comes first and unconditionally: it is already free
+  // of duplicates, and everything below is then measured against it.
+  for (const id of bestFirst) {
+    if (!canonical?.has(id)) continue;
+    decided.add(id);
+    kept.push(id);
+    index.add(geom.get(id)!);
+  }
+
+  for (const seed of bestFirst) {
     if (decided.has(seed)) continue;
     // Depth-first from the seed so we follow one track through the corridor.
     const stack = [seed];

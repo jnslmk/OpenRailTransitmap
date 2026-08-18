@@ -143,6 +143,46 @@ test('is stable whatever order the ways arrive in', () => {
   assert.deepEqual(new Set(forward), new Set(reversed));
 });
 
+test('stitches across the step where the kept track changes side', () => {
+  // Two stretches of one corridor, carrying on in the same direction but a
+  // track's width apart, because the crossover between them was collapsed away.
+  const geom = geomOf({
+    north: eastward(10.52, 52.26, 400),
+    south: eastward(10.52 + 402 * M_LON, 52.26, 400, 4),
+  });
+  assert.equal(chainWays(['north', 'south'], geom).length, 2);
+  assert.equal(chainWays(['north', 'south'], geom, 15).length, 1);
+});
+
+test('leaves ends that meet at an angle alone', () => {
+  // A junction, not a step: the second way heads off at 60 degrees, so joining
+  // the two would draw a corner no track makes.
+  const geom = geomOf({
+    trunk: eastward(10.52, 52.26, 400),
+    branch: [
+      [10.52 + 404 * M_LON, 52.26],
+      [10.52 + 604 * M_LON, 52.26 + 350 * M_LAT],
+    ] as Coord[],
+  });
+  assert.equal(chainWays(['trunk', 'branch'], geom, 15).length, 2);
+});
+
+test('does not stitch a chain onto itself', () => {
+  // A loop whose two ends come back within snapping distance stays open rather
+  // than being closed into a ring that no longer has a start.
+  const geom = geomOf({
+    out: eastward(10.52, 52.26, 300),
+    back: [
+      [10.52 + 300 * M_LON, 52.26],
+      [10.52 + 300 * M_LON, 52.26 + 4 * M_LAT],
+      [10.52 + 2 * M_LON, 52.26 + 4 * M_LAT],
+    ] as Coord[],
+  });
+  const chains = chainWays(['out', 'back'], geom, 15);
+  assert.equal(chains.length, 1);
+  assert.notDeepEqual(chains[0][0], chains[0][chains[0].length - 1]);
+});
+
 test('chains ways into one line however they are oriented', () => {
   const geom = geomOf({
     first: eastward(10.52, 52.26, 300),
