@@ -28,6 +28,7 @@ import {
 import {
   slotOffset, taperLengthM, taperMinzoom, buildTaper, trimEnd, chainLengthM, type TaperStep,
 } from './lib/taper.ts';
+import { adjacentSegmentPairs, groupCorridors, rankCorridorLines } from './lib/corridor.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const EXTRACT = `${WORK}/extract`;
@@ -312,15 +313,19 @@ async function main() {
     }
   }
 
+  // Sort by mode order then ref so bundle ordering is stable across rebuilds
+  // and trunk modes sit consistently on the same side. Shared with the
+  // corridor-wide ranking below, so a line's rank there agrees with where it
+  // would have sorted locally.
+  function lineCompare(a: string, b: string): number {
+    const la = lines.get(a)!, lb = lines.get(b)!;
+    const d = MODE_SPECS[lb.mode].order - MODE_SPECS[la.mode].order;
+    return d !== 0 ? d : la.ref.localeCompare(lb.ref, 'de', { numeric: true });
+  }
+
   const segments = new Map<string, { lineIds: string[]; wayIds: string[] }>();
   for (const [wayId, ids] of wayLines) {
-    // Sort by mode order then ref so bundle ordering is stable across rebuilds
-    // and trunk modes sit consistently on the same side.
-    const sorted = [...new Set(ids)].sort((a, b) => {
-      const la = lines.get(a)!, lb = lines.get(b)!;
-      const d = MODE_SPECS[lb.mode].order - MODE_SPECS[la.mode].order;
-      return d !== 0 ? d : la.ref.localeCompare(lb.ref, 'de', { numeric: true });
-    });
+    const sorted = [...new Set(ids)].sort(lineCompare);
     // NUL separator: network names contain spaces, so a space could in principle
     // merge two distinct route sets into one bundle key.
     const key = sorted.join('\u0000');
@@ -344,13 +349,61 @@ async function main() {
     segInfos.push({ lineIds, chains });
   }
 
+  // --- corridor-wide slots ----------------------------------------------------
+  // A line's slot used to be assigned per segment, purely from that segment's
+  // own membership - so a line joining or leaving the corridor renumbered
+  // every line outboard of it, even along one physically continuous corridor.
+  // Instead, group segments that plausibly form one corridor and rank each
+  // corridor's line union once, so a line holds a single slot for as long as
+  // it stays in the corridor. See pipeline/lib/corridor.ts for how the
+  // grouping is bounded - the transitive blow-up that a looser rule invites
+  // is the main risk here, not the ranking itself.
+  const corridorPairs = adjacentSegmentPairs(segInfos);
+  const corridorOf = groupCorridors(segInfos.map((s) => s.lineIds), corridorPairs);
+  const corridorLineOrder = rankCorridorLines(corridorOf, segInfos.map((s) => s.lineIds), lineCompare);
+  const corridorSlots = new Map<number, Map<string, number>>();
+  for (const [root, sortedLines] of corridorLineOrder) {
+    const slots = new Map<string, number>();
+    sortedLines.forEach((id, idx) => slots.set(id, slotOffset(idx, sortedLines.length)));
+    corridorSlots.set(root, slots);
+  }
+  const slotFor = (segIdx: number, lineId: string) => corridorSlots.get(corridorOf[segIdx])!.get(lineId)!;
+
+  {
+    const corridorCount = new Set(corridorOf).size;
+    const sizes = [...corridorLineOrder.values()].map((v) => v.length);
+    const biggest = Math.max(...sizes, 0);
+    // Slots spanned vs lines actually present, per segment: how wide a gap
+    // corridor-wide slots can leave when only some of a corridor's lines are
+    // present in a given segment. 0 means every segment draws exactly as
+    // wide as its own membership, same as the old per-segment scheme.
+    let gapSum = 0, gapMax = 0, segCount = 0;
+    segInfos.forEach((seg, segIdx) => {
+      if (seg.lineIds.length === 0) return;
+      const offsets = seg.lineIds.map((id) => slotFor(segIdx, id));
+      const spanned = Math.max(...offsets) - Math.min(...offsets) + 1;
+      const gap = spanned - seg.lineIds.length;
+      gapSum += gap;
+      gapMax = Math.max(gapMax, gap);
+      segCount++;
+    });
+    console.log(
+      `==> ${corridorCount} corridors (${segInfos.length} segments), biggest carries ${biggest} lines`,
+    );
+    console.log(
+      `==> slot span vs membership gap: avg ${(gapSum / segCount).toFixed(2)}, max ${gapMax}, `
+      + `over ${segCount} segments`,
+    );
+  }
+
   // --- slot tapers ------------------------------------------------------------
-  // A line's slot is assigned per segment from local bundle membership, so it
-  // commonly differs on the two sides of a junction between segments. Rather
-  // than let the two chains just butt together at whatever slots they landed
-  // on, ramp between them: see pipeline/lib/taper.ts for why that ramp has to
-  // be a staircase of short constant-offset sub-features rather than baked-in
-  // diagonal geometry.
+  // A slot change between two adjacent segments is now the exception rather
+  // than the rule - it happens where the corridor grouping above genuinely
+  // draws a line, not on every segment boundary. Where it does still happen,
+  // ramp between the two slots rather than letting the chains butt together:
+  // see pipeline/lib/taper.ts for why that ramp has to be a staircase of
+  // short constant-offset sub-features rather than baked-in diagonal
+  // geometry.
   interface EndRef { segIdx: number; chainIdx: number; atStart: boolean }
   const byEnd = new Map<string, EndRef[]>();
   segInfos.forEach((seg, segIdx) => {
@@ -408,9 +461,8 @@ async function main() {
       const [refA] = bySeg.get(idxA)!, [refB] = bySeg.get(idxB)!;
 
       const line = lines.get(lineId)!;
-      const nA = segA.lineIds.length, iA = segA.lineIds.indexOf(lineId);
-      const nB = segB.lineIds.length, iB = segB.lineIds.indexOf(lineId);
-      const slotA = slotOffset(iA, nA), slotB = slotOffset(iB, nB);
+      const nA = segA.lineIds.length;
+      const slotA = slotFor(idxA, lineId), slotB = slotFor(idxB, lineId);
 
       // buildTaper wants a chain ending at the junction and one starting
       // there. Which original end sits at the junction is arbitrary per
@@ -507,7 +559,7 @@ async function main() {
   const features: unknown[] = [];
   segInfos.forEach((seg, segIdx) => {
     const n = seg.lineIds.length;
-    seg.lineIds.forEach((lineId, i) => {
+    seg.lineIds.forEach((lineId) => {
       const line = lines.get(lineId)!;
       const parts = seg.chains.map((chain, chainIdx) => {
         const sM = trimStart.get(trimKey(segIdx, chainIdx, lineId)) ?? 0;
@@ -531,7 +583,7 @@ async function main() {
           colour: line.colour,
           operator: line.operator,
           network: line.network,
-          offset: slotOffset(i, n),
+          offset: slotFor(segIdx, lineId),
           bundle: n,
         },
       });
