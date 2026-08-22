@@ -23,6 +23,13 @@ import {
   MODE_SPECS, fallbackColour, normaliseColour, type Mode,
 } from '../shared/lnvg.ts';
 import { chainWays, collapseParallelTracks, type Coord } from './lib/track.ts';
+import {
+  buildRailGraph, nearestNode, routeBetween, metres, type RailWay,
+} from './lib/railpath.ts';
+import {
+  readLog, replayLog, windowsOn, SNAPSHOT_PATH, EFFECT_RANK,
+  type Closure, type LoggedClosure,
+} from './closures.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const EXTRACT = `${WORK}/extract`;
@@ -167,6 +174,134 @@ function cleanName(tags: Record<string, string>): string {
 }
 
 // ---------------------------------------------------------------------------
+// Closures
+// ---------------------------------------------------------------------------
+
+/**
+ * Two operating points closer together than this are the same place, and the
+ * restriction is a point on the map rather than a section of it. 43% of a day's
+ * feed is of this kind - work inside one station - and DB states both ends as
+ * the same coordinate for them.
+ */
+const POINT_CLOSURE_M = 100;
+
+/** How far a stated operating point may sit from the network and still match. */
+const CLOSURE_SNAP_M = 2000;
+
+interface ClosureSnapshot {
+  day: string;
+  closures: Closure[];
+}
+
+/** The clock window in effect on `day`, as `03:00-04:00`, or '' for all day. */
+function hoursOn(closure: Closure, day: string): string {
+  const spans = windowsOn(closure, day)
+    .map((w) => `${w.fromTime.slice(0, 5)}\u2013${w.toTime.slice(0, 5)}`)
+    // "00:00-00:00" is how the feed writes a possession that does not stop at
+    // a clock time; saying so is worse than saying nothing.
+    .filter((s) => s !== '00:00\u201300:00');
+  return [...new Set(spans)].join(', ');
+}
+
+/**
+ * Closure features for the tiles.
+ *
+ * Geometry comes from pipeline/lib/railpath.ts, which puts each restriction on
+ * the track it names rather than on the straight line between its ends. A
+ * restriction whose ends cannot be matched to the network is dropped rather
+ * than drawn as a chord: on a map whose whole claim is that the geometry is
+ * true to OSM, a red line lying across open country would be read as track.
+ *
+ * The history the panel shows is folded in here too, from the committed log -
+ * `since` is the day the restriction entered DB's plan as far as we ever saw,
+ * and `extended` counts the times its dates have moved since. Both are empty
+ * on a checkout with no log yet, which is the honest answer: we have no record,
+ * not "it has never been revised".
+ */
+async function writeClosures(railWays: RailWay[]): Promise<void> {
+  if (!existsSync(SNAPSHOT_PATH)) {
+    console.log('==> no closure snapshot in .work - skipping the closure layer');
+    await writeFeatures(`${OUT}/closures.geojsonl`, []);
+    return;
+  }
+
+  const snapshot: ClosureSnapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+  let history = new Map<string, LoggedClosure>();
+  try {
+    history = replayLog(readLog());
+  } catch (err) {
+    // A malformed log is a data problem to fix, not a reason to lose the layer.
+    console.log(`==> closure log unreadable, continuing without history: ${(err as Error).message}`);
+  }
+
+  const graph = buildRailGraph(railWays);
+  const out: unknown[] = [];
+  let points = 0, routed = 0, unmatched = 0;
+
+  // Worst first, so that where several restrictions share a section the one a
+  // rider cares about is the feature drawn on top.
+  const ordered = [...snapshot.closures]
+    .sort((a, b) => EFFECT_RANK[a.effect] - EFFECT_RANK[b.effect]);
+
+  for (const c of ordered) {
+    const from: Coord = [c.from.lon, c.from.lat];
+    const to: Coord = [c.to.lon, c.to.lat];
+    const isPoint = metres(from, to) < POINT_CLOSURE_M;
+
+    let geometry: unknown;
+    if (isPoint) {
+      // A point still has to be *on* the network we drew. Without that check a
+      // regional build - which reads the whole country's feed against one
+      // state's extract - scatters markers across track it has never loaded.
+      if (nearestNode(graph, from, CLOSURE_SNAP_M) === null) { unmatched++; continue; }
+      geometry = { type: 'Point', coordinates: from };
+      points++;
+    } else {
+      const path = routeBetween(graph, from, to, {
+        routes: c.routes, snapM: CLOSURE_SNAP_M,
+      });
+      if (!path) { unmatched++; continue; }
+      geometry = { type: 'LineString', coordinates: path.coords };
+      routed++;
+    }
+
+    const logged = history.get(c.id);
+    out.push({
+      type: 'Feature',
+      geometry,
+      properties: {
+        id: c.id,
+        // The day this reading of the plan describes. Carried on every feature
+        // rather than in a side file so the app can state the overlay's date
+        // without a second fetch that could disagree with the tiles.
+        day: snapshot.day,
+        effect: c.effect,
+        direction: c.direction,
+        works: c.works,
+        routes: c.routes.join(', '),
+        fromName: c.from.name,
+        toName: c.to.name,
+        section: isPoint ? c.from.name : `${c.from.name} \u2013 ${c.to.name}`,
+        // Dates only: the panel reads them, and the feed's midnight-to-four
+        // timestamps say less about the possession than its hours do.
+        begin: c.begin.slice(0, 10),
+        end: c.end.slice(0, 10),
+        hours: hoursOn(c, snapshot.day),
+        since: logged?.since ?? '',
+        firstEnd: logged ? logged.firstEnd.slice(0, 10) : '',
+        extended: logged?.revisions ?? 0,
+      },
+    });
+  }
+
+  await writeFeatures(`${OUT}/closures.geojsonl`, out);
+  console.log(
+    `==> ${out.length} closure features for ${snapshot.day}: ` +
+    `${routed} on the network, ${points} at a single operating point, ` +
+    `${unmatched} dropped as unmatchable`);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -252,7 +387,12 @@ async function main() {
   console.log(`==> ${lines.size} lines (${skipped} non-rail relations skipped)`);
 
   // --- way geometry ---------------------------------------------------------
+  // Heavy-rail ways are collected as they go past, with the two tags the
+  // closure router reads: `ref`, which on a German railway way is its VzG line
+  // number, and `service`, which marks a siding or yard. They share the
+  // coordinate arrays with `geom`, so the second list costs a pointer each.
   const geom = new Map<string, Coord[]>();
+  const railWays: RailWay[] = [];
   {
     const rl = createInterface({
       input: createReadStream(`${EXTRACT}/rail-ways.geojsonseq`),
@@ -263,11 +403,18 @@ async function main() {
       if (!text) continue;
       const f = JSON.parse(text);
       if (f.geometry?.type === 'LineString' && typeof f.id === 'string' && f.id[0] === 'w') {
-        geom.set(f.id.slice(1), f.geometry.coordinates as Coord[]);
+        const id = f.id.slice(1);
+        const coords = f.geometry.coordinates as Coord[];
+        geom.set(id, coords);
+        // Only `railway=rail`: closures are DB InfraGO's, and a tram or metro
+        // way is not track its restrictions can be on.
+        if (f.properties?.railway === 'rail') {
+          railWays.push({ id, coords, ref: f.properties.ref, service: f.properties.service });
+        }
       }
     }
   }
-  console.log(`==> ${geom.size} way geometries`);
+  console.log(`==> ${geom.size} way geometries (${railWays.length} heavy rail)`);
 
   // Collapse the second track of every double-track corridor, so each line is
   // drawn once rather than as two strokes a lane apart. Once over the whole
@@ -532,6 +679,7 @@ async function main() {
   // --- write ----------------------------------------------------------------
   await writeFeatures(`${OUT}/routes.geojsonl`, features);
   await writeFeatures(`${OUT}/stations.geojsonl`, stationFeatures);
+  await writeClosures(railWays);
 
   // The committed registry: small, diffable, and the thing a human reviews when
   // a nightly rebuild changes something.

@@ -17,6 +17,18 @@ BUILD="$WORK/build"
 OUT="${TILE_OUT:-public/tiles}"
 mkdir -p "$OUT"
 
+# Closures come from an upstream that can be down, so the layer is included
+# only when the build actually produced features for it. An empty -L argument
+# is a tippecanoe error, and a failed rebuild of the whole map is a far worse
+# outcome than a night without the construction overlay.
+CLOSURES=()
+if [[ -s "$BUILD/closures.geojsonl" ]]; then
+  CLOSURES=(-L closures:"$BUILD/closures.geojsonl")
+  echo "==> including $(wc -l < "$BUILD/closures.geojsonl") closure features"
+else
+  echo "==> no closure features - building without the closure layer"
+fi
+
 # Modes are zoom-gated in shared/lnvg.ts; matching the tile minzoom keeps the
 # urban layers out of low-zoom tiles entirely rather than just hiding them.
 echo "==> building rail.pmtiles"
@@ -31,6 +43,7 @@ tippecanoe \
   --detect-shared-borders \
   -L routes:"$BUILD/routes.geojsonl" \
   -L stations:"$BUILD/stations.geojsonl" \
+  "${CLOSURES[@]}" \
   2>&1 | tail -3
 
 # -r1 disables tippecanoe's point drop rate, which defaults to 2.5 and thins

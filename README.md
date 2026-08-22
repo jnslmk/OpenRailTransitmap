@@ -27,6 +27,20 @@ GitHub Pages and rebuilt nightly.
   to it would put a third of departures at a negative delay. Built from
   Deutsche Bahn's published delay record (CC BY 4.0); regional and S-Bahn only,
   for now. See [`docs/punctuality.md`](docs/punctuality.md).
+- **What is shut today.** Construction closures from DB InfraGO's own
+  possession register, drawn as a hazard stripe along the track they actually
+  close — routed onto the real alignment rather than chorded between the two
+  operating points DB names, which for the longest of them is 125 km of straight
+  line across open country. Full closures and single-track working show from
+  zoom 6, lesser restrictions from zoom 10, and clicking one gives the works,
+  the hours it applies today and the dates it runs between. Off with one
+  checkbox (`?closures=0`). See [`docs/closures.md`](docs/closures.md).
+- **A closure history, because nobody else keeps one.** strecken.info serves the
+  plan as it stands and nothing before it, so the archive is ours:
+  `data/closure-log.jsonl` is appended to daily and records a possession
+  entering the plan, its dates moving, and its withdrawal. The panel reads it
+  back — "was to finish 12 Dec" is a fact no snapshot of the current plan can
+  tell you.
 - **Search, mode and operator filters**, and deep-linkable URLs that restore
   position, filters and selection.
 - **A legend of what is actually on screen.** Only modes with lines in the
@@ -56,6 +70,8 @@ config/regions.yaml        one value switches the whole pipeline's region
 pipeline/
   fetch.sh                 download the Geofabrik extract
   extract.sh               osmium -> route relations, ways, stations, basemap
+  closures.ts              DB InfraGO possessions + the history log
+  lib/railpath.ts          route a closure onto the track it closes
   build.ts                 stitch routes, bundle corridors, snap stops
   build-basemap.ts         water, state borders, place labels
   coastline.ts             ocean polygons (the sea is not natural=water)
@@ -127,6 +143,7 @@ npm ci
 
 bash pipeline/fetch.sh          # download the extract
 bash pipeline/extract.sh        # osmium filtering
+npx tsx pipeline/closures.ts    # today's construction closures (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
 npx tsx pipeline/build-basemap.ts
 npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
@@ -143,6 +160,15 @@ rather than nightly and a pass costs ~0.9 GB of range requests:
 ```bash
 npm run build:punctuality       # ~15 min; commit the data/punctuality.json it writes
 PUNCTUALITY_MONTHS=1 npm run build:punctuality   # one month, for development
+```
+
+The closure log is refreshed on its own daily schedule rather than with the map,
+because a day missed is a day of the plan gone for good — see
+[`.github/workflows/closures.yml`](.github/workflows/closures.yml). It is the
+only job in this repository with `contents: write`, and it writes one file:
+
+```bash
+npm run log:closures            # append today's changes to data/closure-log.jsonl
 ```
 
 ## Checking the deployed map
@@ -170,8 +196,14 @@ them without running it is to copy the deployed ones into `public/`.
 mode, operator and stop count — plus `data/overrides.yaml`,
 `data/line-stations.json` (each line's stations, the key the punctuality join
 needs) and `data/punctuality.json` (the scores themselves). The last two are
-committed because CI runs with `contents: read` and cannot push, so anything it
-computed would be thrown away; a human refreshes them and commits the diff.
+committed because the build runs with `contents: read` and cannot push, so
+anything it computed would be thrown away; a human refreshes them and commits
+the diff.
+
+`data/closure-log.jsonl` is the exception that is written by CI, by the one job
+that may. It is append-only and it is the archive: 4.6 MB seeded, then about
+50 KB of events a day. The closures the map *draws* are not committed at all —
+they change daily, they ride in the tiles, and the build reads them fresh.
 
 Tiles, glyphs and the extract are built in CI and shipped as the Pages artifact,
 so the repository does not grow by tens of megabytes a night.
@@ -197,6 +229,13 @@ returns zero regional journeys.
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors,
 licensed under the **ODbL**. The OpenStreetMap raster basemap toggle uses
 openstreetmap.org tiles and is subject to the OSMF tile usage policy.
+
+Construction closures come from **DB InfraGO**'s
+[strecken.info](https://strecken-info.de), the infrastructure manager's own
+public possession register. It is published as information rather than under an
+open licence, so it is credited in the sidebar and in the map's attribution
+control whenever a closure is on screen, and the feed itself is not
+redistributed — only the change log described above.
 
 Punctuality is derived from Deutsche Bahn's published delay record via the
 [`piebro/deutsche-bahn-data`](https://huggingface.co/datasets/piebro/deutsche-bahn-data)

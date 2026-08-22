@@ -1,5 +1,7 @@
 /** UI strings. The interface is English; station and line names stay German. */
 
+import type { ClosureDirection, ClosureEffect } from '../shared/closures.ts';
+
 export interface Strings {
   search: string; noResults: string;
   modes: string; longdistance: string; regional: string; suburban: string;
@@ -29,6 +31,22 @@ export interface Strings {
   onTimeExplainer: (threshold: number) => string;
   departureCount: (n: number) => string;
   minutesLate: (n: string) => string;
+  closures: string; showClosures: string; closureCount: (n: number) => string;
+  noClosuresInView: string;
+  closureEffect: Record<ClosureEffect, string>;
+  closureDirection: Record<ClosureDirection, string>;
+  closureLegendMajor: string; closureLegendMinor: string;
+  closureWorks: string; closureLine: string; closureTrack: string;
+  closureHours: string;
+  closureAllDay: string; closureUntil: string; closureFrom: string;
+  closureAtStation: string;
+  closureHistory: string; closureSince: string;
+  closureExtended: (n: number) => string;
+  closureMovedLater: (from: string) => string;
+  closureMovedEarlier: (from: string) => string;
+  closureNoHistory: string;
+  closureAsOf: (day: string) => string;
+  closureAttribution: string;
 }
 
 const STRINGS: Strings = {
@@ -107,6 +125,45 @@ const STRINGS: Strings = {
   // English way even though every name in them is German.
   departureCount: (n) => `${n.toLocaleString('en')} departures`,
   minutesLate: (n) => `${n} min late`,
+  closures: 'Construction',
+  showClosures: 'Closures and works',
+  closureCount: (n) => `${n} in view`,
+  noClosuresInView: 'None in this view',
+  // What DB's `wirkung` means for someone trying to travel, rather than a
+  // translation of the operational term.
+  closureEffect: {
+    closed: 'Line closed',
+    'single-track': 'One track only',
+    diverted: 'Off the timetable',
+    slower: 'Longer journey time',
+    other: 'Restriction',
+  },
+  closureDirection: {
+    both: 'Both directions',
+    'with-km': 'One direction',
+    'against-km': 'One direction',
+  },
+  closureLegendMajor: 'Closed or single-track',
+  closureLegendMinor: 'Other restriction (zoom 10+)',
+  closureWorks: 'Works',
+  closureLine: 'Line',
+  closureTrack: 'Track',
+  closureHours: 'Today',
+  closureAllDay: 'All day',
+  closureUntil: 'Until',
+  closureFrom: 'From',
+  closureAtStation: 'At one station',
+  closureHistory: 'In the plan',
+  closureSince: 'First recorded',
+  closureExtended: (n) => `Rescheduled ${n} time${n === 1 ? '' : 's'} since`,
+  closureMovedLater: (from) => `Was to finish ${from}`,
+  closureMovedEarlier: (from) => `Was to run until ${from}`,
+  // Said plainly rather than left to be inferred: the log only knows what it
+  // has watched, and it started the day the job first ran.
+  closureNoHistory: 'Not yet in our record when this closure was first seen',
+  closureAsOf: (day) => `Construction as planned on ${day}`,
+  closureAttribution:
+    'Construction: <a href="https://strecken-info.de">DB InfraGO strecken.info</a>',
 };
 
 export const t = (): Strings => STRINGS;

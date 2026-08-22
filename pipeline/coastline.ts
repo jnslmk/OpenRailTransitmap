@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { open as openShapefile } from 'shapefile';
 import { writeFeatures } from './lib/write.ts';
+import { toWgs84 } from './lib/mercator.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const OUT = `${WORK}/build`;
@@ -27,19 +28,10 @@ const CACHE = `${WORK}/water-polygons`;
 const URL =
   'https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip';
 
-/** Inverse spherical Web Mercator. */
-const R = 6378137;
-function toWgs84([x, y]: number[]): [number, number] {
-  return [
-    (x / R) * (180 / Math.PI),
-    (Math.atan(Math.exp(y / R)) * 2 - Math.PI / 2) * (180 / Math.PI),
-  ];
-}
-
 type Ring = [number, number][];
 
 function projectRings(rings: number[][][]): Ring[] {
-  return rings.map((ring) => ring.map(toWgs84));
+  return rings.map((ring) => ring.map(([x, y]) => toWgs84(x, y)));
 }
 
 /** Bounding box of a projected polygon, for cheap region filtering. */

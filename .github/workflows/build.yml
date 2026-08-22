@@ -63,6 +63,14 @@ jobs:
       - name: Extract rail network
         run: bash pipeline/extract.sh
 
+      # Read before build.ts, which needs it to route each restriction onto the
+      # track it names. `|| true` because this is the one input that comes from
+      # an upstream with no cache behind it: DB InfraGO being down for ten
+      # minutes must cost the map its construction overlay for a night, not the
+      # whole nightly deploy. build.ts and tiles.sh both handle its absence.
+      - name: Read the construction plan
+        run: npx tsx pipeline/closures.ts || true
+
       - name: Build data
         # The national route set needs more than Node's default heap.
         env:

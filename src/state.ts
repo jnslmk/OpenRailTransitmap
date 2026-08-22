@@ -7,6 +7,7 @@
  *   ?op=DB%20Regio          operator filter
  *   ?base=osm               basemap choice
  *   ?streets=0              street underlay off
+ *   ?closures=0             construction overlay off
  *   ?ui=map|peek            sidebar hidden / collapsed to its handle
  */
 
@@ -27,6 +28,7 @@ export interface ViewState {
   operator: string | null;
   osmBasemap: boolean;
   streets: boolean;
+  closures: boolean;
   chrome: ChromeMode;
 }
 
@@ -57,6 +59,7 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     operator: q.get('op'),
     osmBasemap: q.get('base') === 'osm',
     streets: q.get('streets') !== '0',
+    closures: q.get('closures') !== '0',
     chrome: q.get('ui') === 'map' ? 'hidden' : q.get('ui') === 'peek' ? 'peek' : 'full',
   };
 }
@@ -69,6 +72,7 @@ export function writeState(s: ViewState) {
   if (s.operator) q.set('op', s.operator);
   if (s.osmBasemap) q.set('base', 'osm');
   if (!s.streets) q.set('streets', '0');
+  if (!s.closures) q.set('closures', '0');
   if (s.chrome === 'hidden') q.set('ui', 'map');
   if (s.chrome === 'peek') q.set('ui', 'peek');
 

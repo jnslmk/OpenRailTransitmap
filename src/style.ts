@@ -280,6 +280,141 @@ function stationLayers(): LayerSpecification[] {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Construction closures
+//
+// These are an overlay, not part of the network: they sit above the route bands
+// so they can be seen against them, and below the stations, which are the map's
+// anchors and must not be buried under a possession.
+//
+// The mark is a hazard stripe - a dark line with the reference palette's yellow
+// dashed over it - rather than another coloured band. It has to read as "not a
+// service" at a glance, and every solid colour on this map already means a line
+// of some kind. Nothing is drawn on the true alignment except this, so a
+// closure sits in the middle of whatever bundle it interrupts.
+// ---------------------------------------------------------------------------
+
+/**
+ * A full closure or a line down to one track is the thing the layer exists for
+ * and shows from the zoom the regional network appears at. The rest - a
+ * timetable deviation, a few minutes of extra running time, an unspecified
+ * restriction - is real but minor, and the 1,900 of them in an ordinary day's
+ * feed, drawn across Germany at national zoom, would bury the network they
+ * annotate. They wait until the view
+ * is close enough for them to be about somewhere.
+ */
+export const CLOSURE_TIERS = {
+  major: { effects: ['closed', 'single-track'], minzoom: 6, weight: 1 },
+  minor: { effects: ['diverted', 'slower', 'other'], minzoom: 10, weight: 0.62 },
+} as const;
+
+/**
+ * Closure width, which deliberately does not follow the route weight curve.
+ *
+ * Around 500 sections of the German network are closed outright on an ordinary
+ * day and another 280 are down to one track - not a quirk of one reading, and
+ * their median spell in effect is seven hours, so they cannot be filtered down
+ * to a handful of "real" ones without lying about the rest. Drawn at the route
+ * bands' weight, that many stripes at national zoom bury the network they are
+ * annotating: the map stops being a rail map with construction on it and
+ * becomes a construction map.
+ *
+ * So the stripe is thinner than a route band while the whole country is on
+ * screen - enough to read where the work is concentrated, not enough to
+ * compete - and grows past the bands only once the view is close enough for one
+ * closure to be about one place.
+ */
+const CLOSURE_WIDTH_STOPS: [number, number][] = [
+  [5, 1.2], [8, 2.4], [11, 5.0], [14, 8.0],
+];
+
+const closureWidth = (weight: number): ExpressionSpecification =>
+  ['interpolate', ['linear'], ['zoom'],
+    ...CLOSURE_WIDTH_STOPS.flatMap(([z, px]) => [z, px * weight]),
+  ] as ExpressionSpecification;
+
+export type ClosureTier = keyof typeof CLOSURE_TIERS;
+
+/** Every closure layer, in draw order - for visibility toggling. */
+export const CLOSURE_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
+  .flatMap((tier) => [
+    `closures-${tier}-casing`, `closures-${tier}-hazard`, `closures-${tier}-point`,
+  ]);
+
+/** Layers a click should hit-test - the visible marks, not the casings. */
+export const CLOSURE_HIT_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
+  .flatMap((tier) => [`closures-${tier}-hazard`, `closures-${tier}-point`]);
+
+const HAZARD_DARK = '#2b2b2b';
+
+function closureLayers(): LayerSpecification[] {
+  return (Object.keys(CLOSURE_TIERS) as ClosureTier[]).flatMap((tier) => {
+    const { effects, minzoom, weight } = CLOSURE_TIERS[tier];
+    const width = closureWidth(weight);
+    const ofTier: ExpressionSpecification =
+      ['in', ['get', 'effect'], ['literal', [...effects]]];
+    // A circle layer draws one circle per *vertex*, so without this the marker
+    // layer beads every routed closure along its own geometry - which reads as
+    // a row of stations that are not there.
+    const lines: ExpressionSpecification =
+      ['all', ofTier, ['!=', ['geometry-type'], 'Point']];
+    const points: ExpressionSpecification =
+      ['all', ofTier, ['==', ['geometry-type'], 'Point']];
+
+    return [
+      {
+        id: `closures-${tier}-casing`,
+        type: 'line',
+        source: 'rail',
+        'source-layer': 'closures',
+        minzoom,
+        filter: lines,
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: { 'line-color': HAZARD_DARK, 'line-width': width },
+      },
+      {
+        // The stripes. `line-dasharray` is in multiples of the line width, so
+        // the pattern keeps its proportions as the width grows with zoom
+        // instead of turning into a solid line at one end of the range. A dash
+        // longer than it is wide survives the thin end of that range, where a
+        // square one aliases into a dotted grey.
+        id: `closures-${tier}-hazard`,
+        type: 'line',
+        source: 'rail',
+        'source-layer': 'closures',
+        minzoom,
+        filter: lines,
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
+          'line-color': LNVG.yellow,
+          'line-width': width,
+          'line-dasharray': [1.6, 1.2],
+        },
+      },
+      {
+        // 43% of a day's restrictions are inside one station and have no
+        // extent to draw, so they get a mark rather than being left off.
+        id: `closures-${tier}-point`,
+        type: 'circle',
+        source: 'rail',
+        'source-layer': 'closures',
+        minzoom,
+        filter: points,
+        paint: {
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3.4, 14, 5.4,
+          ] as ExpressionSpecification,
+          'circle-color': LNVG.yellow,
+          'circle-stroke-color': HAZARD_DARK,
+          'circle-stroke-width': [
+            'interpolate', ['linear'], ['zoom'], 6, 0.8, 14, 2,
+          ] as ExpressionSpecification,
+        },
+      },
+    ];
+  });
+}
+
 function baseLayers(): LayerSpecification[] {
   return [
     {
@@ -453,7 +588,7 @@ export function buildStyle({ base, osmBasemap, streets }: StyleOptions): StyleSp
   // pushed last wins collisions. Station names matter more than repeated line
   // badges, so the badge layer goes underneath them, and city labels sit above
   // both - they are the map's orientation anchors and there are few of them.
-  style.layers.push(...routeLayers(), badgeLayer(), ...stationLayers());
+  style.layers.push(...routeLayers(), badgeLayer(), ...closureLayers(), ...stationLayers());
 
   // Place labels live in the vector basemap, which the raster mode replaces.
   if (!osmBasemap) style.layers.push(...placeLayers());
