@@ -107,6 +107,8 @@ export interface Strings {
   planLeaveNow: string;
   planDepartAt: string;
   planArriveBy: string;
+  planDate: string;
+  planTime: string;
   planModes: string;
   planBike: string;
   planBikeQuestion: string;
@@ -272,6 +274,8 @@ const STRINGS: Strings = {
   planLeaveNow: 'Leave now',
   planDepartAt: 'Depart at',
   planArriveBy: 'Arrive by',
+  planDate: 'Date',
+  planTime: 'Time',
   planModes: 'Travel by',
   planBike: 'Bike',
   // The control is named by what it decides, not by the parameter it sets.

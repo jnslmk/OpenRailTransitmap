@@ -134,13 +134,20 @@ function duration(seconds: number): string {
   return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
-/** `<input type="datetime-local">` wants wall-clock in the browser's own zone. */
-function toLocalInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  );
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * `<input type="date">` and `<input type="time">` want wall-clock in the
+ * browser's own zone, in the fixed shapes `2026-08-25` and `07:12`. That is the
+ * *value* only: what the rider sees in the field is formatted by the browser,
+ * in their own locale - see the note on `plan-at` in `buildForm`.
+ */
+function toDateInput(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toTimeInput(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 /** A bicycle, drawn rather than typed: no icon font, and no emoji to render badly. */
@@ -285,10 +292,15 @@ function placeField(which: 'from' | 'to'): HTMLElement {
 
   let timer: number | undefined;
   let ac: AbortController | null = null;
+  /** What the list is offering right now, so Enter can take the first of it. */
+  let offered: Place[] = [];
+  /** An Enter that arrived before the geocoder answered, to honour when it does. */
+  let takeFirst = false;
 
   const close = () => {
     list.innerHTML = '';
     list.classList.remove('open');
+    offered = [];
   };
 
   function choose(place: Place) {
@@ -304,44 +316,78 @@ function placeField(which: 'from' | 'to'): HTMLElement {
     else redraw();
   }
 
+  function search(text: string): void {
+    ac?.abort();
+    ac = new AbortController();
+    const signal = ac.signal;
+    offered = [];
+    list.classList.add('open');
+    list.innerHTML = '';
+    list.appendChild(el('p', 'muted', s.planSearching));
+    geocode(text, signal)
+      .then((places) => {
+        if (signal.aborted) return;
+        list.innerHTML = '';
+        if (!places.length) {
+          takeFirst = false;
+          list.appendChild(el('p', 'muted', s.planNoPlaces));
+          return;
+        }
+        offered = places;
+        for (const p of places) {
+          const row = el('button', 'plan-suggestion');
+          row.type = 'button';
+          row.append(el('span', 'plan-suggestion-name', p.name));
+          if (p.area) row.append(el('span', 'plan-suggestion-area', p.area));
+          if (p.kind === 'STOP') row.classList.add('is-stop');
+          row.onclick = () => choose(p);
+          list.appendChild(row);
+        }
+        if (takeFirst) {
+          takeFirst = false;
+          choose(places[0]);
+        }
+      })
+      .catch(() => {
+        if (signal.aborted) return;
+        takeFirst = false;
+        list.innerHTML = '';
+        list.appendChild(el('p', 'muted', s.planFailed));
+      });
+  }
+
   input.oninput = () => {
     window.clearTimeout(timer);
+    // Whatever an earlier Enter was waiting for, this keystroke is no longer it.
+    takeFirst = false;
     const text = input.value;
     if (text.trim().length < 2) {
       close();
       return;
     }
-    timer = window.setTimeout(() => {
-      ac?.abort();
-      ac = new AbortController();
-      const signal = ac.signal;
-      list.classList.add('open');
-      list.innerHTML = '';
-      list.appendChild(el('p', 'muted', s.planSearching));
-      geocode(text, signal)
-        .then((places) => {
-          if (signal.aborted) return;
-          list.innerHTML = '';
-          if (!places.length) {
-            list.appendChild(el('p', 'muted', s.planNoPlaces));
-            return;
-          }
-          for (const p of places) {
-            const row = el('button', 'plan-suggestion');
-            row.type = 'button';
-            row.append(el('span', 'plan-suggestion-name', p.name));
-            if (p.area) row.append(el('span', 'plan-suggestion-area', p.area));
-            if (p.kind === 'STOP') row.classList.add('is-stop');
-            row.onclick = () => choose(p);
-            list.appendChild(row);
-          }
-        })
-        .catch(() => {
-          if (signal.aborted) return;
-          list.innerHTML = '';
-          list.appendChild(el('p', 'muted', s.planFailed));
-        });
-    }, 350);
+    timer = window.setTimeout(() => search(text), 350);
+  };
+
+  /**
+   * Enter takes the first suggestion, because typing a station name and
+   * pressing return is a rider saying "that one" - and the top hit is what the
+   * geocoder ranked as that one.
+   *
+   * If nothing is on offer yet the request has not been made or not come back:
+   * rather than swallow the key, the debounce is skipped, the search goes out
+   * at once, and the choice is made when it lands. So Enter never does nothing.
+   */
+  input.onkeydown = (e: KeyboardEvent) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (offered.length) {
+      choose(offered[0]);
+      return;
+    }
+    if (input.value.trim().length < 2) return;
+    window.clearTimeout(timer);
+    takeFirst = true;
+    search(input.value);
   };
 
   // A blur that lands on a suggestion must not close the list before the click
@@ -385,29 +431,77 @@ function buildForm(): HTMLElement {
   mode.appendChild(new Option(s.planArriveBy, 'arrive'));
   mode.value = state.time === null ? 'now' : state.arriveBy ? 'arrive' : 'depart';
 
-  const at = el('input', 'select plan-time');
-  at.type = 'datetime-local';
-  at.value = toLocalInput(state.time ?? new Date());
+  /**
+   * A day and a clock, as two native fields rather than one `datetime-local`.
+   *
+   * Two reasons. A combined field has to fit a date *and* a clock in one
+   * control, and in a sidebar this narrow the browser drops the clock off the
+   * end - which leaves a planner that cannot be asked for the 07:12.
+   *
+   * And the fields are told the rider's own locale rather than inheriting the
+   * page's. This interface is English and the document says so, but the day a
+   * German rider writes 25.08.2026 is not a day to offer them as 08/25/2026 -
+   * and Firefox formats a date field by the document's language, not the
+   * browser's. Where the browser's own locale already governs (Chrome, Safari)
+   * `lang` says the same thing, so all three end up formatting for the rider.
+   */
+  const at = el('div', 'plan-at');
+  const day = el('input', 'select plan-date');
+  day.type = 'date';
+  day.lang = navigator.language;
+  day.setAttribute('aria-label', s.planDate);
+
+  const clock = el('input', 'select plan-time');
+  clock.type = 'time';
+  clock.lang = navigator.language;
+  clock.setAttribute('aria-label', s.planTime);
+
+  const seed = state.time ?? new Date();
+  day.value = toDateInput(seed);
+  clock.value = toTimeInput(seed);
+  at.append(day, clock);
   at.hidden = state.time === null;
+
+  /** The two fields read as one instant, or null while either is empty. */
+  const picked = (): Date | null => {
+    const [y, m, d] = day.value.split('-').map(Number);
+    const [hh, mm] = clock.value.split(':').map(Number);
+    if ([y, m, d, hh, mm].some((n) => !Number.isFinite(n))) return null;
+    const instant = new Date(y, m - 1, d, hh, mm);
+    // `new Date(25, ...)` means 1925, and the field can hold a year that small.
+    instant.setFullYear(y);
+    return instant;
+  };
 
   mode.onchange = () => {
     if (mode.value === 'now') {
       state.time = null;
       state.arriveBy = false;
     } else {
-      state.time = at.value ? new Date(at.value) : new Date();
+      state.time = picked() ?? new Date();
       state.arriveBy = mode.value === 'arrive';
     }
     at.hidden = state.time === null;
     host.persist();
     if (state.from && state.to) query();
   };
-  at.onchange = () => {
-    if (!at.value) return;
-    state.time = new Date(at.value);
+
+  // Half a time is not a time. An emptied field is put back to what was already
+  // chosen rather than searched with, so the pair always says something true.
+  const chosen = () => {
+    const instant = picked();
+    if (!instant) {
+      const fallback = state.time ?? new Date();
+      if (!day.value) day.value = toDateInput(fallback);
+      if (!clock.value) clock.value = toTimeInput(fallback);
+      return;
+    }
+    state.time = instant;
     host.persist();
     if (state.from && state.to) query();
   };
+  day.onchange = chosen;
+  clock.onchange = chosen;
 
   when.append(mode, at);
   box.appendChild(when);
