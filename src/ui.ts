@@ -455,6 +455,30 @@ function draw() {
   root.appendChild(buildFooter());
 }
 
+const REPO = 'https://github.com/jnslmk/openrailtransitmap';
+
+/**
+ * Which build this is: the commit the bundle was made from, linked to that
+ * commit, and the moment it was made. The site redeploys nightly off whatever
+ * `main` holds, so "the current version" is otherwise unanswerable from the
+ * page itself - and a bug report that names a build is worth several that do
+ * not.
+ *
+ * The date is shown in the reader's own time zone, with the exact stamp kept on
+ * the `title` for anyone comparing against a workflow run. A bundle built
+ * outside a git checkout carries no commit, and then the line is omitted
+ * rather than filled with a placeholder that would read as a real build.
+ */
+function buildStamp(): string {
+  if (!__BUILD_COMMIT__) return '';
+  const when = new Date(__BUILD_TIME__);
+  const time = Number.isNaN(when.getTime()) ? '' : when.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const link = `<a href="${REPO}/commit/${__BUILD_COMMIT__}"><code>${__BUILD_COMMIT__}</code></a>`;
+  return `<p class="build" title="${__BUILD_TIME__}">${t().buildStamp(link, time)}</p>`;
+}
+
 /**
  * The credits, which belong under either tab: a route drawn in the Plan tab is
  * as much Transitous' work as a departure board is, and the coach lines under
@@ -466,12 +490,13 @@ function buildFooter(): HTMLElement {
   const footer = el('footer', 'panel attrib', `
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
-    <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>
+    <a href="${REPO}">Source on GitHub</a>
     <span class="live-attrib" hidden>${s.liveAttribution}</span>
     <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>
     <span class="closure-attrib" hidden>${s.closureAttribution}</span>
     <span class="coach-attrib" hidden>${s.coachAttribution}</span>
-    <span class="routing-attrib" hidden>${s.planAttribution}</span>`);
+    <span class="routing-attrib" hidden>${s.planAttribution}</span>
+    ${buildStamp()}`);
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
   punctAttribEl = footer.querySelector('.punct-attrib');

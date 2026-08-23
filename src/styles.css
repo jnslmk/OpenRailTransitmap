@@ -247,6 +247,12 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 .attrib a { color: var(--accent); }
 .attrib .live-attrib { display: block; }
 .attrib .closure-attrib { display: block; }
+/* The build stamp closes the sidebar, set apart from the credits above it. */
+.attrib .build { margin: 8px 0 0; }
+.attrib .build code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
 
 /* --- detail panel --------------------------------------------------------- */
 

@@ -48,6 +48,7 @@ export interface Strings {
   closureAsOf: (day: string) => string;
   closureAttribution: string;
   coachAttribution: string;
+  buildStamp: (commit: string, when: string) => string;
 
   // --- journey planner ------------------------------------------------------
   tabExplore: string; tabPlan: string;
@@ -192,6 +193,10 @@ const STRINGS: Strings = {
     'Construction: <a href="https://strecken-info.de">DB InfraGO strecken.info</a>',
   coachAttribution:
     'Coach: <a href="https://global.flixbus.com">FlixMobility Tech GmbH</a>',
+  // `commit` arrives as a link to the commit on GitHub, so this one is markup
+  // rather than text. The date is dropped rather than left dangling after the
+  // separator when the build has a commit but no readable date behind it.
+  buildStamp: (commit, when) => (when ? `Build ${commit} · ${when}` : `Build ${commit}`),
 
   tabExplore: 'Explore',
   tabPlan: 'Plan',
