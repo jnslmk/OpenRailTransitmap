@@ -47,7 +47,8 @@ export function chainWays(wayIds: string[], geom: Map<string, Coord[]>, snapM = 
   const byEnd = new Map<string, string[]>();
   const index = (k: string, id: string) => {
     const list = byEnd.get(k);
-    if (list) list.push(id); else byEnd.set(k, [id]);
+    if (list) list.push(id);
+    else byEnd.set(k, [id]);
   };
   for (const [id, g] of pending) {
     index(endpointKey(g[0]), id);
@@ -127,22 +128,38 @@ function stitchChains(chains: Coord[][], snapM: number): Coord[][] {
 
   // A piece remembers which original chain end sits at each of its own ends, so
   // a later join still knows which way round to turn it.
-  interface Piece { coords: Coord[]; head: string; tail: string }
+  interface Piece {
+    coords: Coord[];
+    head: string;
+    tail: string;
+  }
   const pieces = new Map<string, Piece>(); // keyed by both of its end keys
   const all: Piece[] = chains.map((coords, i) => ({
-    coords, head: endKey(i, true), tail: endKey(i, false),
+    coords,
+    head: endKey(i, true),
+    tail: endKey(i, false),
   }));
-  for (const piece of all) { pieces.set(piece.head, piece); pieces.set(piece.tail, piece); }
+  for (const piece of all) {
+    pieces.set(piece.head, piece);
+    pieces.set(piece.tail, piece);
+  }
 
   const live = new Set(all);
   const used = new Set<string>(); // an end can only be joined onto once
   for (const { from, to } of joins) {
     if (used.has(from) || used.has(to)) continue;
-    const a = pieces.get(from)!, b = pieces.get(to)!;
+    const a = pieces.get(from)!,
+      b = pieces.get(to)!;
     if (a === b) continue; // already one chain: joining would close a ring
 
-    if (a.head === from) { a.coords.reverse(); [a.head, a.tail] = [a.tail, a.head]; }
-    if (b.tail === to) { b.coords.reverse(); [b.head, b.tail] = [b.tail, b.head]; }
+    if (a.head === from) {
+      a.coords.reverse();
+      [a.head, a.tail] = [a.tail, a.head];
+    }
+    if (b.tail === to) {
+      b.coords.reverse();
+      [b.head, b.tail] = [b.tail, b.head];
+    }
     a.coords = a.coords.concat(b.coords);
     a.tail = b.tail;
     pieces.set(a.tail, a);
@@ -175,7 +192,8 @@ class SegmentIndex {
         for (let cy = cy0; cy <= cy1; cy++) {
           const key = `${cx}:${cy}`;
           const cell = this.cells.get(key);
-          if (cell) cell.push(seg); else this.cells.set(key, [seg]);
+          if (cell) cell.push(seg);
+          else this.cells.set(key, [seg]);
         }
       }
     }
@@ -187,15 +205,19 @@ class SegmentIndex {
     const cy = Math.floor(p[1] / SegmentIndex.CELL);
     // Project to metres once, so the point-segment maths is plain Euclidean.
     const lonScale = M_PER_DEG * Math.cos((p[1] * Math.PI) / 180);
-    const px = p[0] * lonScale, py = p[1] * M_PER_DEG;
+    const px = p[0] * lonScale,
+      py = p[1] * M_PER_DEG;
 
     for (let i = -1; i <= 1; i++) {
       for (let j = -1; j <= 1; j++) {
         for (const seg of this.cells.get(`${cx + i}:${cy + j}`) ?? []) {
-          const ax = seg[0][0] * lonScale, ay = seg[0][1] * M_PER_DEG;
-          const dx = seg[1][0] * lonScale - ax, dy = seg[1][1] * M_PER_DEG - ay;
+          const ax = seg[0][0] * lonScale,
+            ay = seg[0][1] * M_PER_DEG;
+          const dx = seg[1][0] * lonScale - ax,
+            dy = seg[1][1] * M_PER_DEG - ay;
           const len2 = dx * dx + dy * dy;
-          const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+          const t =
+            len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
           if (Math.hypot(px - (ax + t * dx), py - (ay + t * dy)) <= tol) return true;
         }
       }
@@ -296,7 +318,8 @@ export function collapseParallelTracks(
     for (const end of [g[0], g[g.length - 1]]) {
       const key = endpointKey(end);
       const list = byEnd.get(key);
-      if (list) list.push(id); else byEnd.set(key, [id]);
+      if (list) list.push(id);
+      else byEnd.set(key, [id]);
     }
   }
 
@@ -311,7 +334,7 @@ export function collapseParallelTracks(
     const busier = linesOn(b) - linesOn(a);
     if (busier !== 0) return busier;
     const longer = wayLength(geom.get(b)!) - wayLength(geom.get(a)!);
-    return longer !== 0 ? longer : (a < b ? -1 : 1); // id break keeps rebuilds identical
+    return longer !== 0 ? longer : a < b ? -1 : 1; // id break keeps rebuilds identical
   });
 
   // The network-wide choice comes first and unconditionally: it is already free
@@ -341,16 +364,20 @@ export function collapseParallelTracks(
       index.add(g);
 
       // Push both ends' neighbours straightest-last, so the straightest pops first.
-      const ends: [Coord, Coord][] = [[g[g.length - 1], g[g.length - 2]], [g[0], g[1]]];
+      const ends: [Coord, Coord][] = [
+        [g[g.length - 1], g[g.length - 2]],
+        [g[0], g[1]],
+      ];
       for (const [node, inbound] of ends) {
         const arriving = bearing(inbound, node);
         const neighbours = (byEnd.get(endpointKey(node)) ?? [])
           .filter((n) => n !== id && !decided.has(n))
           .map((n) => {
             const ng = geom.get(n)!;
-            const leaving = endpointKey(ng[0]) === endpointKey(node)
-              ? bearing(ng[0], ng[1])
-              : bearing(ng[ng.length - 1], ng[ng.length - 2]);
+            const leaving =
+              endpointKey(ng[0]) === endpointKey(node)
+                ? bearing(ng[0], ng[1])
+                : bearing(ng[ng.length - 1], ng[ng.length - 2]);
             const turn = Math.abs(arriving - leaving);
             return { id: n, turn: turn > Math.PI ? 2 * Math.PI - turn : turn };
           })
@@ -380,7 +407,11 @@ function reconnectors(
   const find = (id: string): string => {
     let root = id;
     while (parent.get(root) !== root) root = parent.get(root)!;
-    while (parent.get(id) !== root) { const next = parent.get(id)!; parent.set(id, root); id = next; }
+    while (parent.get(id) !== root) {
+      const next = parent.get(id)!;
+      parent.set(id, root);
+      id = next;
+    }
     return root;
   };
   // One way per node end; joining a way to whoever already claimed its ends
@@ -393,7 +424,8 @@ function reconnectors(
       const key = endpointKey(end);
       const owner = claimed.get(key);
       if (owner) {
-        const a = find(id), b = find(owner);
+        const a = find(id),
+          b = find(owner);
         if (a !== b) parent.set(a, b);
       } else {
         claimed.set(key, id);

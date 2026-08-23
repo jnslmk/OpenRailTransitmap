@@ -56,7 +56,11 @@ function check(ok, what, detail = '') {
 }
 
 const eq = (actual, expected, what) =>
-  check(Object.is(actual, expected), what, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  check(
+    Object.is(actual, expected),
+    what,
+    `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+  );
 
 async function testCase(name, fn) {
   currentCase = { name, checks: [], failed: false };
@@ -119,7 +123,11 @@ async function run(page) {
     const bike = await page.$('.itin-street.is-bike');
     check(!!bike, 'a bike leg is in the mode strip');
     const notes = await page.$$eval('.itin-note', (x) => x.map((y) => y.textContent));
-    check(notes.some((t) => /riding/.test(t)), 'riding time is stated', JSON.stringify(notes));
+    check(
+      notes.some((t) => /riding/.test(t)),
+      'riding time is stated',
+      JSON.stringify(notes),
+    );
 
     const drawn = await page.evaluate(() => {
       const m = window.__map;
@@ -131,8 +139,11 @@ async function run(page) {
     });
     check(drawn.transit > 0, 'transit legs are drawn on the map', JSON.stringify(drawn));
     eq(drawn.ends, 2, 'both ends of the journey are marked');
-    check(typeof drawn.dimmed === 'number' && drawn.dimmed < 1,
-      'the network dims behind the journey', String(drawn.dimmed));
+    check(
+      typeof drawn.dimmed === 'number' && drawn.dimmed < 1,
+      'the network dims behind the journey',
+      String(drawn.dimmed),
+    );
   });
 
   await testCase('a leg says what it cannot promise about bikes', async () => {
@@ -141,7 +152,11 @@ async function run(page) {
     // `bikesAllowed: false` and "the feed did not say" are indistinguishable in
     // the API, so the UI must never render the first as a refusal. See the note
     // in src/routing.ts.
-    check(/not published|Bikes carried/.test(flags), 'bike carriage is stated honestly', flags.slice(0, 200));
+    check(
+      /not published|Bikes carried/.test(flags),
+      'bike carriage is stated honestly',
+      flags.slice(0, 200),
+    );
   });
 
   await testCase('the plan survives being shared', async () => {

@@ -99,7 +99,10 @@ export const MODE_SPECS: Record<Mode, ModeSpec> = {
   // would claim infrastructure that is not there - the same honesty the
   // closure overlay applies when it refuses to chord between operating points.
   coach: {
-    weightPt: 2.243, minzoom: 5, defaultColour: COACH_GREEN, order: 5,
+    weightPt: 2.243,
+    minzoom: 5,
+    defaultColour: COACH_GREEN,
+    order: 5,
     dash: [2.4, 1.6],
   },
 };
@@ -151,12 +154,31 @@ export function normaliseColour(raw: string | undefined): string | null {
   if (!raw) return null;
   const v = raw.trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(v)) return v;
-  if (/^#[0-9a-f]{3}$/.test(v)) return '#' + v.slice(1).split('').map((c) => c + c).join('');
+  if (/^#[0-9a-f]{3}$/.test(v))
+    return (
+      '#' +
+      v
+        .slice(1)
+        .split('')
+        .map((c) => c + c)
+        .join('')
+    );
   const named: Record<string, string> = {
-    red: '#e30513', blue: '#0069b4', green: '#4b8f46', yellow: '#fed060',
-    purple: '#951b81', violet: '#951b81', orange: '#e8720c', brown: '#8b5a2b',
-    black: '#1a1a1a', grey: '#808080', gray: '#808080', white: '#ffffff',
-    magenta: '#e6007e', cyan: '#00a5b5', pink: '#e6007e',
+    red: '#e30513',
+    blue: '#0069b4',
+    green: '#4b8f46',
+    yellow: '#fed060',
+    purple: '#951b81',
+    violet: '#951b81',
+    orange: '#e8720c',
+    brown: '#8b5a2b',
+    black: '#1a1a1a',
+    grey: '#808080',
+    gray: '#808080',
+    white: '#ffffff',
+    magenta: '#e6007e',
+    cyan: '#00a5b5',
+    pink: '#e6007e',
   };
   return named[v] ?? null;
 }
@@ -205,8 +227,9 @@ export const STOP_TIERS: readonly StopTier[] = [
 ];
 
 /** The tier table keyed by rank, for the pipeline's per-feature minzoom. */
-export const STOP_TIER_BY_RANK: Record<number, StopTier> =
-  Object.fromEntries(STOP_TIERS.map((t) => [t.rank, t]));
+export const STOP_TIER_BY_RANK: Record<number, StopTier> = Object.fromEntries(
+  STOP_TIERS.map((t) => [t.rank, t]),
+);
 
 /**
  * Which tier a stop belongs to. Deliberately built from what the map already

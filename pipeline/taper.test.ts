@@ -9,8 +9,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  slotOffset, taperLengthM, fitTaperLength, taperSteps, taperMinzoom, chainLengthM, trimEnd,
-  splitByLength, buildTaper, TAPER_STEPS, type Coord,
+  slotOffset,
+  taperLengthM,
+  fitTaperLength,
+  taperSteps,
+  taperMinzoom,
+  chainLengthM,
+  trimEnd,
+  splitByLength,
+  buildTaper,
+  TAPER_STEPS,
+  type Coord,
 } from './lib/taper.ts';
 
 /** Metres, at Braunschweig's latitude, as a longitude/latitude delta. */
@@ -19,7 +28,10 @@ const M_LON = M_LAT / Math.cos((52.26 * Math.PI) / 180);
 
 /** A straight chain running east from (x, y) for `len` metres. */
 function eastward(x: number, y: number, len: number): Coord[] {
-  return [[x, y], [x + len * M_LON, y]];
+  return [
+    [x, y],
+    [x + len * M_LON, y],
+  ];
 }
 
 test('slotOffset spaces a bundle one pitch apart, whatever its size', () => {
@@ -43,7 +55,11 @@ test('slotOffset is closed under negation, so a flipped stretch lands on itself'
     // `o === 0 ? 0 : -o` because negating zero gives -0, which deepEqual
     // treats as a different value from 0.
     const mirrored = offsets.map((o) => (o === 0 ? 0 : -o)).sort((a, b) => a - b);
-    assert.deepEqual(mirrored, [...offsets].sort((a, b) => a - b), `n=${n}`);
+    assert.deepEqual(
+      mirrored,
+      [...offsets].sort((a, b) => a - b),
+      `n=${n}`,
+    );
   }
 });
 
@@ -296,7 +312,8 @@ test('buildTaper nudges a step off an integer slot on an even delta', () => {
   const downChain = eastward(10.52 + 200 * M_LON, 52.26, 200);
   const steps = buildTaper(upChain, downChain, 0, 2, 80, 3)!;
   assert.equal(steps.length, 3);
-  for (const step of steps) assert.ok(!Number.isInteger(step.offset), `offset ${step.offset} is an integer`);
+  for (const step of steps)
+    assert.ok(!Number.isInteger(step.offset), `offset ${step.offset} is an integer`);
   // Still monotonic and still bounded by the endpoints.
   for (let k = 1; k < steps.length; k++) assert.ok(steps[k].offset > steps[k - 1].offset);
   assert.ok(steps[0].offset > 0 && steps[steps.length - 1].offset < 2);
@@ -320,7 +337,8 @@ test('buildTaper nudge keeps the ramp monotonic across a run of even deltas', ()
   const upChain = eastward(10.52, 52.26, 200);
   const downChain = eastward(10.52 + 200 * M_LON, 52.26, 200);
   const steps = buildTaper(upChain, downChain, -4, 6, 80, 5)!;
-  for (const step of steps) assert.ok(!Number.isInteger(step.offset), `offset ${step.offset} is an integer`);
+  for (const step of steps)
+    assert.ok(!Number.isInteger(step.offset), `offset ${step.offset} is an integer`);
   for (let k = 1; k < steps.length; k++) assert.ok(steps[k].offset > steps[k - 1].offset);
   assert.ok(steps[0].offset > -4 && steps[steps.length - 1].offset < 6);
 });

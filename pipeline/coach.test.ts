@@ -15,8 +15,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateRawSync } from 'node:zlib';
 import {
-  splitCsvLine, clipToBbox, splitOnGaps, readZipMembers, parseFeed,
-  type Bbox, type CoachSource,
+  splitCsvLine,
+  clipToBbox,
+  splitOnGaps,
+  readZipMembers,
+  parseFeed,
+  type Bbox,
+  type CoachSource,
 } from './coach.ts';
 import type { Coord } from './lib/track.ts';
 
@@ -80,17 +85,17 @@ function makeZip(members: Record<string, string>, store = new Set<string>()): Bu
 test('a quoted field keeps the commas inside it', () => {
   // FlixBus long names carry these constantly - "Berlin, ZOB - Munich" - and a
   // naive split renames the line and shifts every column after it.
-  assert.deepEqual(
-    splitCsvLine('FLIXBUS-eu,001,"Berlin, ZOB - Munich",3,73D700'),
-    ['FLIXBUS-eu', '001', 'Berlin, ZOB - Munich', '3', '73D700'],
-  );
+  assert.deepEqual(splitCsvLine('FLIXBUS-eu,001,"Berlin, ZOB - Munich",3,73D700'), [
+    'FLIXBUS-eu',
+    '001',
+    'Berlin, ZOB - Munich',
+    '3',
+    '73D700',
+  ]);
 });
 
 test('a doubled quote inside a quoted field is one quote', () => {
-  assert.deepEqual(
-    splitCsvLine('a,"say ""hi""",b'),
-    ['a', 'say "hi"', 'b'],
-  );
+  assert.deepEqual(splitCsvLine('a,"say ""hi""",b'), ['a', 'say "hi"', 'b']);
 });
 
 test('empty fields survive at both ends', () => {
@@ -104,7 +109,11 @@ test('empty fields survive at both ends', () => {
 const BOX: Bbox = [0, 0, 10, 10];
 
 test('a line wholly inside the box is returned unchanged', () => {
-  const pts: Coord[] = [[1, 1], [2, 2], [3, 3]];
+  const pts: Coord[] = [
+    [1, 1],
+    [2, 2],
+    [3, 3],
+  ];
   assert.deepEqual(clipToBbox(pts, BOX), [pts]);
 });
 
@@ -112,7 +121,14 @@ test('a line leaving the box stops at the edge, not at the last point inside', (
   // The measured failure this replaces: the Kyiv and Bucharest services stride
   // 600 km between shape points once they leave the EU core, so keeping the
   // neighbouring point drew a spike that long out of the region.
-  const parts = clipToBbox([[5, 5], [5, 9], [5, 600]], BOX);
+  const parts = clipToBbox(
+    [
+      [5, 5],
+      [5, 9],
+      [5, 600],
+    ],
+    BOX,
+  );
   assert.equal(parts.length, 1);
   assert.deepEqual(parts[0][parts[0].length - 1], [5, 10]);
 });
@@ -120,30 +136,91 @@ test('a line leaving the box stops at the edge, not at the last point inside', (
 test('a segment crossing the box with neither end inside is still drawn', () => {
   // A point-wise test drops this line entirely, which is how a sparse shape
   // through the region disappears from the map.
-  const parts = clipToBbox([[-5, 5], [15, 5]], BOX);
-  assert.deepEqual(parts, [[[0, 5], [10, 5]]]);
+  const parts = clipToBbox(
+    [
+      [-5, 5],
+      [15, 5],
+    ],
+    BOX,
+  );
+  assert.deepEqual(parts, [
+    [
+      [0, 5],
+      [10, 5],
+    ],
+  ]);
 });
 
 test('a service that leaves the region and returns comes back in two parts', () => {
-  const parts = clipToBbox([[1, 5], [4, 5], [-4, 5], [-4, 8], [4, 8], [8, 8]], BOX);
+  const parts = clipToBbox(
+    [
+      [1, 5],
+      [4, 5],
+      [-4, 5],
+      [-4, 8],
+      [4, 8],
+      [8, 8],
+    ],
+    BOX,
+  );
   assert.equal(parts.length, 2);
-  assert.deepEqual(parts[0], [[1, 5], [4, 5], [0, 5]]);
-  assert.deepEqual(parts[1], [[0, 8], [4, 8], [8, 8]]);
+  assert.deepEqual(parts[0], [
+    [1, 5],
+    [4, 5],
+    [0, 5],
+  ]);
+  assert.deepEqual(parts[1], [
+    [0, 8],
+    [4, 8],
+    [8, 8],
+  ]);
 });
 
 test('a line that misses the box entirely yields nothing', () => {
-  assert.deepEqual(clipToBbox([[20, 20], [30, 30]], BOX), []);
+  assert.deepEqual(
+    clipToBbox(
+      [
+        [20, 20],
+        [30, 30],
+      ],
+      BOX,
+    ),
+    [],
+  );
 });
 
 test('touching a corner encloses no length and yields nothing', () => {
   // Passes through (10, 0) exactly, entering and leaving at the same instant.
-  assert.deepEqual(clipToBbox([[5, -5], [15, 5]], BOX), []);
+  assert.deepEqual(
+    clipToBbox(
+      [
+        [5, -5],
+        [15, 5],
+      ],
+      BOX,
+    ),
+    [],
+  );
 });
 
 test('running along the edge counts as being in the region', () => {
   // Not a corner case to be discarded: a coach on a road that follows the
   // region boundary is in the region for the whole of that stretch.
-  assert.deepEqual(clipToBbox([[10, -5], [10, 15]], BOX), [[[10, 0], [10, 10]]]);
+  assert.deepEqual(
+    clipToBbox(
+      [
+        [10, -5],
+        [10, 15],
+      ],
+      BOX,
+    ),
+    [
+      [
+        [10, 0],
+        [10, 10],
+      ],
+    ],
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -165,7 +242,11 @@ test('a shape is cut where the feed skipped a piece', () => {
 test('ordinary motorway sampling is left alone', () => {
   // 99.9% of real gaps are under 12.7 km; nothing near that may be cut, or the
   // network arrives in pieces.
-  const run: Coord[] = [[9.0, 52.0], [9.1, 52.0], [9.25, 52.0]];
+  const run: Coord[] = [
+    [9.0, 52.0],
+    [9.1, 52.0],
+    [9.25, 52.0],
+  ];
   assert.deepEqual(splitOnGaps(run), [run]);
 });
 
@@ -173,10 +254,16 @@ test('a hole is removed before the region is clipped, not after', () => {
   // Order matters and this is why: a hole that spans the region, clipped
   // first, becomes a straight line right across it - 229 of 347 German lines
   // drew one. Splitting first leaves nothing to clip.
-  const throughGermany: Coord[] = [[4.0, 52.0], [20.0, 52.0]];
+  const throughGermany: Coord[] = [
+    [4.0, 52.0],
+    [20.0, 52.0],
+  ];
   const germany: Bbox = [5.87, 47.27, 15.04, 55.06];
   assert.notDeepEqual(clipToBbox(throughGermany, germany), []);
-  assert.deepEqual(splitOnGaps(throughGermany).flatMap((r) => clipToBbox(r, germany)), []);
+  assert.deepEqual(
+    splitOnGaps(throughGermany).flatMap((r) => clipToBbox(r, germany)),
+    [],
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -196,10 +283,7 @@ test('reads the members it asks for, deflated or stored', () => {
 
 test('a feed missing a table it needs says which one', () => {
   const zip = makeZip({ 'routes.txt': 'route_id\n1\n' });
-  assert.throws(
-    () => readZipMembers(zip, ['routes.txt', 'shapes.txt']),
-    /missing shapes\.txt/,
-  );
+  assert.throws(() => readZipMembers(zip, ['routes.txt', 'shapes.txt']), /missing shapes\.txt/);
 });
 
 // ---------------------------------------------------------------------------
@@ -244,11 +328,7 @@ function fixture(): Buffer {
       's2,Berlin ZOB,5.10,5.10,BER\n' +
       's3,Far Away,80.00,80.00,FAR\n',
     'stop_times.txt':
-      'trip_id,stop_id,stop_sequence\n' +
-      't2,s2,2\n' +
-      't2,s1,1\n' +
-      't1,s3,1\n' +
-      't4,s3,1\n',
+      'trip_id,stop_id,stop_sequence\n' + 't2,s2,2\n' + 't2,s1,1\n' + 't1,s3,1\n' + 't4,s3,1\n',
     'shapes.txt':
       'shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n' +
       'major,5.00,5.00,0\n' +
@@ -265,13 +345,22 @@ function fixture(): Buffer {
 
 test('keeps only the allowed agency, so FlixTrain is not drawn twice', () => {
   const lines = parseFeed(SOURCE, fixture(), BOX);
-  assert.deepEqual(lines.map((l) => l.ref), ['100']);
+  assert.deepEqual(
+    lines.map((l) => l.ref),
+    ['100'],
+  );
 });
 
 test('draws the shape most trips actually run, not the first one seen', () => {
   // `minor` appears first in trips.txt and runs one trip; `major` runs two.
   const [line] = parseFeed(SOURCE, fixture(), BOX);
-  assert.deepEqual(line.parts, [[[5.00, 5.00], [5.05, 5.05], [5.10, 5.10]]]);
+  assert.deepEqual(line.parts, [
+    [
+      [5.0, 5.0],
+      [5.05, 5.05],
+      [5.1, 5.1],
+    ],
+  ]);
 });
 
 test('strips the operator prefix off the badge but keeps it as the operator', () => {
@@ -290,11 +379,17 @@ test('the feed colour arrives as a usable hex, not the bare GTFS value', () => {
 test('stops come back in calling order and carry their MOTIS id', () => {
   // stop_times is deliberately out of order in the fixture, as GTFS permits.
   const [line] = parseFeed(SOURCE, fixture(), BOX);
-  assert.deepEqual(line.stops.map((s) => s.name), ['Hamburg ZOB', 'Berlin ZOB']);
+  assert.deepEqual(
+    line.stops.map((s) => s.name),
+    ['Hamburg ZOB', 'Berlin ZOB'],
+  );
   assert.equal(line.stops[0].motisId, 'eu-testbus_s1');
 });
 
 test('a route that never enters the region is dropped entirely', () => {
   const lines = parseFeed(SOURCE, fixture(), BOX);
-  assert.equal(lines.some((l) => l.ref === '200'), false);
+  assert.equal(
+    lines.some((l) => l.ref === '200'),
+    false,
+  );
 });

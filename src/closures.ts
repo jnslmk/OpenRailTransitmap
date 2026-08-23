@@ -41,9 +41,7 @@ export interface ClosureRecord {
   extended: number;
 }
 
-const EFFECTS = new Set<ClosureEffect>([
-  'closed', 'single-track', 'diverted', 'slower', 'other',
-]);
+const EFFECTS = new Set<ClosureEffect>(['closed', 'single-track', 'diverted', 'slower', 'other']);
 const DIRECTIONS = new Set<ClosureDirection>(['both', 'with-km', 'against-km']);
 
 /**
@@ -52,9 +50,7 @@ const DIRECTIONS = new Set<ClosureDirection>(['both', 'with-km', 'against-km']);
  * `other`, which is honest - the restriction exists and we cannot say what it
  * does - and keeps a new upstream value from rendering as `undefined`.
  */
-export function parseClosure(
-  props: Record<string, unknown>, isPoint: boolean,
-): ClosureRecord {
+export function parseClosure(props: Record<string, unknown>, isPoint: boolean): ClosureRecord {
   const str = (key: string) => (typeof props[key] === 'string' ? props[key] : '');
   const effect = str('effect') as ClosureEffect;
   const direction = str('direction') as ClosureDirection;
@@ -92,6 +88,9 @@ export function formatDate(iso: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
   });
 }

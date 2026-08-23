@@ -30,8 +30,15 @@
 
 import { t } from './strings.ts';
 import {
-  geocode, plan, MODE_GROUPS, ALL_TRANSIT_MODES,
-  type Place, type PlanResult, type Itinerary, type Leg, type TransitMode,
+  geocode,
+  plan,
+  MODE_GROUPS,
+  ALL_TRANSIT_MODES,
+  type Place,
+  type PlanResult,
+  type Itinerary,
+  type Leg,
+  type TransitMode,
 } from './routing.ts';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +102,9 @@ let statusDetail = '';
 let inFlight: AbortController | null = null;
 
 const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K, cls?: string, text?: string,
+  tag: K,
+  cls?: string,
+  text?: string,
 ): HTMLElementTagNameMap[K] => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -109,7 +118,10 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 
 function clockAt(date: Date, tz: string | null): string {
   return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz ?? undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: tz ?? undefined,
   }).format(date);
 }
 
@@ -125,8 +137,10 @@ function duration(seconds: number): string {
 /** `<input type="datetime-local">` wants wall-clock in the browser's own zone. */
 function toLocalInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
 }
 
 /** A bicycle, drawn rather than typed: no icon font, and no emoji to render badly. */
@@ -136,8 +150,8 @@ function bikeGlyph(): SVGSVGElement {
   svg.setAttribute('class', 'glyph');
   svg.setAttribute('aria-hidden', 'true');
   svg.innerHTML =
-    '<circle cx="5" cy="11" r="4"/><circle cx="19" cy="11" r="4"/>'
-    + '<path d="M5 11 L10 4 L15 11 M10 4 L14 4 M9.5 11 L15 11"/>';
+    '<circle cx="5" cy="11" r="4"/><circle cx="19" cy="11" r="4"/>' +
+    '<path d="M5 11 L10 4 L15 11 M10 4 L14 4 M9.5 11 L15 11"/>';
   return svg;
 }
 
@@ -192,47 +206,54 @@ function runPlan(pageCursor: string | undefined, keepSelection = false): void {
   // nothing and reads as a broken planner. Fall back to everything.
   if (!modes.size) ALL_TRANSIT_MODES.forEach((m) => modes.add(m));
 
-  plan({
-    from: s.from,
-    to: s.to,
-    time: s.time ?? new Date(),
-    arriveBy: s.arriveBy,
-    modes,
-    bike: { maxRideSeconds: s.bikeMinutes * 60, carriage: s.carriage },
-    pageCursor,
-  }, ac.signal).then((r) => {
-    if (ac.signal.aborted) return;
-    // Earlier/Later replace the list rather than growing it: an unbounded list
-    // of near-identical departures is not what the buttons are for, and the
-    // cursors come back fresh on each page so paging stays possible.
-    result = r;
-    status = r.itineraries.length ? 'idle' : 'empty';
-    // A page of results is a different set, so the old index means nothing.
-    const wanted = host.state.selected;
-    const restorable = keepSelection && wanted !== null && wanted < r.itineraries.length;
-    host.state.selected = restorable ? wanted
-      : r.itineraries.length && pageCursor === undefined ? 0
-      : null;
-    if (r.itineraries.length) host.onRoutingUsed();
-    showSelected();
-    host.persist();
-    redraw();
-  }).catch((err) => {
-    if (ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
-    result = null;
-    status = 'error';
-    // Deliberately one message for every failure. A public API timing out, a
-    // bad status and an unparseable body are the same event to a rider, and
-    // `LiveDataError` exists precisely so the UI does not have to tell them
-    // apart - the same stance the departure board takes in live.ts.
-    statusDetail = t().planFailed;
-    redraw();
-  });
+  plan(
+    {
+      from: s.from,
+      to: s.to,
+      time: s.time ?? new Date(),
+      arriveBy: s.arriveBy,
+      modes,
+      bike: { maxRideSeconds: s.bikeMinutes * 60, carriage: s.carriage },
+      pageCursor,
+    },
+    ac.signal,
+  )
+    .then((r) => {
+      if (ac.signal.aborted) return;
+      // Earlier/Later replace the list rather than growing it: an unbounded list
+      // of near-identical departures is not what the buttons are for, and the
+      // cursors come back fresh on each page so paging stays possible.
+      result = r;
+      status = r.itineraries.length ? 'idle' : 'empty';
+      // A page of results is a different set, so the old index means nothing.
+      const wanted = host.state.selected;
+      const restorable = keepSelection && wanted !== null && wanted < r.itineraries.length;
+      host.state.selected = restorable
+        ? wanted
+        : r.itineraries.length && pageCursor === undefined
+          ? 0
+          : null;
+      if (r.itineraries.length) host.onRoutingUsed();
+      showSelected();
+      host.persist();
+      redraw();
+    })
+    .catch((err) => {
+      if (ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
+      result = null;
+      status = 'error';
+      // Deliberately one message for every failure. A public API timing out, a
+      // bad status and an unparseable body are the same event to a rider, and
+      // `LiveDataError` exists precisely so the UI does not have to tell them
+      // apart - the same stance the departure board takes in live.ts.
+      statusDetail = t().planFailed;
+      redraw();
+    });
 }
 
 function showSelected(): void {
   const i = host.state.selected;
-  host.onItinerary(i !== null ? result?.itineraries[i] ?? null : null);
+  host.onItinerary(i !== null ? (result?.itineraries[i] ?? null) : null);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,23 +286,31 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   let timer: number | undefined;
   let ac: AbortController | null = null;
 
-  const close = () => { list.innerHTML = ''; list.classList.remove('open'); };
+  const close = () => {
+    list.innerHTML = '';
+    list.classList.remove('open');
+  };
 
   function choose(place: Place) {
-    if (which === 'from') state.from = place; else state.to = place;
+    if (which === 'from') state.from = place;
+    else state.to = place;
     input.value = place.name;
     close();
     host.persist();
     // Both ends known is the moment a search is worth making unasked; it is
     // the one place this module plans without an explicit submit, and it
     // matches what a rider means by filling in the second box.
-    if (state.from && state.to) query(); else redraw();
+    if (state.from && state.to) query();
+    else redraw();
   }
 
   input.oninput = () => {
     window.clearTimeout(timer);
     const text = input.value;
-    if (text.trim().length < 2) { close(); return; }
+    if (text.trim().length < 2) {
+      close();
+      return;
+    }
     timer = window.setTimeout(() => {
       ac?.abort();
       ac = new AbortController();
@@ -289,24 +318,29 @@ function placeField(which: 'from' | 'to'): HTMLElement {
       list.classList.add('open');
       list.innerHTML = '';
       list.appendChild(el('p', 'muted', s.planSearching));
-      geocode(text, signal).then((places) => {
-        if (signal.aborted) return;
-        list.innerHTML = '';
-        if (!places.length) { list.appendChild(el('p', 'muted', s.planNoPlaces)); return; }
-        for (const p of places) {
-          const row = el('button', 'plan-suggestion');
-          row.type = 'button';
-          row.append(el('span', 'plan-suggestion-name', p.name));
-          if (p.area) row.append(el('span', 'plan-suggestion-area', p.area));
-          if (p.kind === 'STOP') row.classList.add('is-stop');
-          row.onclick = () => choose(p);
-          list.appendChild(row);
-        }
-      }).catch(() => {
-        if (signal.aborted) return;
-        list.innerHTML = '';
-        list.appendChild(el('p', 'muted', s.planFailed));
-      });
+      geocode(text, signal)
+        .then((places) => {
+          if (signal.aborted) return;
+          list.innerHTML = '';
+          if (!places.length) {
+            list.appendChild(el('p', 'muted', s.planNoPlaces));
+            return;
+          }
+          for (const p of places) {
+            const row = el('button', 'plan-suggestion');
+            row.type = 'button';
+            row.append(el('span', 'plan-suggestion-name', p.name));
+            if (p.area) row.append(el('span', 'plan-suggestion-area', p.area));
+            if (p.kind === 'STOP') row.classList.add('is-stop');
+            row.onclick = () => choose(p);
+            list.appendChild(row);
+          }
+        })
+        .catch(() => {
+          if (signal.aborted) return;
+          list.innerHTML = '';
+          list.appendChild(el('p', 'muted', s.planFailed));
+        });
     }, 350);
   };
 
@@ -337,7 +371,8 @@ function buildForm(): HTMLElement {
   swap.onclick = () => {
     [state.from, state.to] = [state.to, state.from];
     host.persist();
-    if (state.from && state.to) query(); else redraw();
+    if (state.from && state.to) query();
+    else redraw();
   };
   places.appendChild(swap);
   box.appendChild(places);
@@ -389,7 +424,8 @@ function buildForm(): HTMLElement {
       if (state.groups.has(group.key)) state.groups.delete(group.key);
       else state.groups.add(group.key);
       host.persist();
-      if (state.from && state.to) query(); else redraw();
+      if (state.from && state.to) query();
+      else redraw();
     };
     chips.appendChild(chip);
   }
@@ -438,7 +474,8 @@ function buildForm(): HTMLElement {
   carriageBox.onchange = () => {
     state.carriage = carriageBox.checked;
     host.persist();
-    if (state.from && state.to) query(); else redraw();
+    if (state.from && state.to) query();
+    else redraw();
   };
   carriage.append(carriageBox, el('span', 'label', s.planCarriage));
   bike.appendChild(carriage);
@@ -529,8 +566,13 @@ function legDetail(leg: Leg): HTMLElement {
     pill.append(isBike(leg) ? bikeGlyph() : walkGlyph());
     title.append(pill);
     const km = leg.metres !== null ? ` · ${(leg.metres / 1000).toFixed(1)} km` : '';
-    title.append(el('span', 'leg-dest',
-      `${isBike(leg) ? s.planBikeLeg : s.planWalk} ${duration(leg.seconds)}${km}`));
+    title.append(
+      el(
+        'span',
+        'leg-dest',
+        `${isBike(leg) ? s.planBikeLeg : s.planWalk} ${duration(leg.seconds)}${km}`,
+      ),
+    );
   }
   body.appendChild(title);
 
@@ -545,7 +587,8 @@ function legDetail(leg: Leg): HTMLElement {
   // cannot give honestly is said as not-given rather than as no.
   if (leg.transit) {
     const flags = el('div', 'leg-flags');
-    if (leg.bikesAllowed === true) flags.appendChild(el('span', 'flag flag-yes', s.planBikesCarried));
+    if (leg.bikesAllowed === true)
+      flags.appendChild(el('span', 'flag flag-yes', s.planBikesCarried));
     else if (host.state.bikeMinutes > 0) flags.appendChild(el('span', 'flag', s.planBikesUnknown));
     if (leg.reservationRequired) flags.appendChild(el('span', 'flag', s.planReservation));
     if (leg.cancelled) flags.appendChild(el('span', 'flag flag-bad', s.planCancelled));
@@ -583,15 +626,21 @@ function itineraryRow(itinerary: Itinerary, index: number): HTMLElement {
   head.append(el('span', 'itin-dur', duration(itinerary.seconds)));
   const from = itinerary.legs[0]?.from;
   const to = itinerary.legs[itinerary.legs.length - 1]?.to;
-  head.append(el('span', 'itin-span',
-    `${clockAt(itinerary.start, from?.tz ?? null)} → ${clockAt(itinerary.end, to?.tz ?? null)}`));
+  head.append(
+    el(
+      'span',
+      'itin-span',
+      `${clockAt(itinerary.start, from?.tz ?? null)} → ${clockAt(itinerary.end, to?.tz ?? null)}`,
+    ),
+  );
   head.append(el('span', 'itin-transfers', s.planTransfers(itinerary.transfers)));
   row.appendChild(head);
 
   if (itinerary.direct) {
     const only = itinerary.legs[0];
-    row.appendChild(el('div', 'itin-note',
-      only && isBike(only) ? s.planWholeWayBike : s.planWholeWayWalk));
+    row.appendChild(
+      el('div', 'itin-note', only && isBike(only) ? s.planWholeWayBike : s.planWholeWayWalk),
+    );
   } else {
     row.appendChild(modeStrip(itinerary));
   }
@@ -693,9 +742,11 @@ export function renderPlanner(container: HTMLElement, h: PlannerHost): void {
  */
 export function setPlannerPlace(which: 'from' | 'to', place: Place): void {
   if (!host) return;
-  if (which === 'from') host.state.from = place; else host.state.to = place;
+  if (which === 'from') host.state.from = place;
+  else host.state.to = place;
   host.persist();
-  if (host.state.from && host.state.to) query(); else redraw();
+  if (host.state.from && host.state.to) query();
+  else redraw();
 }
 
 /** Re-show whatever the URL restored, once the planner is on screen. */

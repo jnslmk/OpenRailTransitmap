@@ -14,8 +14,11 @@ import { slotOffset } from './lib/taper.ts';
  * in their ordinals, because slots are assigned per corridor rather than per
  * bundle; these test bundles stand alone, so theirs are the plain lattice.
  */
-const mb = (lineIds: string[], chains: Coord[][]): MarkBundle =>
-  ({ lineIds, chains, slots: lineIds.map((_, i) => slotOffset(i, lineIds.length)) });
+const mb = (lineIds: string[], chains: Coord[][]): MarkBundle => ({
+  lineIds,
+  chains,
+  slots: lineIds.map((_, i) => slotOffset(i, lineIds.length)),
+});
 
 /** A due-east corridor at latitude 52, one vertex every ~70 m. */
 function eastward(lon0: number, lon1: number, lat = 52): Coord[] {
@@ -24,8 +27,11 @@ function eastward(lon0: number, lon1: number, lat = 52): Coord[] {
   return out;
 }
 
-const station = (id: string, coord: Coord, served: string[]): MarkStation =>
-  ({ id, coord, served: new Set(served) });
+const station = (id: string, coord: Coord, served: string[]): MarkStation => ({
+  id,
+  coord,
+  served: new Set(served),
+});
 
 test('a bar spans only the lines that call, centred on their bands', () => {
   // Four lines abreast; the middle two stop here.
@@ -60,9 +66,18 @@ test('lines that skip the station leave a gap, and the gap splits the bar', () =
 
   const list = marks.get('n1')!.sort((x, y) => x.mid - y.mid);
   assert.equal(list.length, 2);
-  assert.deepEqual(list.map((m) => m.lines), [['a'], ['c']]);
-  assert.deepEqual(list.map((m) => m.span), [1, 1]);
-  assert.deepEqual(list.map((m) => m.mid), [-1, 1]);
+  assert.deepEqual(
+    list.map((m) => m.lines),
+    [['a'], ['c']],
+  );
+  assert.deepEqual(
+    list.map((m) => m.span),
+    [1, 1],
+  );
+  assert.deepEqual(
+    list.map((m) => m.mid),
+    [-1, 1],
+  );
 });
 
 test('a corridor whose bundle changes at the station gets one bar, not two', () => {
@@ -104,10 +119,7 @@ test('a bundle stitched the other way round is flipped before it is merged', () 
 test('a real junction keeps one bar per corridor', () => {
   const northward: Coord[] = [];
   for (let lat = 51.99; lat <= 52.01 + 1e-9; lat += 0.001) northward.push([13.01, +lat.toFixed(6)]);
-  const bundles: MarkBundle[] = [
-    mb(['a'], [eastward(13.0, 13.02)]),
-    mb(['b'], [northward]),
-  ];
+  const bundles: MarkBundle[] = [mb(['a'], [eastward(13.0, 13.02)]), mb(['b'], [northward])];
   const marks = buildStopMarks(bundles, [station('n1', [13.01, 52], ['a', 'b'])]);
 
   const list = marks.get('n1')!;
@@ -144,10 +156,18 @@ test('two alignments side by side stay two bars, however alike their heading', (
     mb(['re'], [eastward(13.0, 13.02)]),
     mb(['s1'], [eastward(13.0, 13.02, 52.0005)]),
   ];
-  const marks = buildStopMarks([bundles[0], bundles[1]],
-    [station('n1', [13.01, 52.00025], ['re', 's1'])]);
+  const marks = buildStopMarks(
+    [bundles[0], bundles[1]],
+    [station('n1', [13.01, 52.00025], ['re', 's1'])],
+  );
 
   const list = marks.get('n1')!;
   assert.equal(list.length, 2);
-  assert.deepEqual(list.map((m) => m.lines).flat().sort(), ['re', 's1']);
+  assert.deepEqual(
+    list
+      .map((m) => m.lines)
+      .flat()
+      .sort(),
+    ['re', 's1'],
+  );
 });

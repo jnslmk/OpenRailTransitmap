@@ -279,6 +279,11 @@ npm run publish:data            # committed data -> public/
 npm run dev                     # http://localhost:5173
 ```
 
+`npm run lint` (ESLint) and `npm run format` (Prettier) check and fix the
+TypeScript; CI runs both, plus `format:check`, on every push and PR.
+[`prek`](https://github.com/j178/prek) runs the same two on staged files before
+each commit - `prek install` wires it into `.git/hooks` once per checkout.
+
 The dev server draws the current zoom in the bottom-left corner of the map, to
 two decimals — the map is a stack of zoom thresholds (`STOP_TIERS` in
 [`shared/lnvg.ts`](shared/lnvg.ts), the dot-to-bar changeover and the closure

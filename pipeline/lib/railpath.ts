@@ -155,7 +155,8 @@ export function buildRailGraph(ways: Iterable<RailWay>): RailGraph {
       edges.push([]);
       const ck = cellKey(c);
       const bucket = cells.get(ck);
-      if (bucket) bucket.push(id); else cells.set(ck, [id]);
+      if (bucket) bucket.push(id);
+      else cells.set(ck, [id]);
     }
     return id;
   };
@@ -202,7 +203,10 @@ export function nearestNode(graph: RailGraph, point: Coord, maxM: number): numbe
     for (let dy = -reach; dy <= reach; dy++) {
       for (const id of graph.cells.get(`${cx + dx}:${cy + dy}`) ?? []) {
         const d = metres(point, graph.nodes[id]);
-        if (d < bestD) { bestD = d; best = id; }
+        if (d < bestD) {
+          bestD = d;
+          best = id;
+        }
       }
     }
   }
@@ -217,7 +221,9 @@ class Heap {
   private cost: number[] = [];
   private item: number[] = [];
 
-  get size() { return this.item.length; }
+  get size() {
+    return this.item.length;
+  }
 
   push(item: number, cost: number) {
     this.cost.push(cost);
@@ -240,7 +246,8 @@ class Heap {
       this.cost[0] = lastCost;
       let i = 0;
       for (;;) {
-        const l = 2 * i + 1, r = l + 1;
+        const l = 2 * i + 1,
+          r = l + 1;
         let small = i;
         if (l < this.cost.length && this.cost[l] < this.cost[small]) small = l;
         if (r < this.cost.length && this.cost[r] < this.cost[small]) small = r;
@@ -286,19 +293,20 @@ export interface RouteOptions {
  * within the search bound.
  */
 export function routeBetween(
-  graph: RailGraph, from: Coord, to: Coord, options: RouteOptions = {},
+  graph: RailGraph,
+  from: Coord,
+  to: Coord,
+  options: RouteOptions = {},
 ): RoutedPath | null {
-  const {
-    routes = [], snapM = 2000, detourFactor = 3.5, detourFloorM = 8000,
-  } = options;
+  const { routes = [], snapM = 2000, detourFactor = 3.5, detourFloorM = 8000 } = options;
 
   const start = nearestNode(graph, from, snapM);
   const goal = nearestNode(graph, to, snapM);
   if (start === null || goal === null || start === goal) return null;
 
   const wanted = new Set(routes);
-  const budget = Math.max(detourFloorM, metres(from, to) * detourFactor)
-    * (wanted.size ? OFF_LINE_PENALTY : 1);
+  const budget =
+    Math.max(detourFloorM, metres(from, to) * detourFactor) * (wanted.size ? OFF_LINE_PENALTY : 1);
 
   const best = new Map<number, number>([[start, 0]]);
   const cameFrom = new Map<number, { node: number; edge: Edge }>();
@@ -378,7 +386,10 @@ function trimTo(path: RoutedPath, from: Coord, to: Coord): RoutedPath {
     let bestD = Infinity;
     path.coords.forEach((c, i) => {
       const d = metres(c, target);
-      if (d < bestD) { bestD = d; best = i; }
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
     });
     return best;
   };

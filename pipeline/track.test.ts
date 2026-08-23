@@ -19,7 +19,10 @@ const M_LON = M_LAT / Math.cos((52.26 * Math.PI) / 180);
 /** A way running east from (x, y) for `len` metres, offset `off` metres north. */
 function eastward(x: number, y: number, len: number, off = 0): Coord[] {
   const lat = y + off * M_LAT;
-  return [[x, lat], [x + len * M_LON, lat]];
+  return [
+    [x, lat],
+    [x + len * M_LON, lat],
+  ];
 }
 
 const geomOf = (ways: Record<string, Coord[]>) => new Map(Object.entries(ways));
@@ -47,7 +50,10 @@ test('keeps a way that only converges at one end', () => {
   // covered where it starts, uncovered along the rest, so it has to stay.
   const geom = geomOf({
     main: eastward(10.52, 52.26, 800),
-    turnout: [[10.52, 52.26], [10.52 + 800 * M_LON, 52.26 + 60 * M_LAT]],
+    turnout: [
+      [10.52, 52.26],
+      [10.52 + 800 * M_LON, 52.26 + 60 * M_LAT],
+    ],
   });
   assert.equal(collapseParallelTracks(['main', 'turnout'], geom, 15).length, 2);
 });
@@ -96,7 +102,10 @@ test('puts back the crossover that links two kept stretches', () => {
   const geom = geomOf({
     upA: eastward(10.52, 52.26, 400),
     downA: eastward(10.52, 52.26, 400, 4),
-    crossover: [[10.52 + 400 * M_LON, 52.26], [10.52 + 410 * M_LON, 52.26 + 4 * M_LAT]],
+    crossover: [
+      [10.52 + 400 * M_LON, 52.26],
+      [10.52 + 410 * M_LON, 52.26 + 4 * M_LAT],
+    ],
     downB: eastward(10.52 + 410 * M_LON, 52.26, 400, 4),
   });
   const kept = collapseParallelTracks(['upA', 'downA', 'crossover', 'downB'], geom, 15);
@@ -121,7 +130,10 @@ test('keeps a branch that leaves the corridor', () => {
   const geom = geomOf({
     trunk: eastward(10.52, 52.26, 800),
     trunkBack: eastward(10.52, 52.26, 800, 4),
-    branch: [[10.52 + 800 * M_LON, 52.26], [10.52 + 800 * M_LON, 52.26 + 500 * M_LAT]],
+    branch: [
+      [10.52 + 800 * M_LON, 52.26],
+      [10.52 + 800 * M_LON, 52.26 + 500 * M_LAT],
+    ],
   });
   const kept = collapseParallelTracks(['trunk', 'trunkBack', 'branch'], geom, 15);
   assert.deepEqual(new Set(kept), new Set(['trunk', 'branch']));
@@ -186,7 +198,7 @@ test('does not stitch a chain onto itself', () => {
 test('chains ways into one line however they are oriented', () => {
   const geom = geomOf({
     first: eastward(10.52, 52.26, 300),
-    second: [...eastward(10.52 + 300 * M_LON, 52.26, 300)].reverse() as Coord[],
+    second: [...eastward(10.52 + 300 * M_LON, 52.26, 300)].reverse(),
   });
   const chains = chainWays(['first', 'second'], geom);
   assert.equal(chains.length, 1);
