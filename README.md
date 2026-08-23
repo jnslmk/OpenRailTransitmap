@@ -224,6 +224,15 @@ routing engine is needed; but `requireBikeTransport` cannot be the default,
 because most German GTFS feeds omit `bikes_allowed` and requiring it silently
 returns zero regional journeys.
 
+**Buses come with it.** MOTIS routes on the DELFI GTFS aggregate, so a plan
+already returns local and regional bus legs — measured, a village near Rethem to
+Hannover Hbf comes back as `bike 19 → bus 510 → RB38 → bike 4` with no pipeline
+change at all. Drawing buses on the map is the separate, much larger question:
+eighteen `route=bus` relations for every rail one in Niedersachsen alone. The
+design for both, and for a Google-Maps-shaped planner that stays inside this map
+instead of taking it over, is in
+[`docs/buses-and-routing.md`](docs/buses-and-routing.md).
+
 ## Attribution and licensing
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors,
