@@ -26,10 +26,9 @@ import {
   chainWays, collapseParallelTracks, endpointKey, type Coord,
 } from './lib/track.ts';
 import {
-  slotOffset, taperLengthM, taperMinzoom, buildTaper, trimEnd, chainLengthM,
-  onOccupiedSlot, type TaperStep,
+  slotOffset, taperLengthM, fitTaperLength, taperSteps, taperMinzoom, buildTaper, trimEnd,
+  chainLengthM, onOccupiedSlot, type TaperStep,
 } from './lib/taper.ts';
-import { adjacentSegmentPairs, groupCorridors, rankCorridorLines } from './lib/corridor.ts';
 import { coorientChains } from './lib/orient.ts';
 import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
 import {
@@ -564,59 +563,85 @@ async function main() {
     console.log(`==> ${reversed} of ${flat.length} chains turned round to keep one slot on one side`);
   }
 
-  // --- corridor-wide slots ----------------------------------------------------
-  // A line's slot used to be assigned per segment, purely from that segment's
-  // own membership - so a line joining or leaving the corridor renumbered
-  // every line outboard of it, even along one physically continuous corridor.
-  // Instead, group segments that plausibly form one corridor and rank each
-  // corridor's line union once, so a line holds a single slot for as long as
-  // it stays in the corridor. See pipeline/lib/corridor.ts for how the
-  // grouping is bounded - the transitive blow-up that a looser rule invites
-  // is the main risk here, not the ranking itself.
-  const corridorPairs = adjacentSegmentPairs(segInfos);
-  const corridorOf = groupCorridors(segInfos.map((s) => s.lineIds), corridorPairs);
-  const corridorLineOrder = rankCorridorLines(corridorOf, segInfos.map((s) => s.lineIds), lineCompare);
-  const corridorSlots = new Map<number, Map<string, number>>();
-  for (const [root, sortedLines] of corridorLineOrder) {
-    const slots = new Map<string, number>();
-    sortedLines.forEach((id, idx) => slots.set(id, slotOffset(idx, sortedLines.length)));
-    corridorSlots.set(root, slots);
-  }
-  const slotFor = (segIdx: number, lineId: string) => corridorSlots.get(corridorOf[segIdx])!.get(lineId)!;
+  // --- per-segment slots ------------------------------------------------------
+  // A line's slot is its rank among the lines actually sharing this stretch,
+  // centred on the alignment - so a bundle is exactly as wide as the number of
+  // lines it draws, with no band left empty.
+  //
+  // The alternative, held briefly, was to rank a line once per corridor and
+  // let it keep that slot for the corridor's whole length. That bought
+  // stability - a line joining or leaving stopped renumbering everyone
+  // outboard of it - at the price of reserving a band for every line in the
+  // corridor's union, including the ones absent from the stretch being drawn.
+  // Between Oschersleben and Osterweddingen that left RB 43 floating clear of
+  // RE 11/21/31, holding open the slots of lines that only run the Magdeburg
+  // end of the same corridor, and left the bundle no longer straddling its own
+  // alignment. A reserved band is invisible, so nothing on screen explained
+  // either.
+  //
+  // Compacting brings the slot changes back - a membership change now moves
+  // every line outboard of it by a band, and a change of bundle parity slides
+  // the whole bundle half a pitch, since a centred lattice is tied to the
+  // count it centres. That is what the taper below is for, and it now fits
+  // itself to the chains it has rather than giving up on the short ones: the
+  // change a rider sees is a line easing across into its new band, which is
+  // legible, rather than a gap that is not.
+  const segSlots: Map<string, number>[] = segInfos.map((seg) => new Map(
+    seg.lineIds.map((id, idx) => [id, slotOffset(idx, seg.lineIds.length)]),
+  ));
+  const slotFor = (segIdx: number, lineId: string) => segSlots[segIdx].get(lineId)!;
 
   {
-    const corridorCount = new Set(corridorOf).size;
-    const sizes = [...corridorLineOrder.values()].map((v) => v.length);
-    const biggest = Math.max(...sizes, 0);
-    // Slots spanned vs lines actually present, per segment: how wide a gap
-    // corridor-wide slots can leave when only some of a corridor's lines are
-    // present in a given segment. 0 means every segment draws exactly as
-    // wide as its own membership, same as the old per-segment scheme.
-    let gapSum = 0, gapMax = 0, segCount = 0;
+    // Slots spanned vs lines actually present, per segment: 0 is the property
+    // compaction exists to hold - every segment draws exactly as wide as its
+    // own membership. Kept as a check rather than a measurement, since a
+    // non-zero value here would mean the ranking and the lattice had drifted
+    // apart.
+    let gapMax = 0;
     segInfos.forEach((seg, segIdx) => {
       if (seg.lineIds.length === 0) return;
       const offsets = seg.lineIds.map((id) => slotFor(segIdx, id));
       const spanned = Math.max(...offsets) - Math.min(...offsets) + 1;
-      const gap = spanned - seg.lineIds.length;
-      gapSum += gap;
-      gapMax = Math.max(gapMax, gap);
-      segCount++;
+      gapMax = Math.max(gapMax, spanned - seg.lineIds.length);
     });
+
+    // What compaction costs, in the terms the corridor scheme was measured in:
+    // how many lines sit on more than one slot over their length, and how many
+    // slots each averages. Every change between two of them is a taper below,
+    // or - where the chains cannot afford one - a step the rider can see.
+    const slotsPerLine = new Map<string, Set<number>>();
+    segInfos.forEach((seg, segIdx) => {
+      for (const id of seg.lineIds) {
+        let set = slotsPerLine.get(id);
+        if (!set) { set = new Set<number>(); slotsPerLine.set(id, set); }
+        set.add(slotFor(segIdx, id));
+      }
+    });
+    const moving = [...slotsPerLine.values()].filter((set) => set.size > 1).length;
+    const avgSlots = [...slotsPerLine.values()].reduce((a, set) => a + set.size, 0)
+      / Math.max(slotsPerLine.size, 1);
     console.log(
-      `==> ${corridorCount} corridors (${segInfos.length} segments), biggest carries ${biggest} lines`,
+      `==> widest slot span vs membership: ${gapMax} `
+      + '(0 = every bundle draws exactly as wide as the lines on it)',
     );
     console.log(
-      `==> slot span vs membership gap: avg ${(gapSum / segCount).toFixed(2)}, max ${gapMax}, `
-      + `over ${segCount} segments`,
+      `==> ${moving} of ${slotsPerLine.size} lines change slot somewhere, `
+      + `${avgSlots.toFixed(2)} distinct slots each on average`,
     );
   }
 
   // --- slot tapers ------------------------------------------------------------
-  // A slot change between two adjacent segments is now the exception rather
-  // than the rule - it happens where the corridor grouping above genuinely
-  // draws a line, not on every segment boundary. Where it does still happen,
-  // ramp between the two slots rather than letting the chains butt together:
-  // see pipeline/lib/taper.ts for why that ramp has to be a staircase of
+  // With slots compacted per segment, a slot change is the rule rather than
+  // the exception: it happens wherever a bundle's membership changes, which
+  // is every junction where a line joins or leaves. So this is where the
+  // compaction above is paid for, and the ramp has to hold up at junctions
+  // the corridor scheme never asked it to - short chains between two closely
+  // spaced junctions especially, where it used to give up and leave the hard
+  // step it exists to remove. Two things follow: the ramp's length is fitted
+  // to what the two chains can actually spare (fitTaperLength), and it scales
+  // with how far the line is moving, so a four-band merge is not ramped over
+  // the same ground as a half-pitch parity slide (taperLengthM, taperSteps).
+  // See pipeline/lib/taper.ts for why that ramp has to be a staircase of
   // short constant-offset sub-features rather than baked-in diagonal
   // geometry.
   interface EndRef { segIdx: number; chainIdx: number; atStart: boolean }
@@ -642,7 +667,7 @@ async function main() {
     bIdx: number; bChainIdx: number; bFromStart: boolean; bHalf: number;
   }
   const candidates: Candidate[] = [];
-  let skippedAmbiguous = 0, skippedShort = 0;
+  let skippedAmbiguous = 0, skippedShort = 0, shortened = 0;
 
   for (const refs of byEnd.values()) {
     const bySeg = new Map<number, EndRef[]>();
@@ -708,8 +733,16 @@ async function main() {
       // up.slot===down.slot once canonicalised, i.e. no real jump at all).
       if (up.slot === down.slot) continue;
 
-      const L = taperLengthM(line.mode);
-      const steps = buildTaper(up.chain, down.chain, up.slot, down.slot, L);
+      // Ask for a ramp proportional to the move, then take as much of it as
+      // the shorter of the two chains can give up. Only when what is left is
+      // too short to be worth drawing at all - under a pixel at the highest
+      // zoom the tiles carry - is the hard step left alone.
+      const delta = down.slot - up.slot;
+      const wantM = taperLengthM(line.mode, delta);
+      const L = fitTaperLength(chainLengthM(up.chain), chainLengthM(down.chain), wantM);
+      if (L === 0) { skippedShort++; continue; }
+      if (L < wantM) shortened++;
+      const steps = buildTaper(up.chain, down.chain, up.slot, down.slot, L, taperSteps(delta));
       if (!steps) { skippedShort++; continue; }
 
       candidates.push({
@@ -771,6 +804,14 @@ async function main() {
     `==> ${tapered} slot tapers (${skippedAmbiguous} skipped: ambiguous junction, `
     + `${skippedShort} skipped: chain too short, ${skippedCollision} skipped: trims collided)`,
   );
+  // How often the chains could not afford the ramp the move asked for. Not a
+  // fault - a shortened ramp is still a ramp, and still beats the step it
+  // replaces - but it is the dial to watch if the diagonals start reading as
+  // steep: it says how much of the network is junction-dense enough that
+  // there is no room to be gentler. `skippedCollision`, by contrast, should
+  // stay 0: fitTaperLength hands each end at most 0.4 of its chain, so the
+  // two ends of one chain cannot together ask for more than it has.
+  console.log(`==> ${shortened} tapers ramped shorter than asked, to fit the chain they had`);
   console.log(`==> ${occupiedLanding} taper steps land exactly on an occupied slot (see taper.ts:buildTaper)`);
 
   // --- emit route features --------------------------------------------------
@@ -1050,12 +1091,13 @@ async function main() {
   // the one thing here that needs both halves of the build at once - the
   // stitched corridors and the resolved stop members - so it happens now, with
   // both in hand. See pipeline/lib/stopmarks.ts for what it is doing and why.
-  // The marks need the slot each line actually landed on, which under
-  // corridor-wide assignment is no longer its index in the bundle: a line
-  // absent from this stretch keeps its slot reserved, so the ordinals can have
-  // gaps. They stay ascending though - a segment's lineIds and its corridor's
-  // ranking are sorted by the same comparator - so a run of adjacent lineIds
-  // is still a run of ascending ordinals, which is what the bars are built on.
+  // The marks are laid across the slots each line actually landed on. Slots
+  // are compacted per segment, so those are consecutive and ascending in
+  // lineIds order, and a run of adjacent lineIds is a run of adjacent bands -
+  // which is what the bars are built on. They are still passed explicitly
+  // rather than re-derived from the index here: the mark has to sit on the
+  // same lattice the route features were emitted on, whatever that lattice
+  // turns out to be, and half-pitch centring means the index alone is not it.
   const markBundles: MarkBundle[] = segInfos.map((seg, segIdx) => ({
     lineIds: seg.lineIds,
     chains: seg.chains,

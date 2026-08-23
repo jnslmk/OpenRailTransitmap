@@ -144,10 +144,19 @@ a consistent direction.
 
 Bundling then falls out of the way ids for free: routes sharing a corridor are
 built from the *same OSM ways*, so ways carrying an identical set of lines form
-one segment, and each line gets a perpendicular offset ordinal, centred so the
-bundle straddles its alignment. The ordinal is ranked across a whole corridor
-rather than per segment, so a line holds one slot for as long as it stays in
-that corridor. No geometric matching required.
+one segment, and each line gets a perpendicular offset ordinal — its rank among
+the lines actually on that segment, centred so the bundle straddles its
+alignment. No geometric matching required.
+
+Ranking per segment is a deliberate choice over ranking once per corridor and
+letting a line hold that slot for the corridor's length. The corridor-wide
+version moves less, but it reserves a band for every line in the corridor's
+union, including the ones absent from the stretch being drawn — so a bundle
+draws wider than the lines on it, with visible gaps where nothing runs and a
+centre that has drifted off the alignment. A reserved band is invisible, so
+nothing on screen explains either. Per-segment ranking spends the difference on
+movement instead, and movement can be drawn: where membership changes, the line
+ramps into its new band (below) rather than jumping to it.
 
 An ordinal is only a *side* once the chains carrying it agree which way they
 run, though, because `line-offset` is signed against a feature's own direction
@@ -159,6 +168,15 @@ direction happened to flip: each line stepped across to the band opposite, and
 the taper below dutifully ramped it there, drawing the seam as a bundle-wide
 braid. That was 43 of 44 slot changes on a Braunschweig-area extract, and the
 staircases they forced were half of all route features.
+
+Every slot change is then drawn as a taper: L/2 metres trimmed off the line's
+chain either side of the junction and the gap filled with short
+constant-offset features stepping across, because `line-offset` is constant
+along a feature and its rendered spread is zoom-dependent, so a diagonal baked
+into the coordinates at one zoom is wrong at every other. L scales with how far
+the line is moving and is then fitted to what those two chains can actually
+spare — a ramp that does not fit is shortened, not skipped, since a skipped
+ramp is exactly the sideways jump the taper exists to remove.
 
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.
