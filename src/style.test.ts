@@ -83,6 +83,100 @@ test('a bar is as long as the bands it covers', () => {
   }
 });
 
+test('a rank 0 bar is exact as soon as the spread is big enough to be exact', () => {
+  // Rank 0 crosses over to bars at z7, where the spread has collapsed so far
+  // that a bar drawn at it would be a speck - so below z8.5 the bar is drawn
+  // larger than its bands and is an approximation (see the next test). From the
+  // crossing up it is the same exact mechanism every other tier uses, and the
+  // compensation in `icon-offset` has to have gone back to 1 to leave it alone.
+  const size = evaluate(layer('stop-marks-r0').layout!['icon-size']);
+  const offset = evaluate(layer('stop-marks-r0').layout!['icon-offset']);
+  const band = evaluate(layer('route-regional').paint!['line-offset']);
+
+  for (const zoom of [9, 10, 11, 13]) {
+    for (const mid of [-11.5, -3, -0.5, 0, 2.5, 7]) {
+      const centre = (size(zoom, { mid }) as number) * (offset(zoom, { mid }) as number[])[0];
+      const drawn = band(zoom, { offset: mid }) as number;
+      assert.ok(
+        Math.abs(centre - drawn) < 1e-6,
+        `z${zoom} ordinal ${mid}: mark at ${centre}, band at ${drawn}`,
+      );
+    }
+  }
+});
+
+test('and between those zooms it still lies across the lines it names', () => {
+  // The one place the bar is not exact. Its offset is fixed for the width of a
+  // zoom bucket while the bands it names keep spreading apart continuously, so
+  // within a bucket the bar drifts towards the middle of the bundle. What must
+  // survive that drift is the only thing the mark claims: that these lines, the
+  // ones under the bar, are the ones that stop. So the drawn bar has to go on
+  // covering the drawn bands, from the outermost to the outermost.
+  const size = evaluate(layer('stop-marks-r0').layout!['icon-size']);
+  const offset = evaluate(layer('stop-marks-r0').layout!['icon-offset']);
+  const band = evaluate(layer('route-regional').paint!['line-offset']);
+
+  // Outermost band ordinals a rank 0 stop might cover, worst cases first: a
+  // stop at one edge of a 24-band trunk is where the drift is largest.
+  for (const zoom of [6.5, 7.4, 7.99, 8.4, 9.6]) {
+    for (const [lo, hi] of [[-23, 0], [-11.5, 11.5], [0, 3], [4.5, 11.5], [-2, -2]]) {
+      const mid = (lo + hi) / 2;
+      const span = hi - lo + 1;
+      const scale = size(zoom, { mid }) as number;
+      const centre = scale * (offset(zoom, { mid }) as number[])[0];
+      const reach = (pillLength(span) * scale) / 2;
+      const bands = [band(zoom, { offset: lo }) as number, band(zoom, { offset: hi }) as number];
+      for (const b of bands) {
+        assert.ok(
+          b >= centre - reach - 1e-9 && b <= centre + reach + 1e-9,
+          `z${zoom} bands ${lo}..${hi}: band at ${b} is outside the bar ${centre}+/-${reach}`,
+        );
+      }
+    }
+  }
+});
+
+test('nothing changes size as a rank 0 dot becomes a rank 0 bar', () => {
+  // The changeover swaps the shape and must not swap the size with it: at z7
+  // the dot is exactly as wide as the bar is thick, so the mark stays put and
+  // only fills out. This is what pins the icon-size floor to its value.
+  const radius = evaluate(layer('stop-dots-r0').paint!['circle-radius']);
+  const size = evaluate(layer('stop-marks-r0').layout!['icon-size']);
+  const dotWidth = 2 * (radius(7, {}) as number);
+  const barThickness = (size(7, {}) as number) * PILL_THICKNESS;
+  assert.ok(Math.abs(dotWidth - barThickness) < 1e-6,
+    `dot is ${dotWidth} across, bar is ${barThickness} thick`);
+});
+
+test('rank 0 changes over at z7 and the other tiers still change over at z11', () => {
+  const changeover = (rank: number) => ({
+    dotsEnd: (layer(`stop-dots-r${rank}`) as unknown as { maxzoom: number }).maxzoom,
+    barAt: (z: number) => evaluate(layer(`stop-marks-r${rank}`).paint!['icon-opacity'])(z, {}),
+    dotAt: (z: number) => evaluate(layer(`stop-dots-r${rank}`).paint!['circle-opacity'])(z, {}),
+  });
+
+  const main = changeover(0);
+  assert.equal(main.dotsEnd, 7);
+  assert.equal(main.barAt(6.4), 0);
+  assert.equal(main.barAt(7), 1);
+  assert.equal(main.dotAt(7), 0);
+
+  // Rank 1 is the only other tier drawn as a dot first: ranks 2 and 3 are not
+  // on the map at all until z11 and z12, by which time the bar is the mark.
+  const rest = changeover(1);
+  assert.equal(rest.dotsEnd, 11);
+  assert.equal(rest.barAt(10.2), 0);
+  assert.equal(rest.barAt(11), 1);
+  assert.equal(rest.dotAt(11), 0);
+
+  for (const rank of [2, 3]) {
+    assert.ok(!style.layers.some((l) => l.id === `stop-dots-r${rank}`),
+      `rank ${rank} is drawn as a dot, which it has never been`);
+    const bars = evaluate(layer(`stop-marks-r${rank}`).paint!['icon-opacity']);
+    assert.equal(bars(11, {}), 1, `rank ${rank} bars are not solid where the tier starts`);
+  }
+});
+
 test('every tier has a mark layer, and its name comes later than its mark', () => {
   for (const tier of STOP_TIERS) {
     const marks = style.layers.find((l) => l.id === `stop-marks-r${tier.rank}`);

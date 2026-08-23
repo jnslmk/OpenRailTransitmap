@@ -33,6 +33,9 @@ GitHub Pages and rebuilt nightly.
   rather than on the station node, which is a building or a car park off to one
   side; **from z16 the map draws the node too**, as a hollow ring, once the
   difference between the two is a fact about the place rather than noise.
+  Long-distance stops and the larger Hauptbahnhöfe get their bar from **z7**,
+  four zooms before every other tier: at national scale a dot would only say a
+  station is there, and which trains stop is the thing worth the pixels.
 - **Stops that earn their zoom.** Germany's 20,830 stations are one grey smear
   at national scale, so they are ranked once in the pipeline — long-distance
   calls and the larger Hauptbahnhöfe, then interchanges, then ordinary halts,
