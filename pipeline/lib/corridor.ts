@@ -76,6 +76,15 @@ export function adjacentSegmentPairs(
   return pairs;
 }
 
+/**
+ * Default ceiling on the lines one corridor may carry - and so, through
+ * `slotOffset`, the outermost band any bundle can be drawn on: `(n - 1) / 2`
+ * pitches either side of the alignment. The tile buffer is sized from it (see
+ * `bandReachPx` in src/style.ts and pipeline/tiles.sh), so raising it widens
+ * the tiles as well as the corridors.
+ */
+export const MAX_CORRIDOR_LINES = 12;
+
 export interface GroupCorridorsOptions {
   /**
    * How much of the smaller segment's line set must also be in the larger
@@ -107,7 +116,7 @@ export function groupCorridors(
   pairs: readonly (readonly [number, number])[],
   opts: GroupCorridorsOptions = {},
 ): number[] {
-  const { minOverlap = 0.8, maxCorridorLines = 12 } = opts;
+  const { minOverlap = 0.8, maxCorridorLines = MAX_CORRIDOR_LINES } = opts;
   const n = lineIdsBySeg.length;
   const parent = Array.from({ length: n }, (_, i) => i);
   const corridorLines: Set<string>[] = lineIdsBySeg.map((ids) => new Set(ids));

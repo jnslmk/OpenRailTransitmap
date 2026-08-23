@@ -163,6 +163,18 @@ staircases they forced were half of all route features.
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.
 
+Because the offset is applied at draw time, the tiles have to be cut with room
+for it. MapLibre clips each tile's lines to the tile's own square and only then
+moves them sideways, so a band whose slot carries it over the edge is cut there
+and the next tile — which does not hold that geometry — draws nothing in its
+place: on a corridor crossing an edge at a shallow angle, the line vanishes from
+the crossing until the track itself is clear of the edge by the whole offset,
+several hundred metres of it, ending in a round cap in open country. So every
+tile carries `--buffer=24`, 48 px of its neighbours' geometry at native zoom,
+against the 43 px the outermost band of the largest corridor can reach.
+`pipeline/tiles.test.ts` checks the two ends of that arithmetic still meet. It
+costs about a fifth of the archive.
+
 ### Station matching
 
 PTv2 relations reference `public_transport=stop_position` nodes rather than the

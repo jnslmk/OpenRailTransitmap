@@ -41,10 +41,32 @@ fi
 # `stations` is left to the drop rate as before. It is no longer what the map
 # draws below z16, only what the search box reads and what a stop off its own
 # corridor falls back to.
+
+# How much of a neighbouring tile's geometry every tile carries, in 256ths of
+# a tile. The default 5 is sized for geometry that is drawn where it lies; a
+# route band is not. MapLibre stencil-clips each tile's lines to the tile's own
+# square and only then applies `line-offset` in the vertex shader, so a band
+# whose slot pushes it sideways over the edge is cut there, and the tile on the
+# other side of the edge - which does not carry that geometry - draws nothing
+# in its place. On a corridor crossing a tile edge at a shallow angle that
+# removes the line from the crossing until the track itself is clear of the
+# edge by the full offset: hundreds of metres of missing band ending in a round
+# cap in open country.
+#
+# So the buffer has to cover the widest a band can stray from its own geometry
+# (`bandReachPx` in src/style.ts: the outermost slot of the largest corridor,
+# plus half the widest stroke). One buffer unit is 512/256 = 2 px of a tile
+# drawn at its own zoom, and overzooming only makes it wider, so the binding
+# case is a tile rendered at native zoom with the spread fully open: 43 px, or
+# 22 units. 24 leaves a little room. pipeline/tiles.test.ts holds the two ends
+# of that arithmetic together.
+BUFFER=24
+
 echo "==> building rail.pmtiles"
 tippecanoe \
   -o "$OUT/rail.pmtiles" --force \
   --minimum-zoom=4 --maximum-zoom=13 \
+  --buffer="$BUFFER" \
   -P \
   --drop-densest-as-needed \
   --extend-zooms-if-still-dropping \

@@ -38,11 +38,28 @@ const ZOOM_STOPS: [number, number][] = [
   [14, 1.6],
 ];
 
+/**
+ * How much wider the white casing under the selected line is than the line -
+ * the widest thing any route feature paints, and so what the tile buffer has
+ * to allow for (see `bandReachPx`).
+ */
+const HIGHLIGHT_FACTOR = 2.1;
+
 /** Line width in px for a reference weight given in points. */
 const scaled = (pt: number, multiplier = 1): ExpressionSpecification =>
   ['interpolate', ['linear'], ['zoom'],
     ...ZOOM_STOPS.flatMap(([z, f]) => [z, pt * PT_TO_PX * f * multiplier]),
   ] as ExpressionSpecification;
+
+/** The same piecewise-linear read MapLibre does for an `interpolate` on zoom. */
+function stopAt(stops: readonly [number, number][], zoom: number): number {
+  if (zoom <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [z0, f0] = stops[i - 1], [z1, f1] = stops[i];
+    if (zoom <= z1) return f0 + ((f1 - f0) * (zoom - z0)) / (z1 - z0);
+  }
+  return stops[stops.length - 1][1];
+}
 
 /**
  * Bundle spread, which deliberately does *not* follow the width curve.
@@ -116,7 +133,7 @@ function routeLayers(): LayerSpecification[] {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': LNVG.white,
-          'line-width': scaled(spec.weightPt, 2.1),
+          'line-width': scaled(spec.weightPt, HIGHLIGHT_FACTOR),
           'line-offset': bandOffset,
           'line-opacity': highlightOpacity(null),
         },
@@ -225,13 +242,32 @@ const TRUE_POSITION_ZOOM = 16;
 
 /** The bundle spread factor at a zoom, read off the same table the bands use. */
 function spreadAt(zoom: number): number {
-  const stops = OFFSET_STOPS;
-  if (zoom <= stops[0][0]) return stops[0][1];
-  for (let i = 1; i < stops.length; i++) {
-    const [z0, f0] = stops[i - 1], [z1, f1] = stops[i];
-    if (zoom <= z1) return f0 + ((f1 - f0) * (zoom - z0)) / (z1 - z0);
-  }
-  return stops[stops.length - 1][1];
+  return stopAt(OFFSET_STOPS, zoom);
+}
+
+/**
+ * How far, in screen pixels, the painted edge of a route feature's band can
+ * sit from the geometry it was built from, for a bundle of `slots` lines at
+ * `zoom`: the outermost slot's `line-offset`, plus half the widest stroke
+ * drawn over it.
+ *
+ * This is what a vector tile has to be buffered by. MapLibre stencil-clips
+ * each tile's lines to the tile's own square, and only then moves them
+ * sideways, in the vertex shader. So a band whose slot carries it over the
+ * edge is cut at the edge, and the tile on the other side - which holds only
+ * its own geometry, not the stretch whose band lands there - has nothing to
+ * put in its place. A line crossing an edge at a shallow angle to the offset
+ * then loses everything from the crossing until its own geometry is this far
+ * clear of the edge, which on a nearly straight corridor is hundreds of metres
+ * of missing line ending in a round cap in open country. Giving every tile
+ * this much of its neighbours' geometry closes it: whichever tile the band
+ * lands in also holds the geometry it was offset from. See pipeline/tiles.sh.
+ */
+export function bandReachPx(zoom: number, slots: number): number {
+  const outermost = Math.max(0, (slots - 1) / 2);
+  const widestPt = Math.max(...MODES.map((m) => MODE_SPECS[m].weightPt));
+  const halfStroke = (widestPt * PT_TO_PX * stopAt(ZOOM_STOPS, zoom) * HIGHLIGHT_FACTOR) / 2;
+  return outermost * BUNDLE_PITCH_PX * spreadAt(zoom) + halfStroke;
 }
 
 const fadeIn: ExpressionSpecification =
