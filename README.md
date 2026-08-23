@@ -92,11 +92,10 @@ GitHub Pages and rebuilt nightly.
   has search one tap away. Both states are part of the URL (`?ui=map`, `?ui=peek`).
 - **Own location**, with an accuracy circle and continuous tracking, and a
   compass that puts the map back to north after an accidental twist.
-- **Streets where they help.** From zoom 13 the OSM standard raster fades in
-  under the network, heavily desaturated, so a tram stop can be placed on an
-  actual street. Off with one checkbox (`?streets=0`).
-- **A minimal LNVG-styled basemap** with an OpenStreetMap raster toggle. The
-  interface is English; station and line names stay as OSM has them, in German.
+- **The OpenStreetMap standard raster underneath**, heavily desaturated and
+  half-transparent so the rail bands still dominate, and so a tram stop can be
+  placed on an actual street. The interface is English; station and line names
+  stay as OSM has them, in German.
 
 ## How it is built
 
@@ -342,8 +341,8 @@ instead of taking it over, is in
 ## Attribution and licensing
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors,
-licensed under the **ODbL**. The OpenStreetMap raster basemap toggle uses
-openstreetmap.org tiles and is subject to the OSMF tile usage policy.
+licensed under the **ODbL**. The raster basemap uses openstreetmap.org tiles
+and is subject to the OSMF tile usage policy.
 
 Construction closures come from **DB InfraGO**'s
 [strecken.info](https://strecken-info.de), the infrastructure manager's own

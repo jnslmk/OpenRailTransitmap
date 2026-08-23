@@ -13,7 +13,7 @@ import { STOP_TIERS, stopRank } from '../shared/lnvg.ts';
 import { buildStyle, servedByModes, STATION_FILTERS, STOP_MARK_LAYERS } from './style.ts';
 import { PILL_PITCH, PILL_THICKNESS, pillLength } from './stopmarks.ts';
 
-const style = buildStyle({ base: '/', osmBasemap: false, streets: true });
+const style = buildStyle({ base: '/' });
 const layer = (id: string) => {
   const found = style.layers.find((l) => l.id === id);
   assert.ok(found, `no layer ${id}`);
@@ -107,9 +107,6 @@ test('an important stop is placed before, and painted over, a lesser one', () =>
     assert.ok(at(tier.rank - 1) > at(tier.rank),
       `rank ${tier.rank - 1} loses collisions to rank ${tier.rank}`);
   }
-  // ...and city names, the map's orientation anchors, still beat all of them.
-  const places = style.layers.findIndex((l) => l.id === 'places-major');
-  assert.ok(places > at(0), 'city names no longer outrank station names');
 });
 
 test('a name clears the bar it belongs to, however long that bar is', () => {

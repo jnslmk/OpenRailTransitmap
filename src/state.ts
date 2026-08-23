@@ -5,8 +5,6 @@
  *   ?line=regional|gvh|re1  selected line
  *   ?modes=longdistance,regional
  *   ?op=DB%20Regio          operator filter
- *   ?base=osm               basemap choice
- *   ?streets=0              street underlay off
  *   ?closures=0             construction overlay off
  *   ?ui=map|peek            sidebar hidden / collapsed to its handle
  *   ?tab=plan               the journey planner rather than the line index
@@ -37,8 +35,6 @@ export interface ViewState {
   selected: string | null;
   modes: Set<Mode>;
   operator: string | null;
-  osmBasemap: boolean;
-  streets: boolean;
   closures: boolean;
   chrome: ChromeMode;
   tab: Tab;
@@ -137,8 +133,6 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     selected: q.get('line'),
     modes: modes.size ? modes : new Set<Mode>(MODES),
     operator: q.get('op'),
-    osmBasemap: q.get('base') === 'osm',
-    streets: q.get('streets') !== '0',
     closures: q.get('closures') !== '0',
     chrome: q.get('ui') === 'map' ? 'hidden' : q.get('ui') === 'peek' ? 'peek' : 'full',
     tab: q.get('tab') === 'plan' ? 'plan' : 'explore',
@@ -152,8 +146,6 @@ export function writeState(s: ViewState) {
   if (s.selected) q.set('line', s.selected);
   if (s.modes.size !== MODES.length) q.set('modes', [...s.modes].join(','));
   if (s.operator) q.set('op', s.operator);
-  if (s.osmBasemap) q.set('base', 'osm');
-  if (!s.streets) q.set('streets', '0');
   if (!s.closures) q.set('closures', '0');
   if (s.chrome === 'hidden') q.set('ui', 'map');
   if (s.chrome === 'peek') q.set('ui', 'peek');

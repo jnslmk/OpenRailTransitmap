@@ -17,8 +17,6 @@ export interface ChromeOptions {
   state: ViewState;
   onToggleMode: (mode: Mode, on: boolean) => void;
   onOperator: (op: string | null) => void;
-  onBasemap: (osm: boolean) => void;
-  onStreets: (on: boolean) => void;
   onToggleClosures: (on: boolean) => void;
   onToggleSheet: () => void;
   onSelect: (lineId: string) => void;
@@ -421,28 +419,6 @@ function draw() {
   sel.onchange = () => { opts.onOperator(sel.value || null); fillLines(); };
   opBox.appendChild(sel);
   root.appendChild(opBox);
-
-  // --- basemap --------------------------------------------------------------
-  const baseBox = el('div', 'panel');
-  baseBox.appendChild(el('h2', '', s.basemap));
-  const baseRow = el('div', 'row');
-  ([[false, s.baseLnvg], [true, s.baseOsm]] as [boolean, string][]).forEach(([osm, label]) => {
-    const b = el('button', `chip${state.osmBasemap === osm ? ' on' : ''}`, label);
-    b.onclick = () => opts.onBasemap(osm);
-    baseRow.appendChild(b);
-  });
-  baseBox.appendChild(baseRow);
-
-  // The raster basemap already is streets, so the underlay has nothing to add.
-  const streetsRow = el('label', 'toggle');
-  const streetsBox = el('input');
-  streetsBox.type = 'checkbox';
-  streetsBox.checked = state.streets;
-  streetsBox.disabled = state.osmBasemap;
-  streetsBox.onchange = () => opts.onStreets(streetsBox.checked);
-  streetsRow.append(streetsBox, el('span', 'label', s.streets));
-  baseBox.appendChild(streetsRow);
-  root.appendChild(baseBox);
 
   // --- line index -----------------------------------------------------------
   const linesBox = el('div', 'panel');

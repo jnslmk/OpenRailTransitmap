@@ -56,7 +56,7 @@ async function main() {
 
   const map = new MLMap({
     container: 'map',
-    style: buildStyle({ base: BASE, osmBasemap: state.osmBasemap, streets: state.streets }),
+    style: buildStyle({ base: BASE }),
     center: state.center,
     zoom: state.zoom,
     // Far enough in that a platform is a platform: from z16 the map stops
@@ -68,8 +68,7 @@ async function main() {
   });
 
   // The station marks are bars of arbitrary length, so they are images rather
-  // than a primitive, drawn on demand. Registered before anything renders, and
-  // once only: the handler survives the setStyle a basemap toggle does.
+  // than a primitive, drawn on demand. Registered before anything renders.
   registerPillImages(map);
 
   // --- map chrome -----------------------------------------------------------
@@ -402,20 +401,6 @@ async function main() {
 
   map.on('idle', refreshLegend);
 
-  /**
-   * Basemap and street underlay are style-level choices, so both go through a
-   * full rebuild. The sidebar is redrawn with it: the basemap chips and the
-   * street checkbox read their state at draw time.
-   */
-  function rebuildStyle() {
-    map.setStyle(buildStyle({ base: BASE, osmBasemap: state.osmBasemap, streets: state.streets }));
-    map.once('styledata', () => {
-      applyFilters(); applyClosures(); ensureItineraryLayers(); applySelection();
-    });
-    renderChrome.rerender();
-    persist();
-  }
-
   function select(id: string | null) {
     state.selected = id;
     applySelection();
@@ -504,9 +489,9 @@ async function main() {
     ['interpolate', ['linear'], ['zoom'], 5, 2.5 * scale, 11, 5 * scale, 15, 8 * scale];
 
   /**
-   * Added after the style rather than inside it, because the style is rebuilt
-   * whenever the basemap or the street underlay changes and these layers must
-   * survive that - `styledata` calls this again and it is idempotent.
+   * Added after the style rather than inside it: the itinerary is a runtime
+   * GeoJSON source with no place in a static style. Idempotent, so it can be
+   * called again on any event that might have replaced the style's layers.
    */
   function ensureItineraryLayers() {
     if (!map.getSource(ITINERARY_SOURCE)) {
@@ -864,8 +849,6 @@ async function main() {
       applyFilters();
     },
     onOperator: (op) => { state.operator = op; applyFilters(); },
-    onBasemap: (osm) => { state.osmBasemap = osm; rebuildStyle(); },
-    onStreets: (on) => { state.streets = on; rebuildStyle(); },
     onToggleClosures: (on) => { state.closures = on; applyClosures(); },
     onToggleSheet: () => setChrome(state.chrome === 'peek' ? 'full' : 'peek'),
     onSelect: (id) => {

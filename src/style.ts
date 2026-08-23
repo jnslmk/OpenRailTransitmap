@@ -596,110 +596,15 @@ function closureLayers(): LayerSpecification[] {
   });
 }
 
-function baseLayers(): LayerSpecification[] {
-  return [
-    {
-      id: 'background',
-      type: 'background',
-      paint: { 'background-color': LNVG.ground },
-    },
-    // The sea comes from assembled coastline polygons, not from natural=water,
-    // which contains no ocean at all (see pipeline/coastline.ts).
-    {
-      id: 'ocean',
-      type: 'fill',
-      source: 'base',
-      'source-layer': 'ocean',
-      paint: { 'fill-color': LNVG.paleBlue },
-    },
-    {
-      id: 'water',
-      type: 'fill',
-      source: 'base',
-      'source-layer': 'water',
-      paint: { 'fill-color': LNVG.paleBlue },
-    },
-    {
-      id: 'boundaries',
-      type: 'line',
-      source: 'base',
-      'source-layer': 'boundaries',
-      paint: {
-        'line-color': LNVG.grey,
-        'line-width': 1.1,
-        'line-dasharray': [3, 2],
-      },
-    },
-  ];
-}
-
 /**
- * City labels, appended last so they hold the highest symbol-placement priority.
+ * The OpenStreetMap standard raster, the ground everything else is drawn on.
  *
- * Placement runs from the top layer down, so when these sat at the bottom of the
- * style every rail label outranked them and Berlin, Hamburg and München lost
- * their labels to whichever village happened to be nearby.
- *
- * Major and minor are separate layers so the two can be zoom-gated apart: at
- * national zoom only the big cities appear, which is all there is room for.
+ * Desaturated and half-transparent over the flat LNVG ground, so it reads as
+ * context rather than as the map: the rail bands have to dominate, and OSM's
+ * own colours - motorway orange, forest green - would otherwise argue with
+ * them. Its labels are the map's place names too, which is why the style
+ * carries none of its own.
  */
-function placeLayers(): LayerSpecification[] {
-  const MAJOR = 250000;
-
-  // Lower sort keys are placed first, so negating population makes the largest
-  // city win any collision.
-  const byPopulation: ExpressionSpecification =
-    ['-', 0, ['get', 'population']];
-
-  const label = (id: string, size: ExpressionSpecification): SymbolLayerSpecification => ({
-    id,
-    type: 'symbol',
-    source: 'base',
-    'source-layer': 'places',
-    layout: {
-      'text-field': ['get', 'name'],
-      'text-font': FONT_REGULAR,
-      'text-size': size,
-      'text-transform': 'uppercase',
-      'text-letter-spacing': 0.08,
-      'text-padding': 6,
-      'symbol-sort-key': byPopulation,
-    },
-    paint: {
-      'text-color': '#8a8a8a',
-      'text-halo-color': LNVG.ground,
-      'text-halo-width': 1.5,
-    },
-  });
-
-  const major = label('places-major',
-    ['interpolate', ['linear'], ['zoom'], 4, 10, 8, 13, 11, 15]);
-  major.minzoom = 4;
-  major.maxzoom = 11;
-  major.filter = ['>=', ['get', 'population'], MAJOR];
-
-  const minor = label('places-minor',
-    ['interpolate', ['linear'], ['zoom'], 7, 9, 10, 12]);
-  minor.minzoom = 7;
-  minor.maxzoom = 10;
-  minor.filter = ['<', ['get', 'population'], MAJOR];
-
-  return [major, minor];
-}
-
-/**
- * Zoom at which the street underlay starts to fade in.
- *
- * The vector basemap carries water, borders and place labels and nothing else,
- * so once you are close enough to read tram stop names there is no context left
- * to place them against. Streets come from the OSM standard raster rather than
- * the pipeline: Germany's highway network at this zoom is orders of magnitude
- * larger than the whole rail extract and could not be tiled nightly. Gating it
- * to the top two zoom levels keeps the request volume off that tile server for
- * ordinary browsing of the network.
- */
-const STREETS_MINZOOM = 13;
-
 const osmRasterSource = () => ({
   type: 'raster' as const,
   tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
@@ -710,69 +615,32 @@ const osmRasterSource = () => ({
 export interface StyleOptions {
   /** Base path the site is served from, e.g. "/OpenRailTransitmap/". */
   base: string;
-  /** Draw the OSM standard raster underneath instead of the flat LNVG ground. */
-  osmBasemap: boolean;
-  /** Fade the OSM raster in at high zoom for street-level context. */
-  streets: boolean;
 }
 
-export function buildStyle({ base, osmBasemap, streets }: StyleOptions): StyleSpecification {
+export function buildStyle({ base }: StyleOptions): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
     name: 'OpenRailTransitmap',
     glyphs: `${base}fonts/{fontstack}/{range}.pbf`,
     sources: {
-      base: { type: 'vector', url: `pmtiles://${base}tiles/base.pmtiles` },
       rail: { type: 'vector', url: `pmtiles://${base}tiles/rail.pmtiles` },
+      osm: osmRasterSource(),
     },
-    layers: [],
-  };
-
-  if (osmBasemap) {
-    style.sources.osm = osmRasterSource();
-    style.layers = [
+    layers: [
       { id: 'background', type: 'background', paint: { 'background-color': LNVG.ground } },
-      // Desaturated so the rail bands still dominate.
       {
         id: 'osm',
         type: 'raster',
         source: 'osm',
         paint: { 'raster-opacity': 0.55, 'raster-saturation': -0.7 },
       },
-    ];
-  } else {
-    style.layers = baseLayers();
-
-    if (streets) {
-      style.sources.osm = osmRasterSource();
-      // Above the vector water and borders, below every rail layer.
-      style.layers.push({
-        id: 'streets',
-        type: 'raster',
-        source: 'osm',
-        minzoom: STREETS_MINZOOM,
-        paint: {
-          'raster-opacity': [
-            'interpolate', ['linear'], ['zoom'],
-            STREETS_MINZOOM, 0,
-            STREETS_MINZOOM + 1, 0.5,
-            STREETS_MINZOOM + 2, 0.62,
-          ],
-          // Nearly grey: streets are there to locate a stop, not to be read.
-          'raster-saturation': -0.85,
-        },
-      });
-    }
-  }
+    ],
+  };
 
   // Symbol placement priority runs from the *top* layer down, so whatever is
   // pushed last wins collisions. Station names matter more than repeated line
-  // badges, so the badge layer goes underneath them, and city labels sit above
-  // both - they are the map's orientation anchors and there are few of them.
+  // badges, so the badge layer goes underneath them.
   style.layers.push(...routeLayers(), badgeLayer(), ...closureLayers(), ...stationLayers());
-
-  // Place labels live in the vector basemap, which the raster mode replaces.
-  if (!osmBasemap) style.layers.push(...placeLayers());
   return style;
 }
 

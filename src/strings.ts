@@ -6,7 +6,7 @@ export interface Strings {
   search: string; noResults: string;
   modes: string; longdistance: string; regional: string; suburban: string;
   subway: string; tram: string; coach: string; operator: string; allOperators: string;
-  basemap: string; baseLnvg: string; baseOsm: string; stations: string;
+  stations: string;
   lines: string; servedBy: string; close: string; clearSelection: string;
   network: string; legend: string; noLinesInView: string;
   stopOne: string; stopShared: string; stopSkipped: string;
@@ -15,7 +15,6 @@ export interface Strings {
   fullscreen: string; exitFullscreen: string;
   locate: string; locateDenied: string; locateError: string;
   zoomIn: string; zoomOut: string; northUp: string;
-  streets: string;
   lineCount: (n: number) => string;
   stationCount: (n: number) => string;
   loading: string; dataDate: string;
@@ -86,9 +85,6 @@ const STRINGS: Strings = {
   coach: 'Long-distance coach',
   operator: 'Operator',
   allOperators: 'All operators',
-  basemap: 'Basemap',
-  baseLnvg: 'LNVG style',
-  baseOsm: 'OpenStreetMap',
   stations: 'Stations',
   lines: 'Lines',
   servedBy: 'Lines serving this station',
@@ -113,7 +109,6 @@ const STRINGS: Strings = {
   zoomIn: 'Zoom in',
   zoomOut: 'Zoom out',
   northUp: 'Reset bearing to north',
-  streets: 'Streets from zoom 13',
   lineCount: (n: number) => `${n} lines`,
   stationCount: (n: number) => `${n} stations`,
   loading: 'Loading map…',
