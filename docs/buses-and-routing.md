@@ -469,6 +469,30 @@ Five decisions worth recording:
   night against the endpoint Transitous names as resource-intensive, for data
   that does not change nightly. The GTFS is complete, cheaper and better
   described.
+- **The feed's shapes have holes in them, and the holes are the story.** They
+  are road-routed but *stitched from pieces*, and where a piece is missing the
+  shape simply steps over it. The two populations of consecutive-point gap do
+  not overlap: median 0.24 km, 99th percentile 3.3 km, 99.9th 12.7 km — and then
+  882 gaps over 30 km, 860 of those over 50 km, the longest **1,062 km**. 659 of
+  the 1,184 shapes contain at least one. `FlixBus N131`, "Berlin Airport –
+  Amsterdam Airport", is dense to within 8 km everywhere except a single 591 km
+  step from Berlin straight to Amsterdam with the entire journey between them
+  absent.
+
+  Left in, a hole that happens to span Germany is clipped to a straight line
+  right across it, and **229 of 347 lines drew one** — the map claiming a coach
+  runs down a diagonal where there is no road, which is the exact lie the
+  closure overlay exists to refuse. Shapes are therefore split at any gap over
+  25 km, which sits in the empty band between real sampling and the holes, and
+  split *before* clipping, because clipping first turns the hole into the chord.
+  The trade is one-sided: splitting a genuine 25 km sampling gap costs a
+  hairline break in a drawn line; not splitting a hole costs a 500 km road that
+  is not there. Afterwards the longest straight anywhere in the national build
+  is 24.1 km.
+
+  This was not caught by a test or by reading the data. It was caught by looking
+  at the rendered map and asking what the diagonals were.
+
 - **The whole feed, then clipped — per segment, not per point.** A European
   coach network is not pre-clipped the way an osmium extract is. Point-wise
   clipping drew a **627 km spike** out of the region on the Kyiv and Bucharest
@@ -495,3 +519,52 @@ committed, only the rendering ships, FlixMobility credited in the sidebar and in
 the map's attribution control whenever a coach line is in view. **This is a
 judgement call rather than a settled licence question** — if it needs revisiting,
 BlaBlaCar's feed *is* ODbL and `COACH_SOURCES` takes a second entry.
+
+
+## 11. What was built: the planner
+
+Phase 4a and 4b of §9, as designed in §3, §4 and §7, with the pieces that turned
+out to matter recorded here.
+
+`src/routing.ts` is the seam. It calls `request()` from `live.ts` rather than
+`fetch()` of its own, so there is still exactly one place in `src/` that talks to
+Transitous and a caching proxy is still a one-line change. `src/planner.ts` owns
+the Plan panel; `ui.ts` gained a two-tab header and nothing else.
+
+**Two things the API says that are not true, and what the UI does about them.**
+
+`bikesAllowed: false` does not mean bikes are refused — it means the feed did not
+say. MOTIS reports GTFS `bikes_allowed`, and where the field is absent, which is
+most of Germany, it reports `false`. `false` and "no" are therefore
+indistinguishable, so `routing.ts` narrows the type to `true | null` and the
+panel renders "Bike carriage not published" rather than a refusal the operator
+never published. Rendering it as "no bikes" would have been the easy, wrong
+thing, and nothing in the response would have flagged it.
+
+`routeShortName` is not a badge: it comes back as `RE8 (14045)`, the line and the
+trip number together. The trip number is stripped for display and kept nowhere.
+
+**The itinerary is drawn in the map's own language.** Each leg's precision-7
+polyline becomes one GeoJSON feature; transit legs paint in the colour this map
+already draws that line in, looked up by ref in `data/lines.json` — but only
+where the ref is unambiguous across the whole registry, because twenty-two German
+lines are called "S1" and the planner, unlike the departure board, does not know
+which station it is standing at. Where it is ambiguous the feed's own colour is
+used. Bike and walk legs are dashed; the network behind dims to 0.22 while the
+Plan tab is in front, and comes back up on Explore with the journey still drawn,
+because the map is one map and the tab is only which half of the sidebar shows.
+
+**The bug worth recording.** `readState` read the bike setting with
+`Number(q.get('bike'))`. `Number(null)` is `0`, and `0` is a legitimate slider
+step meaning "no bike" — so every visit without an explicit `?bike=` silently
+turned the bike off. The one feature the planner exists for, disabled by default,
+and nothing failed. It was caught by opening the page and reading the label,
+which is the argument for driving the real thing rather than only the types.
+`e2e/planner.mjs` now pins it.
+
+**Load.** `plan()` is called only on a deliberate act — submit, a slider release,
+a mode chip, Earlier/Later — never on a pan and never on a keystroke; the
+geocoder is debounced at 350 ms; identical queries are answered from a capped
+client-side cache keyed on the query rounded to the quarter hour. Transitous
+still has not been asked about any of this, and should be before the planner is
+announced anywhere. That remains open question 3.

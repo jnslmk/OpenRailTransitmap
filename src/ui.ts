@@ -6,7 +6,8 @@ import type { LineRecord, Registry } from './main.ts';
 import {
   worstFirst, bands, formatMinutes, type LineScore, type PunctualityFile,
 } from './punctuality.ts';
-import type { ViewState } from './state.ts';
+import type { Tab, ViewState } from './state.ts';
+import { renderPlanner, type PlannerHost } from './planner.ts';
 import { endMoved, formatDate, type ClosureRecord } from './closures.ts';
 
 export { compareLines };
@@ -23,6 +24,8 @@ export interface ChromeOptions {
   onSelect: (lineId: string) => void;
   onFlyToStation: (lngLat: [number, number]) => void;
   searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
+  onTab: (tab: Tab) => void;
+  plannerHost: PlannerHost;
 }
 
 /**
@@ -331,6 +334,37 @@ export function setClosureDay(day: string) {
   syncClosureDay();
 }
 
+/**
+ * Explore and Plan share the sidebar, so every reference the Explore half keeps
+ * into the DOM has to be dropped when the Plan half replaces it. Each `sync*`
+ * already no-ops on a null, which turns "the legend is not on screen" from a
+ * crash into nothing happening - which is what it should be.
+ */
+function clearExploreRefs() {
+  modeBox = null;
+  modeRows = new Map();
+  emptyNote = null;
+  closureCountEl = null;
+  closureDayEl = null;
+  lineList = null;
+}
+
+function tabBar(): HTMLElement {
+  const s = t();
+  const bar = el('div', 'tabs');
+  bar.setAttribute('role', 'tablist');
+  ([['explore', s.tabExplore], ['plan', s.tabPlan]] as [Tab, string][]).forEach(([tab, label]) => {
+    const on = opts.state.tab === tab;
+    const b = el('button', `tab${on ? ' on' : ''}`, label);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(on));
+    b.onclick = () => opts.onTab(tab);
+    bar.appendChild(b);
+  });
+  return bar;
+}
+
 function draw() {
   const { registry, state } = opts;
   const s = t();
@@ -338,6 +372,16 @@ function draw() {
   root.innerHTML = '';
 
   root.appendChild(sheetHandle());
+  root.appendChild(tabBar());
+
+  if (state.tab === 'plan') {
+    clearExploreRefs();
+    const box = el('div', 'plan-root');
+    root.appendChild(box);
+    renderPlanner(box, opts.plannerHost);
+    root.appendChild(buildFooter());
+    return;
+  }
 
   // --- search ---------------------------------------------------------------
   const searchBox = el('div', 'panel');
@@ -404,6 +448,17 @@ function draw() {
   linesBox.appendChild(lineList);
   root.appendChild(linesBox);
 
+  root.appendChild(buildFooter());
+}
+
+/**
+ * The credits, which belong under either tab: a route drawn in the Plan tab is
+ * as much Transitous' work as a departure board is, and the coach lines under
+ * both are FlixMobility's.
+ */
+function buildFooter(): HTMLElement {
+  const s = t();
+  const { registry } = opts;
   const footer = el('footer', 'panel attrib', `
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
@@ -411,8 +466,8 @@ function draw() {
     <span class="live-attrib" hidden>${s.liveAttribution}</span>
     <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>
     <span class="closure-attrib" hidden>${s.closureAttribution}</span>
-    <span class="coach-attrib" hidden>${s.coachAttribution}</span>`);
-  root.appendChild(footer);
+    <span class="coach-attrib" hidden>${s.coachAttribution}</span>
+    <span class="routing-attrib" hidden>${s.planAttribution}</span>`);
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
   punctAttribEl = footer.querySelector('.punct-attrib');
@@ -421,6 +476,9 @@ function draw() {
   closureAttribEl!.hidden = !closuresUsed;
   coachAttribEl = footer.querySelector('.coach-attrib');
   coachAttribEl!.hidden = !coachUsed;
+  routingAttribEl = footer.querySelector('.routing-attrib');
+  routingAttribEl!.hidden = !routingUsed;
+  return footer;
 }
 
 /**
@@ -481,6 +539,19 @@ export function setCoachAttributionUsed() {
   if (coachUsed) return;
   coachUsed = true;
   if (coachAttribEl) coachAttribEl.hidden = false;
+}
+
+/**
+ * Transitous asks for visible attribution while its data is on screen, which
+ * for the planner means from the first itinerary it returns.
+ */
+let routingAttribEl: HTMLElement | null = null;
+let routingUsed = false;
+
+export function setRoutingAttributionUsed() {
+  if (routingUsed) return;
+  routingUsed = true;
+  if (routingAttribEl) routingAttribEl.hidden = false;
 }
 
 /**

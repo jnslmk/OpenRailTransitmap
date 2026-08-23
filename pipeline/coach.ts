@@ -248,6 +248,66 @@ const inside = (b: Bbox, lon: number, lat: number) =>
   lon >= b[0] && lon <= b[2] && lat >= b[1] && lat <= b[3];
 
 /**
+ * The longest jump between consecutive shape points that is still a road.
+ *
+ * The feed's shapes are road-routed but **discontinuous**: they are stitched
+ * from pieces, and where a piece is missing the shape simply steps over the
+ * hole. Measured over the 1,184 shapes this build uses, the two populations do
+ * not overlap:
+ *
+ * | consecutive-point gap | |
+ * |---|---|
+ * | median | 0.24 km |
+ * | 99th percentile | 3.3 km |
+ * | 99.9th percentile | 12.7 km |
+ * | *then* | 882 gaps over 30 km, 860 of them over 50 km, longest 1,062 km |
+ *
+ * So 25 km sits in the empty band between real sampling and the holes. 659 of
+ * the 1,184 shapes contain at least one - `FlixBus N131`, "Berlin Airport -
+ * Amsterdam Airport", is dense to 8 km everywhere except a single 591 km step
+ * from Berlin straight to Amsterdam with the entire journey between them
+ * absent.
+ *
+ * Left in, those holes are catastrophic here rather than merely untidy: a hole
+ * that happens to span the region is clipped to a straight line right across
+ * it, and 229 of 347 German lines drew one. The map would have claimed a coach
+ * runs down a diagonal where no road exists - the same lie the closure overlay
+ * refuses to tell when it routes a possession onto real track instead of
+ * chording between its endpoints.
+ *
+ * The trade is one-sided. Splitting a genuine 25 km sampling gap costs a
+ * hairline break in a drawn line; not splitting a hole costs a 500 km road
+ * that is not there.
+ */
+export const MAX_SHAPE_GAP_KM = 25;
+
+/** Equirectangular, which is ample for deciding "road or hole". */
+function gapKm(a: Coord, b: Coord): number {
+  const midLat = ((a[1] + b[1]) / 2) * (Math.PI / 180);
+  const dx = (a[0] - b[0]) * 111.32 * Math.cos(midLat);
+  const dy = (a[1] - b[1]) * 110.57;
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * Break a shape wherever the feed skipped a piece, so nothing is ever drawn
+ * through a hole. See `MAX_SHAPE_GAP_KM`.
+ */
+export function splitOnGaps(points: Coord[], maxGapKm = MAX_SHAPE_GAP_KM): Coord[][] {
+  const runs: Coord[][] = [];
+  let run: Coord[] = [];
+  for (let i = 0; i < points.length; i++) {
+    if (i > 0 && gapKm(points[i - 1], points[i]) > maxGapKm) {
+      if (run.length > 1) runs.push(run);
+      run = [];
+    }
+    run.push(points[i]);
+  }
+  if (run.length > 1) runs.push(run);
+  return runs;
+}
+
+/**
  * Clip one segment to the box (Liang-Barsky), or null if it misses entirely.
  * Returned in the segment's own direction, so clipped ends chain together.
  */
@@ -485,7 +545,9 @@ export function parseFeed(source: CoachSource, zip: Buffer, bbox: Bbox): CoachLi
     const raw = shapePoints.get(shapeId);
     if (!raw || raw.length < 2) continue;
     raw.sort((a, b) => a.seq - b.seq);
-    const parts = clipToBbox(raw.map((p) => p.coord), bbox);
+    // Holes first, then the region: clipping a shape that still contains a hole
+    // would turn the hole into a chord across the region rather than remove it.
+    const parts = splitOnGaps(raw.map((p) => p.coord)).flatMap((run) => clipToBbox(run, bbox));
     if (parts.length === 0) continue;
 
     const lineStops = (calls.get(routeId) ?? [])

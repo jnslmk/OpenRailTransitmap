@@ -49,6 +49,18 @@ GitHub Pages and rebuilt nightly.
   entering the plan, its dates moving, and its withdrawal. The panel reads it
   back — "was to finish 12 Dec" is a fact no snapshot of the current plan can
   tell you.
+- **A journey planner with a bike in it.** A second sidebar tab: enter where you
+  are and where you are going, and get itineraries over rail, bus, coach and
+  ferry — with one control that is the point of the whole thing, *how far will
+  you ride at each end?* Slide it from "no bike" to 90 minutes and the answer
+  changes from the station down the road to any station in the county. The
+  chosen journey draws on the map in the map's own colours — an RE8 leg painted
+  as the map paints RE8 — with bike and walk legs dashed and the rest of the
+  network dimmed behind it. Bike carriage is reported honestly: German feeds
+  mostly do not publish it, and the panel says so rather than inventing a
+  refusal. A plan is a link, itinerary and all. Runs on the
+  [Transitous](https://transitous.org) MOTIS API; see
+  [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Search, mode and operator filters**, and deep-linkable URLs that restore
   position, filters and selection.
 - **A legend of what is actually on screen.** Only modes with lines in the
@@ -88,6 +100,8 @@ pipeline/
   tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
 src/                       MapLibre app (style, state, UI, controls, strings)
+  live.ts / routing.ts     the only two modules that talk to Transitous
+  planner.ts               the Plan tab
 ```
 
 ### Region switching
@@ -195,7 +209,14 @@ npx playwright install chromium     # once, unless a browser is already present
 node e2e/legend.mjs                                # https://jnslmk.github.io/OpenRailTransitmap/
 node e2e/legend.mjs --url http://127.0.0.1:5173/   # a local dev server
 node e2e/legend.mjs --headed                       # watch it run
+
+node e2e/planner.mjs                               # the journey planner
 ```
+
+`planner.mjs` is a live conversation with Transitous, so it pins down what must
+hold whatever the timetable returns — that a place resolves, that the itinerary
+is drawn on the map, that the bike slider reaches the request and that a link
+restores the whole plan — rather than any particular journey.
 
 A local run needs tiles, which the pipeline builds; the quickest way to get
 them without running it is to copy the deployed ones into `public/`.
@@ -222,10 +243,18 @@ so the repository does not grow by tens of megabytes a night.
 
 Phases 1–3 (pipeline, style, interactions, scale-up) are the map itself.
 
-**Phase 4 is a bike + train journey planner**: enter A and B, get itineraries
-with a bike/train time split you can bias with a slider — "cycle an hour, take
-the train an hour". It will run on the [Transitous](https://transitous.org)
-MOTIS API behind a `RoutingProvider` interface.
+**Phase 4 is a bike + train journey planner** — enter A and B, get itineraries
+with a bike/train time split you can bias with a slider, "cycle an hour, take the
+train an hour". It is **built**: see the feature list above, and
+[`docs/buses-and-routing.md`](docs/buses-and-routing.md) §11 for the design and
+the two places the API says something it does not mean.
+
+What is left of Phase 4 is local bus *on the map*. The planner already routes
+over it — that comes free with the feed — but drawing it is a different
+proposition: 16,462 `route=bus` relations in Niedersachsen alone against 878 rail
+ones, and 129,506 bus stops against 20,830 rail stations nationally. Which of
+them belong on a rail map is a question the planner's own usage is better placed
+to answer than a tag heuristic, so it waits.
 
 That backend was validated up front — see
 [`docs/spike-transitous.md`](docs/spike-transitous.md). Two findings worth

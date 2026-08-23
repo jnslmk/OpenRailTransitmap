@@ -239,3 +239,19 @@ Workers, Deno Deploy) that attaches the `User-Agent` and caches responses for
 The one piece that is *not* runtime, and should be done on the server side
 regardless, is the station → stop id mapping: it belongs in the nightly pipeline,
 where a server already exists in the form of CI.
+
+**Followed through.** The seam exists and is two modules: `src/live.ts` owns the
+one `request()` that talks to Transitous, and `src/routing.ts` — the journey
+planner, which is far larger than a departure board and models a different set
+of shapes — calls that function rather than `fetch()` of its own. So the day a
+proxy is needed is still a one-line change to `BASE_URL`, with the planner
+included. The planner also honours the two things §5 asks for that a browser
+*can* do: it never calls the routing endpoint except on a deliberate act by the
+user, and it answers repeated queries from a client-side cache.
+
+Coach lines are the one place this reasoning was applied and came out the other
+way. `/api/v1/map/trips` would have served them, but only for trips running in
+the window asked for, at several megabytes a night against the endpoint
+Transitous names as resource-intensive — for data that changes weekly. The
+operator's own GTFS is complete, cheaper, better described and costs Transitous
+nothing. See [`buses-and-routing.md`](buses-and-routing.md) §10.

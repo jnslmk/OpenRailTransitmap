@@ -1,21 +1,26 @@
-import maplibregl, { Map as MLMap, Popup, type MapGeoJSONFeature } from 'maplibre-gl';
+import maplibregl, {
+  Map as MLMap, Popup,
+  type MapGeoJSONFeature, type ExpressionSpecification,
+} from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
+import { LNVG, MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import {
   buildStyle, selectionOpacity, highlightOpacity, servedByModes, STATION_FILTERS,
   CLOSURE_LAYER_IDS, CLOSURE_HIT_LAYER_IDS,
 } from './style.ts';
-import { readState, writeState, type ViewState, type ChromeMode } from './state.ts';
+import { readState, writeState, type ViewState, type ChromeMode, type Tab } from './state.ts';
 import { t } from './strings.ts';
 import {
   renderChrome, renderLinePanel, renderClosurePanel, setStatus, compareLines,
   syncSheetHandle, setVisibleModes, unpinModes, setLiveAttributionUsed,
   setVisibleLines, setLinePunctuality, setPunctualityAttributionUsed,
   setVisibleClosures, setClosureDay, setClosureAttributionUsed,
-  setCoachAttributionUsed,
+  setCoachAttributionUsed, setRoutingAttributionUsed,
 } from './ui.ts';
+import { setPlannerPlace, restorePlannerResult, type PlannerHost } from './planner.ts';
+import type { Itinerary, Leg, Place } from './routing.ts';
 import { ChromeToggleControl, labelControls } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
@@ -129,9 +134,9 @@ async function main() {
    * starts empty - which is exactly what made this one function rather than one
    * copy of it per source.
    */
-  const earned = new Set<'live' | 'punctuality' | 'closures' | 'coach'>();
+  const earned = new Set<'live' | 'punctuality' | 'closures' | 'coach' | 'routing'>();
 
-  function credit(source: 'live' | 'punctuality' | 'closures' | 'coach') {
+  function credit(source: 'live' | 'punctuality' | 'closures' | 'coach' | 'routing') {
     if (earned.has(source)) return;
     earned.add(source);
     const s = t();
@@ -144,6 +149,7 @@ async function main() {
         ...(earned.has('punctuality') ? [s.punctualityAttribution] : []),
         ...(earned.has('closures') ? [s.closureAttribution] : []),
         ...(earned.has('coach') ? [s.coachAttribution] : []),
+        ...(earned.has('routing') ? [s.planAttribution] : []),
       ],
     });
     map.addControl(attribution, 'bottom-right');
@@ -159,12 +165,26 @@ async function main() {
 
   // --- selection & filtering ------------------------------------------------
 
+  /**
+   * How loudly the network paints.
+   *
+   * A drawn itinerary needs the network behind it quietened, or the route
+   * disappears into the corridor it runs along - but only while the planner is
+   * the tab in front. Switch back to Explore and the network comes up again
+   * with the journey still drawn over it, because the map is one map and the
+   * tab is only which half of the sidebar is showing.
+   */
+  function routeOpacity(): number | ExpressionSpecification {
+    if (state.selected) return selectionOpacity(state.selected);
+    return shownItinerary && state.tab === 'plan' ? 0.22 : 1;
+  }
+
   function applySelection() {
     for (const mode of MODES) {
-      map.setPaintProperty(`route-${mode}`, 'line-opacity', selectionOpacity(state.selected));
+      map.setPaintProperty(`route-${mode}`, 'line-opacity', routeOpacity());
       map.setPaintProperty(`route-${mode}-highlight`, 'line-opacity', highlightOpacity(state.selected));
     }
-    map.setPaintProperty('route-badges', 'text-opacity', selectionOpacity(state.selected));
+    map.setPaintProperty('route-badges', 'text-opacity', routeOpacity());
     const line = state.selected ? byId.get(state.selected) ?? null : null;
     renderLinePanel(line, { onClose: () => select(null) });
     if (line) showPunctuality(line.id);
@@ -216,6 +236,13 @@ async function main() {
   function markCoachUsed() {
     credit('coach');
     setCoachAttributionUsed();
+  }
+
+  /** Transitous asks for visible credit while its data is on screen. A drawn
+   *  itinerary is its data as much as a departure board is. */
+  function markRoutingUsed() {
+    credit('routing');
+    setRoutingAttributionUsed();
   }
 
   /**
@@ -351,7 +378,9 @@ async function main() {
    */
   function rebuildStyle() {
     map.setStyle(buildStyle({ base: BASE, osmBasemap: state.osmBasemap, streets: state.streets }));
-    map.once('styledata', () => { applyFilters(); applyClosures(); applySelection(); });
+    map.once('styledata', () => {
+      applyFilters(); applyClosures(); ensureItineraryLayers(); applySelection();
+    });
     renderChrome.rerender();
     persist();
   }
@@ -364,10 +393,185 @@ async function main() {
 
   const persist = () => writeState(state);
 
+  // --- the planned journey on the map ---------------------------------------
+  //
+  // The thing only this map can do. Google draws a generic blue snake; here a
+  // transit leg is painted in the colour the network underneath is already
+  // painted in, so an itinerary reads as a path *through* the map rather than
+  // as an overlay on top of one.
+
+  const ITINERARY_SOURCE = 'itinerary';
+  const NO_ITINERARY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+  const BIKE_LEG_MODES = new Set(['BIKE', 'RENTAL', 'BIKE_RENTAL']);
+  let shownItinerary: Itinerary | null = null;
+
+  /**
+   * The map's own colour for a line the planner names.
+   *
+   * Keyed on the normalised ref, and *only* where that ref is unambiguous
+   * across the whole registry. Twenty-two German lines are called "S1"; the
+   * departure board can disambiguate because it knows which station it is
+   * standing at, and this cannot, so where a ref maps to more than one colour
+   * the honest answer is none and the feed's own colour is used instead.
+   */
+  const unambiguousRefColours = (() => {
+    const byRef = new Map<string, Set<string>>();
+    for (const l of registry.lines) {
+      const k = lineKey(l.ref);
+      const set = byRef.get(k);
+      if (set) set.add(l.colour); else byRef.set(k, new Set([l.colour]));
+    }
+    const out = new Map<string, string>();
+    for (const [k, colours] of byRef) if (colours.size === 1) out.set(k, [...colours][0]);
+    return out;
+  })();
+
+  const legColour = (leg: Leg): string | null =>
+    (leg.line ? unambiguousRefColours.get(lineKey(leg.line)) ?? null : null);
+
+  function itineraryData(it: Itinerary | null): GeoJSON.FeatureCollection {
+    if (!it) return NO_ITINERARY;
+    const features: GeoJSON.Feature[] = [];
+
+    for (const leg of it.legs) {
+      if (leg.path.length < 2) continue;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: leg.path },
+        properties: {
+          kind: leg.transit ? 'transit' : BIKE_LEG_MODES.has(leg.mode) ? 'bike' : 'walk',
+          colour: leg.transit ? (legColour(leg) ?? leg.colour ?? '#1a1a1a') : '#1a1a1a',
+        },
+      });
+    }
+
+    // A dot at every leg boundary - which is every place the rider changes
+    // from one thing to another - and a larger one at each end of the journey.
+    it.legs.forEach((leg, i) => {
+      if (i === 0) return;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [leg.from.lon, leg.from.lat] },
+        properties: { kind: 'change' },
+      });
+    });
+    const first = it.legs[0];
+    const last = it.legs[it.legs.length - 1];
+    for (const p of [first?.from, last?.to]) {
+      if (p) {
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+          properties: { kind: 'end' },
+        });
+      }
+    }
+    return { type: 'FeatureCollection', features };
+  }
+
+  const itineraryWidth = (scale: number): ExpressionSpecification =>
+    ['interpolate', ['linear'], ['zoom'], 5, 2.5 * scale, 11, 5 * scale, 15, 8 * scale];
+
+  /**
+   * Added after the style rather than inside it, because the style is rebuilt
+   * whenever the basemap or the street underlay changes and these layers must
+   * survive that - `styledata` calls this again and it is idempotent.
+   */
+  function ensureItineraryLayers() {
+    if (!map.getSource(ITINERARY_SOURCE)) {
+      map.addSource(ITINERARY_SOURCE, {
+        type: 'geojson', data: itineraryData(shownItinerary),
+      });
+    }
+    if (map.getLayer('itinerary-casing')) return;
+
+    map.addLayer({
+      id: 'itinerary-casing',
+      type: 'line',
+      source: ITINERARY_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': LNVG.white, 'line-width': itineraryWidth(2.1), 'line-opacity': 0.9 },
+    });
+    map.addLayer({
+      id: 'itinerary-street',
+      type: 'line',
+      source: ITINERARY_SOURCE,
+      filter: ['!=', ['get', 'kind'], 'transit'],
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': '#1a1a1a',
+        'line-width': itineraryWidth(0.8),
+        // Dashed, because a bike or a walk is not a service: it is the rider
+        // getting themselves between two that are.
+        'line-dasharray': [1.6, 1.6],
+      },
+    });
+    map.addLayer({
+      id: 'itinerary-transit',
+      type: 'line',
+      source: ITINERARY_SOURCE,
+      filter: ['==', ['get', 'kind'], 'transit'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'colour'] as ExpressionSpecification,
+        'line-width': itineraryWidth(1),
+      },
+    });
+    map.addLayer({
+      id: 'itinerary-changes',
+      type: 'circle',
+      source: ITINERARY_SOURCE,
+      filter: ['==', ['get', 'kind'], 'change'],
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 2.5, 11, 4.5, 15, 6],
+        'circle-color': LNVG.white,
+        'circle-stroke-color': '#1a1a1a',
+        'circle-stroke-width': 1.6,
+      },
+    });
+    map.addLayer({
+      id: 'itinerary-ends',
+      type: 'circle',
+      source: ITINERARY_SOURCE,
+      filter: ['==', ['get', 'kind'], 'end'],
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 4, 11, 6.5, 15, 8.5],
+        'circle-color': '#1a1a1a',
+        'circle-stroke-color': LNVG.white,
+        'circle-stroke-width': 2,
+      },
+    });
+  }
+
+  function drawItinerary(it: Itinerary | null) {
+    shownItinerary = it;
+    ensureItineraryLayers();
+    const source = map.getSource(ITINERARY_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    source?.setData(itineraryData(it));
+    applySelection();
+    if (it) fitItinerary(it);
+  }
+
+  /** Bring the whole journey into view, the way picking a route out of a list should. */
+  function fitItinerary(it: Itinerary) {
+    let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+    for (const leg of it.legs) {
+      for (const [lon, lat] of leg.path) {
+        if (lon < west) west = lon;
+        if (lon > east) east = lon;
+        if (lat < south) south = lat;
+        if (lat > north) north = lat;
+      }
+    }
+    if (!Number.isFinite(west)) return;
+    map.fitBounds([[west, south], [east, north]], { padding: 48, maxZoom: 13, duration: 600 });
+  }
+
   // --- interactions ---------------------------------------------------------
 
   const routeLayers = MODES.map((m) => `route-${m}`);
-  const STATION_LAYERS = ['stations', 'stations-tram'];
+  const STATION_LAYERS = ['stations', 'stations-tram', 'stations-coach'];
   const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
   // A slow departures response must never paint into a popup that has moved
@@ -467,12 +671,41 @@ async function main() {
           ${p.uic_ref ? `<span class="uic">UIC ${p.uic_ref}</span>` : ''}
           <div class="pop-lines-label">${t().servedBy}</div>
           <div class="pop-lines">${badges || '—'}</div>
+          <div class="pop-actions">
+            <button class="pop-action" data-dir="from">${t().planDirectionsFrom}</button>
+            <button class="pop-action" data-dir="to">${t().planDirectionsTo}</button>
+          </div>
           ${stopId ? '<div class="pop-live"></div>' : ''}
         </div>`)
       .addTo(map);
 
     popup.getElement()?.querySelectorAll<HTMLElement>('.badge').forEach((el) => {
       el.onclick = () => { select(el.dataset.line!); popup.remove(); };
+    });
+
+    // Turning a station you are looking at into one end of a journey is the
+    // whole reason the planner lives inside the map rather than beside it.
+    popup.getElement()?.querySelectorAll<HTMLElement>('.pop-action').forEach((el) => {
+      el.onclick = () => {
+        const [lon, lat] = geom.coordinates as [number, number];
+        const place: Place = {
+          name: String(p.name ?? ''),
+          lat,
+          lon,
+          // The resolved MOTIS id where the pipeline found one, so the router
+          // plans from the stop itself rather than from a point near it.
+          stopId: stopId || null,
+          area: '',
+          kind: stopId ? 'STOP' : 'PLACE',
+        };
+        popup.remove();
+        if (state.chrome === 'hidden') setChrome(lastVisible);
+        state.tab = 'plan';
+        // Renders the Plan tab, which is what gives `setPlannerPlace` a host.
+        renderChrome.rerender();
+        setPlannerPlace(el.dataset.dir === 'to' ? 'to' : 'from', place);
+        persist();
+      };
     });
 
     // A station with no resolved stopId (most of them, until the pipeline
@@ -537,9 +770,26 @@ async function main() {
 
   // --- chrome ---------------------------------------------------------------
 
+  const plannerHost: PlannerHost = {
+    state: state.plan,
+    onItinerary: drawItinerary,
+    legColour,
+    persist,
+    onRoutingUsed: markRoutingUsed,
+  };
+
   renderChrome({
     registry,
     state,
+    plannerHost,
+    onTab: (tab: Tab) => {
+      state.tab = tab;
+      // The drawn journey survives the switch - see routeOpacity() - so this
+      // only has to repaint the network at the volume the new tab wants.
+      renderChrome.rerender();
+      applySelection();
+      persist();
+    },
     onToggleMode: (mode: Mode, on: boolean) => {
       if (on) state.modes.add(mode); else state.modes.delete(mode);
       // Everything but the selected line paints dimmed, so a selection whose
@@ -568,9 +818,13 @@ async function main() {
   map.on('load', () => {
     applyFilters();
     applyClosures();
+    ensureItineraryLayers();
     applySelection();
     readClosureDay();
     document.body.classList.add('ready');
+    // A shared link that names both ends carries no geometry, only the query
+    // that produced it, so the journey has to be asked for again to be drawn.
+    if (state.tab === 'plan') restorePlannerResult();
   });
 
   /**

@@ -15,7 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateRawSync } from 'node:zlib';
 import {
-  splitCsvLine, clipToBbox, readZipMembers, parseFeed,
+  splitCsvLine, clipToBbox, splitOnGaps, readZipMembers, parseFeed,
   type Bbox, type CoachSource,
 } from './coach.ts';
 import type { Coord } from './lib/track.ts';
@@ -147,6 +147,39 @@ test('running along the edge counts as being in the region', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Holes in the shapes
+// ---------------------------------------------------------------------------
+
+test('a shape is cut where the feed skipped a piece', () => {
+  // The measured shape of the defect: `FlixBus N131` is dense to within 8 km
+  // everywhere except one 591 km step from Berlin straight to Amsterdam, with
+  // the whole journey between them missing from the feed.
+  const berlin: Coord = [13.28099, 52.5077];
+  const amsterdam: Coord = [4.83839, 52.38974];
+  const parts = splitOnGaps([[13.2, 52.5], berlin, amsterdam, [4.8, 52.4]]);
+  assert.equal(parts.length, 2);
+  assert.deepEqual(parts[0], [[13.2, 52.5], berlin]);
+  assert.deepEqual(parts[1], [amsterdam, [4.8, 52.4]]);
+});
+
+test('ordinary motorway sampling is left alone', () => {
+  // 99.9% of real gaps are under 12.7 km; nothing near that may be cut, or the
+  // network arrives in pieces.
+  const run: Coord[] = [[9.0, 52.0], [9.1, 52.0], [9.25, 52.0]];
+  assert.deepEqual(splitOnGaps(run), [run]);
+});
+
+test('a hole is removed before the region is clipped, not after', () => {
+  // Order matters and this is why: a hole that spans the region, clipped
+  // first, becomes a straight line right across it - 229 of 347 German lines
+  // drew one. Splitting first leaves nothing to clip.
+  const throughGermany: Coord[] = [[4.0, 52.0], [20.0, 52.0]];
+  const germany: Bbox = [5.87, 47.27, 15.04, 55.06];
+  assert.notDeepEqual(clipToBbox(throughGermany, germany), []);
+  assert.deepEqual(splitOnGaps(throughGermany).flatMap((r) => clipToBbox(r, germany)), []);
+});
+
+// ---------------------------------------------------------------------------
 // The zip reader
 // ---------------------------------------------------------------------------
 
@@ -186,6 +219,10 @@ const SOURCE: CoachSource = {
  * Two agencies, three routes and two shape variants on one route, which is the
  * combination the real feed presents: FlixMobility ships FlixBus and FlixTrain
  * together, and every route runs several variants.
+ *
+ * Shape points are a few km apart, as a road-routed shape's are. Whole degrees
+ * would be read as holes in the feed and split - correctly, and this fixture
+ * was written that way first, which is how it caught itself.
  */
 function fixture(): Buffer {
   return makeZip({
@@ -203,9 +240,9 @@ function fixture(): Buffer {
       'r3,t5,railshape\n',
     'stops.txt':
       'stop_id,stop_name,stop_lat,stop_lon,stop_code\n' +
-      's1,Hamburg ZOB,5,5,HAM\n' +
-      's2,Berlin ZOB,8,8,BER\n' +
-      's3,Far Away,80,80,FAR\n',
+      's1,Hamburg ZOB,5.00,5.00,HAM\n' +
+      's2,Berlin ZOB,5.10,5.10,BER\n' +
+      's3,Far Away,80.00,80.00,FAR\n',
     'stop_times.txt':
       'trip_id,stop_id,stop_sequence\n' +
       't2,s2,2\n' +
@@ -214,14 +251,15 @@ function fixture(): Buffer {
       't4,s3,1\n',
     'shapes.txt':
       'shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n' +
-      'major,5,5,0\n' +
-      'major,8,8,1\n' +
-      'minor,1,1,0\n' +
-      'minor,2,2,1\n' +
-      'away,80,80,0\n' +
-      'away,81,81,1\n' +
-      'railshape,5,5,0\n' +
-      'railshape,6,6,1\n',
+      'major,5.00,5.00,0\n' +
+      'major,5.05,5.05,1\n' +
+      'major,5.10,5.10,2\n' +
+      'minor,1.00,1.00,0\n' +
+      'minor,1.05,1.05,1\n' +
+      'away,80.00,80.00,0\n' +
+      'away,80.05,80.05,1\n' +
+      'railshape,5.00,5.00,0\n' +
+      'railshape,5.05,5.05,1\n',
   });
 }
 
@@ -233,7 +271,7 @@ test('keeps only the allowed agency, so FlixTrain is not drawn twice', () => {
 test('draws the shape most trips actually run, not the first one seen', () => {
   // `minor` appears first in trips.txt and runs one trip; `major` runs two.
   const [line] = parseFeed(SOURCE, fixture(), BOX);
-  assert.deepEqual(line.parts, [[[5, 5], [8, 8]]]);
+  assert.deepEqual(line.parts, [[[5.00, 5.00], [5.05, 5.05], [5.10, 5.10]]]);
 });
 
 test('strips the operator prefix off the badge but keeps it as the operator', () => {
