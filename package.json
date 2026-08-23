@@ -8,7 +8,7 @@
   "scripts": {
     "fetch": "bash pipeline/fetch.sh",
     "extract": "bash pipeline/extract.sh",
-    "build:data": "tsx pipeline/build.ts && tsx pipeline/build-basemap.ts && tsx pipeline/coastline.ts",
+    "build:data": "tsx pipeline/build.ts",
     "resolve:stop-ids": "tsx pipeline/stop-ids.ts",
     "build:fonts": "tsx pipeline/fonts.ts",
     "build:punctuality": "tsx pipeline/punctuality.ts",
@@ -27,10 +27,8 @@
   "devDependencies": {
     "@types/geojson": "^7946.0.14",
     "@types/node": "^26.2.0",
-    "@types/shapefile": "^0.6.4",
     "fontnik": "^0.7.7",
     "hyparquet": "^1.28.2",
-    "shapefile": "^0.6.6",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",

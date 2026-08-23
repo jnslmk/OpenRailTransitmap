@@ -1,11 +1,10 @@
 /**
  * Inverse spherical Web Mercator, EPSG:3857 -> WGS84.
  *
- * Two upstream sources ship in 3857 rather than in degrees: the pre-assembled
- * coastline polygons (pipeline/coastline.ts) and DB InfraGO's infrastructure
- * restrictions (pipeline/closures.ts). Both are read straight into the
- * pipeline, and four lines of arithmetic here is what keeps GDAL out of CI for
- * a reprojection this shallow.
+ * DB InfraGO's infrastructure restrictions (pipeline/closures.ts) ship in 3857
+ * rather than in degrees. They are read straight into the pipeline, and four
+ * lines of arithmetic here is what keeps GDAL out of CI for a reprojection this
+ * shallow.
  */
 
 /** Sphere radius Web Mercator is defined on - not the WGS84 ellipsoid's. */

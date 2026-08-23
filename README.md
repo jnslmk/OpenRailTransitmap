@@ -103,16 +103,14 @@ GitHub Pages and rebuilt nightly.
 config/regions.yaml        one value switches the whole pipeline's region
 pipeline/
   fetch.sh                 download the Geofabrik extract
-  extract.sh               osmium -> route relations, ways, stations, basemap
+  extract.sh               osmium -> route relations, ways, stations
   closures.ts              DB InfraGO possessions + the history log
   coach.ts                 long-distance coach from the operators' GTFS
   lib/railpath.ts          route a closure onto the track it closes
   lib/stopmarks.ts         lay a stop's mark across the bands that call there
   build.ts                 stitch routes, bundle corridors, snap stops
-  build-basemap.ts         water, state borders, place labels
-  coastline.ts             ocean polygons (the sea is not natural=water)
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
-  tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
+  tiles.sh                 tippecanoe -> rail.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
 src/stopmarks.ts           the stop bars, drawn to canvas and handed to MapLibre
 src/                       MapLibre app (style, state, UI, controls, strings)
@@ -206,14 +204,6 @@ and they are the one kind of stop still marked on their own node: a coach line i
 a GTFS shape rather than one of the bundles the bars are measured on, so there is
 no corridor to lay a bar across.
 
-### The sea
-
-OSM models the sea as `natural=coastline` *ways* that must be assembled into
-polygons, so a `natural=water` filter yields no ocean at all and the coast
-renders as flat land. `coastline.ts` pulls the pre-assembled simplified water
-polygons from osmdata.openstreetmap.de and reprojects them from EPSG:3857 to
-WGS84 in pure JS, which avoids adding GDAL to CI for a single job.
-
 ### Colours
 
 OSM `colour` is used **verbatim** where tagged, so Hamburg and Berlin S-Bahn and
@@ -235,8 +225,6 @@ bash pipeline/extract.sh        # osmium filtering
 npx tsx pipeline/closures.ts    # today's construction closures (optional)
 npx tsx pipeline/coach.ts       # long-distance coach network (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
-npx tsx pipeline/build-basemap.ts
-npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
 npx tsx pipeline/fonts.ts       # glyphs (cached after the first run)
 bash pipeline/tiles.sh          # PMTiles
 npm run publish:data            # committed data -> public/

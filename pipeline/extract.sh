@@ -8,8 +8,8 @@
 #   pass 1  route relations only -> OPL, which gives us tags + member way ids
 #   pass 2  fetch exactly those ways -> GeoJSON LineStrings, keyed by way id
 #
-# build.ts then stitches ways into routes. Stations and basemap features are
-# straightforward tag filters exported directly to GeoJSON.
+# build.ts then stitches ways into routes. Stations are a straightforward tag
+# filter exported directly to GeoJSON.
 
 set -euo pipefail
 
@@ -84,22 +84,5 @@ osmium export "$OUT/stops.osm.pbf" \
   --add-unique-id=type_id \
   -o "$OUT/stops.geojsonseq" --overwrite
 echo "    $(wc -l < "$OUT/stops.geojsonseq") stop positions"
-
-# --- basemap -----------------------------------------------------------------
-# Deliberately minimal: water, state borders, populated places. Nothing else,
-# so the rail network stays the only thing competing for attention.
-step "filtering basemap features"
-osmium tags-filter "$PBF" \
-  nwr/natural=water \
-  nwr/waterway=riverbank \
-  r/boundary=administrative \
-  n/place=city,town \
-  -o "$OUT/base.osm.pbf" --overwrite
-
-osmium export "$OUT/base.osm.pbf" \
-  -f geojsonseq \
-  --add-unique-id=type_id \
-  -o "$OUT/base.geojsonseq" --overwrite
-echo "    $(wc -l < "$OUT/base.geojsonseq") basemap features"
 
 step "extract complete -> $OUT"

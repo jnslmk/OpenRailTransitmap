@@ -92,9 +92,9 @@ function drawPill(span: number): ImageData | null {
  * Make the pills available to the style, on demand.
  *
  * `styleimagemissing` fires the first time a tile asks for an image the style
- * has not got, and again after every `setStyle`, which is what the basemap and
- * street toggles do - so registering the handler once covers a session's worth
- * of style rebuilds without keeping a list of what has been added.
+ * has not got, and again after every `setStyle` - so registering the handler
+ * once covers a session's worth of tiles without keeping a list of what has
+ * been added.
  */
 export function registerPillImages(map: MLMap): void {
   map.on('styleimagemissing', (e: { id: string }) => {
