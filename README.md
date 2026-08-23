@@ -143,9 +143,10 @@ a consistent direction.
 
 Bundling then falls out of the way ids for free: routes sharing a corridor are
 built from the *same OSM ways*, so ways carrying an identical set of lines form
-one segment, and each line in that segment gets a perpendicular offset ordinal -
-centred for odd-sized bundles, half a pitch off to one side for even-sized ones.
-No geometric matching required.
+one segment, and each line gets a perpendicular offset ordinal, centred so the
+bundle straddles its alignment. The ordinal is ranked across a whole corridor
+rather than per segment, so a line holds one slot for as long as it stays in
+that corridor. No geometric matching required.
 
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.

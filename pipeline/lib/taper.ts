@@ -30,16 +30,26 @@ export function chainLengthM(chain: Coord[]): number {
 }
 
 /**
- * Perpendicular slot ordinal for band `i` of an `n`-line bundle, floored onto
- * an integer lattice so a change in bundle membership can never produce a
- * half-pitch parity slide. Even-sized bundles lean half a pitch to one side of
- * the true alignment instead of straddling it, and that lean is always to the
- * same side regardless of how large the bundle is - an accepted trade-off,
- * but one that would be a visible defect if it ever flipped from bundle to
- * bundle along a corridor.
+ * Perpendicular slot ordinal for band `i` of an `n`-line bundle, centred so
+ * the bundle straddles the true alignment. Even-sized bundles therefore sit on
+ * half-pitch values.
+ *
+ * Centred rather than floored onto whole numbers, and the symmetry is the
+ * point rather than a preference. `line-offset` is signed relative to a
+ * feature's own direction of travel, so one physical band is `+s` in a stretch
+ * stitched one way and `-s` in a stretch stitched the other, and `chainWays`
+ * orients each segment independently. Only a lattice closed under negation
+ * renders the same either way: a floored one is not - a two-line bundle is
+ * {0, 1} forward and {0, -1} reversed - so a corridor stitched both ways would
+ * step a whole band sideways at the seam, and a station mark laid across it
+ * would span three bands where it should span two.
+ *
+ * The parity slide this was once floored to avoid is not a reason to give that
+ * up: it came from re-indexing a line per segment, and slots are ranked per
+ * corridor now (lib/corridor.ts), so it cannot arise.
  */
 export function slotOffset(i: number, n: number): number {
-  return i - Math.floor((n - 1) / 2);
+  return i - (n - 1) / 2;
 }
 
 /**
@@ -177,6 +187,43 @@ export interface TaperStep {
 }
 
 /**
+ * How far a step is pushed off an occupied slot, in pitches.
+ *
+ * Fixed in pitches rather than as a fraction of one step, which is what makes
+ * it safe: a whole number of pitches is exactly what "occupied" means, and the
+ * two lattices in play are one pitch apart and offset from each other by 0 or
+ * half a pitch, so 0.2 can never itself land on either. A fraction of a step
+ * could - with three steps and a fifteen-slot jump, a fifth of a step is
+ * exactly one pitch, and the nudge would move the step onto the next occupied
+ * slot instead of off one.
+ */
+const NUDGE_PITCH = 0.2;
+
+/**
+ * Whether `v` sits exactly on a slot another line rests at, strictly between
+ * the two ends of the ramp.
+ *
+ * A corridor's slots are its line ranking centred, so they lie one pitch apart
+ * and every one of them shares the fractional part of any other. That makes
+ * "is this an occupied slot" a question about the distance to an endpoint
+ * being a whole number, not about the value being a whole number - the two
+ * only coincide when the lattice happens to be integral. Both ends are
+ * checked because a taper fires precisely where two segments disagree, which
+ * under corridor-wide ranking means they belong to different corridors, whose
+ * lattices can differ by half a pitch.
+ */
+export function onOccupiedSlot(v: number, slotUp: number, slotDown: number): boolean {
+  const lo = Math.min(slotUp, slotDown);
+  const hi = Math.max(slotUp, slotDown);
+  if (!(v > lo && v < hi)) return false;
+  const onLattice = (anchorSlot: number) => {
+    const d = v - anchorSlot;
+    return Math.abs(d - Math.round(d)) < 1e-9;
+  };
+  return onLattice(slotUp) || onLattice(slotDown);
+}
+
+/**
  * Build the staircase that replaces a hard slot jump at a junction.
  *
  * `upChain` must end at the junction and `downChain` must start there - i.e.
@@ -208,8 +255,6 @@ export function buildTaper(
   const path = cutUp.cut.concat(cutDown.cut.slice(1));
   const pieces = splitByLength(path, steps);
 
-  const lo = Math.min(slotUp, slotDown);
-  const hi = Math.max(slotUp, slotDown);
   const step = (slotDown - slotUp) / pieces.length; // one step's span, signed
 
   return pieces.map((coords, k) => {
@@ -217,18 +262,18 @@ export function buildTaper(
     // straight-line ramp from slotUp to slotDown rather than trailing it.
     let offset = slotUp + step * (k + 0.5);
 
-    // With an odd step count, a step can land exactly on an integer slot
+    // With an odd step count, a step can land exactly on an occupied slot
     // strictly between slotUp and slotDown - most commonly the middle step,
-    // at exactly the halfway mark, whenever slotDown - slotUp is even. That
-    // integer is, by construction, a slot some other line in this bundle
-    // rests at for the length of the taper; an un-nudged step would then run
-    // pixel-exact collinear with that line's own band. Measured on a
-    // national rebuild: low thousands of steps a build, not a theoretical
+    // at exactly the halfway mark, whenever the jump spans an even number of
+    // pitches. That slot is, by construction, one some other line in this
+    // bundle rests at for the length of the taper; an un-nudged step would
+    // then run pixel-exact collinear with that line's own band. Measured on
+    // a national rebuild: low thousands of steps a build, not a theoretical
     // case (see the counter in build.ts).
     //
-    // Nudge a fifth of one step's span further along the ramp direction.
-    // That guarantees only that no step's offset can still equal an
-    // occupied integer afterwards - pixel-exact coincidence, the actual
+    // Nudge a fifth of a pitch further along the ramp direction. That
+    // guarantees only that no step's offset can still equal an occupied
+    // slot afterwards - pixel-exact coincidence, the actual
     // pathology this exists to stop. It is NOT enough to buy visible
     // separation - for the common |slotDown - slotUp| = 2 case the nudge is
     // roughly 13-14% of a band's width on screen, so the step still passes
@@ -242,17 +287,14 @@ export function buildTaper(
     // the ramp to chase that instead of just clearing the exact-coincidence
     // case.
     //
-    // Small enough relative to a full step (0.2 < 1) that it can never push
-    // a step's offset past its neighbour's: for any two adjacent steps the
-    // gap between them, nudged or not, stays strictly between 0.8 and 1.2 of
-    // a step and always keeps the sign of `step`, so the ramp stays
-    // monotonic. slotUp and slotDown themselves are never touched here -
+    // Small enough that it can never push a step's offset past its
+    // neighbour's: adjacent steps sit |step| >= 1/3 of a pitch apart at the
+    // tightest (a one-pitch jump over three steps), so shifting one by 0.2
+    // of a pitch leaves the gap positive and keeps the sign of `step`, and
+    // the ramp stays monotonic. slotUp and slotDown themselves are never touched here -
     // they belong to the trimmed parent features, not to any step - so the
     // endpoints stay exact.
-    const nearest = Math.round(offset);
-    if (Math.abs(offset - nearest) < 1e-9 && nearest > lo && nearest < hi) {
-      offset += 0.2 * step;
-    }
+    if (onOccupiedSlot(offset, slotUp, slotDown)) offset += NUDGE_PITCH * Math.sign(step);
 
     return { coords, offset };
   });

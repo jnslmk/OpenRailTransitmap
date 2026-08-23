@@ -22,38 +22,51 @@ function eastward(x: number, y: number, len: number): Coord[] {
   return [[x, y], [x + len * M_LON, y]];
 }
 
-test('slotOffset is always an integer', () => {
+test('slotOffset spaces a bundle one pitch apart, whatever its size', () => {
   for (let n = 1; n <= 12; n++) {
-    for (let i = 0; i < n; i++) {
-      assert.ok(Number.isInteger(slotOffset(i, n)), `n=${n} i=${i}`);
+    const offsets = Array.from({ length: n }, (_, i) => slotOffset(i, n));
+    for (let i = 1; i < n; i++) {
+      assert.equal(offsets[i] - offsets[i - 1], 1, `n=${n} i=${i}`);
     }
   }
 });
 
-test('slotOffset centres an odd-sized bundle exactly on the true alignment', () => {
-  for (const n of [1, 3, 5, 7, 9]) {
+test('slotOffset is closed under negation, so a flipped stretch lands on itself', () => {
+  // The invariant the whole lattice exists for. `line-offset` is signed
+  // relative to a feature's direction of travel and chainWays orients each
+  // segment independently, so the same physical band is +s in one stretch and
+  // -s in the next. Negating the set has to give the set back, or a corridor
+  // stitched both ways steps sideways at the seam and a station mark laid
+  // across it spans the wrong number of bands.
+  for (let n = 1; n <= 12; n++) {
+    const offsets = Array.from({ length: n }, (_, i) => slotOffset(i, n));
+    // `o === 0 ? 0 : -o` because negating zero gives -0, which deepEqual
+    // treats as a different value from 0.
+    const mirrored = offsets.map((o) => (o === 0 ? 0 : -o)).sort((a, b) => a - b);
+    assert.deepEqual(mirrored, [...offsets].sort((a, b) => a - b), `n=${n}`);
+  }
+});
+
+test('slotOffset centres every bundle on the true alignment', () => {
+  for (let n = 1; n <= 12; n++) {
     const offsets = Array.from({ length: n }, (_, i) => slotOffset(i, n));
     const mean = offsets.reduce((a, b) => a + b, 0) / n;
     assert.equal(mean, 0, `n=${n}`);
   }
 });
 
-test('slotOffset leans an even-sized bundle to the same side every time', () => {
-  // The true centre of an even bundle sits at a half-integer, so the integer
-  // lattice must lean the whole bundle half a pitch one way. That lean must
-  // not flip sign as the bundle grows - an alternating lean would look like a
-  // fresh discontinuity every time a bundle's size changes parity.
-  const leans = [2, 4, 6, 8, 10].map((n) => {
-    const offsets = Array.from({ length: n }, (_, i) => slotOffset(i, n));
-    return offsets.reduce((a, b) => a + b, 0) / n;
-  });
-  for (const lean of leans) assert.equal(lean, 0.5);
-});
-
-test('slotOffset matches the exact expression it replaces', () => {
-  for (let n = 1; n <= 8; n++) {
+test('slotOffset puts an even-sized bundle on half pitches, an odd one on whole', () => {
+  // Not a defect to be flattened onto whole numbers: an even bundle has no
+  // whole-pitch slot at its centre, and rounding it onto one is what breaks
+  // the negation invariant above.
+  for (const n of [2, 4, 6]) {
     for (let i = 0; i < n; i++) {
-      assert.equal(slotOffset(i, n), i - Math.floor((n - 1) / 2));
+      assert.ok(!Number.isInteger(slotOffset(i, n)), `n=${n} i=${i}`);
+    }
+  }
+  for (const n of [1, 3, 5]) {
+    for (let i = 0; i < n; i++) {
+      assert.ok(Number.isInteger(slotOffset(i, n)), `n=${n} i=${i}`);
     }
   }
 });

@@ -37,9 +37,8 @@ test('a bar spans only the lines that call, centred on their bands', () => {
   const [m] = list;
   assert.equal(m.span, 2);
   assert.deepEqual(m.lines, ['b', 'c']);
-  // A four-band bundle sits at -1 0 1 2 - even bundles lean half a pitch to one
-  // side of the alignment rather than straddling it - so b..c centres on 0.5.
-  assert.equal(m.mid, 0.5);
+  // Ordinals of a four-band bundle are -1.5 -0.5 0.5 1.5, so b..c centres on 0.
+  assert.equal(m.mid, 0);
   // Laid across a due-east corridor, the bar runs north-south: 90 degrees.
   assert.equal(Math.round(m.bearing), 90);
 });
@@ -80,17 +79,12 @@ test('a corridor whose bundle changes at the station gets one bar, not two', () 
   assert.deepEqual(list[0].lines.sort(), ['a', 'x']);
 });
 
-// KNOWN REGRESSION, marked todo rather than quietly re-baselined to span 3.
+// The seam flip only merges cleanly because the slot lattice is symmetric:
 // `offset` is signed right-of-drawing-direction, so flipping a stretch negates
-// its ordinals. A symmetric lattice is closed under that negation - the band
-// lands back on itself and only the lines within it swap sides. The floored
-// lattice is not: a two-line bundle is {0, 1} forward and physically {0, -1}
-// reversed, so a corridor stitched in both directions really does occupy three
-// bands, and the bar honestly reports span 3. The fix is a lattice decision
-// upstream, not a change here - see the merge notes.
-test('a bundle stitched the other way round is flipped before it is merged', {
-  todo: 'asymmetric slot lattice is not closed under the seam flip',
-}, () => {
+// its ordinals, and only a lattice closed under negation lands the band back
+// on itself. See slotOffset in lib/taper.ts - this test is what fails first if
+// that ever stops being centred.
+test('a bundle stitched the other way round is flipped before it is merged', () => {
   const forward = eastward(13.0, 13.01);
   const bundles: MarkBundle[] = [
     mb(['a', 'x'], [forward]),

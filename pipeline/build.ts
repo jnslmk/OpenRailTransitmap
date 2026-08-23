@@ -26,7 +26,8 @@ import {
   chainWays, collapseParallelTracks, endpointKey, type Coord,
 } from './lib/track.ts';
 import {
-  slotOffset, taperLengthM, taperMinzoom, buildTaper, trimEnd, chainLengthM, type TaperStep,
+  slotOffset, taperLengthM, taperMinzoom, buildTaper, trimEnd, chainLengthM,
+  onOccupiedSlot, type TaperStep,
 } from './lib/taper.ts';
 import { adjacentSegmentPairs, groupCorridors, rankCorridorLines } from './lib/corridor.ts';
 import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
@@ -610,6 +611,8 @@ async function main() {
 
   interface Candidate {
     lineId: string; bundle: number; steps: TaperStep[]; minzoom: number;
+    /** The ramp's two ends, canonicalised - what "occupied slot" is judged against. */
+    up: number; down: number;
     aIdx: number; aChainIdx: number; aFromStart: boolean; aHalf: number;
     bIdx: number; bChainIdx: number; bFromStart: boolean; bHalf: number;
   }
@@ -686,6 +689,7 @@ async function main() {
 
       candidates.push({
         lineId, bundle: nA, steps, minzoom: taperMinzoom(L),
+        up: up.slot, down: down.slot,
         // Trims apply to each side's own chain in its own, never-reversed
         // orientation, so they are recorded against that chain's actual end
         // rather than the up/down role it was given above.
@@ -715,7 +719,7 @@ async function main() {
   const trimStart = new Map<string, number>();
   const trimEndM = new Map<string, number>();
   const staircases: { lineId: string; bundle: number; minzoom: number; step: TaperStep }[] = [];
-  let tapered = 0, skippedCollision = 0, integerLanding = 0;
+  let tapered = 0, skippedCollision = 0, occupiedLanding = 0;
   for (const c of candidates) {
     if (collides(c.aIdx, c.aChainIdx, c.lineId) || collides(c.bIdx, c.bChainIdx, c.lineId)) {
       skippedCollision++;
@@ -728,12 +732,12 @@ async function main() {
     if (c.bFromStart) trimStart.set(bKey, (trimStart.get(bKey) ?? 0) + c.bHalf);
     else trimEndM.set(bKey, (trimEndM.get(bKey) ?? 0) + c.bHalf);
     for (const step of c.steps) {
-      // buildTaper nudges a step off an integer slot it would otherwise land
-      // on exactly (see its comment in taper.ts). This counts how many still
-      // land on one regardless, so a change to that nudge - or to the data -
-      // surfaces here rather than silently painting over a band again.
-      // Expected to be 0.
-      if (Number.isInteger(step.offset)) integerLanding++;
+      // buildTaper nudges a step off a slot another line rests at, where it
+      // would otherwise land on one exactly (see its comment in taper.ts).
+      // This counts how many still do regardless, so a change to that nudge -
+      // or to the data - surfaces here rather than silently painting over a
+      // band again. Expected to be 0.
+      if (onOccupiedSlot(step.offset, c.up, c.down)) occupiedLanding++;
       staircases.push({ lineId: c.lineId, bundle: c.bundle, minzoom: c.minzoom, step });
     }
     tapered++;
@@ -742,7 +746,7 @@ async function main() {
     `==> ${tapered} slot tapers (${skippedAmbiguous} skipped: ambiguous junction, `
     + `${skippedShort} skipped: chain too short, ${skippedCollision} skipped: trims collided)`,
   );
-  console.log(`==> ${integerLanding} taper steps land exactly on an integer slot (see taper.ts:buildTaper)`);
+  console.log(`==> ${occupiedLanding} taper steps land exactly on an occupied slot (see taper.ts:buildTaper)`);
 
   // --- emit route features --------------------------------------------------
   const features: unknown[] = [];
