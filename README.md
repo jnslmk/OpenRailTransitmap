@@ -1,5 +1,7 @@
 # OpenRailTransitmap
 
+**[Open the map →](https://jnslmk.github.io/OpenRailTransitmap/)**
+
 An interactive map of Germany's passenger rail network, built from OpenStreetMap
 data and styled after the **LNVG Niedersachsen *Streckenfahrplan***. Published to
 GitHub Pages and rebuilt nightly.
