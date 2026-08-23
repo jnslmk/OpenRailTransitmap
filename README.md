@@ -15,8 +15,23 @@ GitHub Pages and rebuilt nightly.
   regional (RE/RB), S-Bahn, U-Bahn and tram.
 - **Parallel route bundling.** Lines sharing a corridor draw as adjacent coloured
   bands instead of stacking into one indistinguishable stroke.
+- **Stops marked across their lines, not beside them.** A station is a white bar
+  laid across the bundle, covering exactly the bands of the lines that call
+  there — so where six lines run through Rathenow and one of them stops, the
+  mark says which one, and a dot beside the tracks never could. A junction gets
+  one bar per corridor, at its own angle. The bar sits on the drawn alignment
+  rather than on the station node, which is a building or a car park off to one
+  side; **from z16 the map draws the node too**, as a hollow ring, once the
+  difference between the two is a fact about the place rather than noise.
+- **Stops that earn their zoom.** Germany's 20,830 stations are one grey smear
+  at national scale, so they are ranked once in the pipeline — long-distance
+  calls and the larger Hauptbahnhöfe, then interchanges, then ordinary halts,
+  then tram stops — and each rank appears at the zoom there is room for it,
+  names one step behind marks. The ranking is written into the tiles as a
+  per-feature minzoom, so a low-zoom tile carries the 400 stops it draws rather
+  than the 20,830 it does not.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
-  station** for every line calling there.
+  stop** for every line calling there.
 - **Punctuality on the line panel.** How often the line actually departs on
   time over a rolling 12 months, broken down by station, worst first — so
   "RE70 runs at 73%" comes with the fact that it is 39% at Hannover-Linden and
@@ -72,12 +87,14 @@ pipeline/
   extract.sh               osmium -> route relations, ways, stations, basemap
   closures.ts              DB InfraGO possessions + the history log
   lib/railpath.ts          route a closure onto the track it closes
+  lib/stopmarks.ts         lay a stop's mark across the bands that call there
   build.ts                 stitch routes, bundle corridors, snap stops
   build-basemap.ts         water, state borders, place labels
   coastline.ts             ocean polygons (the sea is not natural=water)
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
   tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
+src/stopmarks.ts           the stop bars, drawn to canvas and handed to MapLibre
 src/                       MapLibre app (style, state, UI, controls, strings)
 ```
 
@@ -116,6 +133,51 @@ PTv2 relations reference `public_transport=stop_position` nodes rather than the
 `railway=station` node, so stop members are snapped to the nearest station within
 300 m using a grid index. This lifted station coverage from 11 to 1,264 of 1,748
 stations on the Niedersachsen extract, and yields 16,865 of 20,830 nationally.
+
+### Station marks
+
+Knowing *that* a station is served is not the same as knowing *which* of the six
+bands running past it stop there, and that is the question a stop symbol exists
+to answer. So each station gets a bar per corridor it is served from, spanning
+the run of band ordinals belonging to the lines that call — the same centred
+ordinals `build.ts` gives the route features, so the two agree without anything
+having to be measured in pixels. Lines that run through without stopping leave a
+gap, and the gap splits the bar in two.
+
+Corridors that merely *change composition* at a station — a line terminating, a
+branch peeling off — are two bundles on one alignment, and their two bars are
+merged back into one: same heading, and anchors that differ along the corridor
+rather than across it. Two alignments genuinely running side by side, an S-Bahn
+beside its mainline, differ *across* and stay two bars.
+
+Drawing it is one trick. MapLibre multiplies `icon-offset` by `icon-size` and
+rotates it with `icon-rotate`, so setting `icon-size` to exactly the factor the
+bundle spread uses at that zoom makes an offset of `mid × pitch` land on the band
+that ordinal names, at every zoom, with neither expression knowing about the
+other. The bar itself is a canvas-drawn image per span, added on demand — of
+MapLibre's point primitives only a symbol can be a bar of arbitrary length at an
+arbitrary angle measured in pixels. The price is that the bar's *thickness*
+scales with the spread too, which is why below z11 — where the spread
+deliberately collapses so national-scale bundles read as one trunk — the marks
+are plain dots on the same anchors, and the bars fade in over the changeover.
+
+### Which stops show at which zoom
+
+Ranked in `shared/lnvg.ts` and written into the tiles as a per-feature minzoom,
+so a rank is not merely hidden below its zoom, it is not carried there:
+
+| rank | what it is | mark | name |
+| --- | --- | --- | --- |
+| 0 | a long-distance call, or an Hbf with three or more lines | z6 | z8 |
+| 1 | an interchange: 3+ lines, more than one mode, or an Hbf | z9 | z10 |
+| 2 | every other heavy-rail, S-Bahn and U-Bahn halt | z11 | z12 |
+| 3 | tram-only stops | z12 | z13.5 |
+
+Built from what the map already knows — the lines calling, and the name. The one
+name test that earns its place is Hbf: a German Hauptbahnhof is its town's
+principal station by definition, and a two-line Hbf is still the stop a regional
+view should show before the halt one street over. Passenger figures would be the
+better signal, and no open source publishes them for all 5,400 German stations.
 
 ### The sea
 

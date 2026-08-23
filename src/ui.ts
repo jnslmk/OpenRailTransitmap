@@ -214,11 +214,15 @@ function buildModes(): HTMLElement {
   emptyNote = el('p', 'muted', s.noLinesInView);
   box.appendChild(emptyNote);
 
-  // Station symbology, matching the map.
+  // Stop symbology, matching the map: a bar laid across the lines that call,
+  // so its length is the answer and not decoration. The third row is the one
+  // worth spelling out - a gap in a bar is a line that does not stop.
   const legend = el('div', 'legend');
   legend.innerHTML = `
-    <div class="legend-row"><span class="dot interchange"></span>${s.interchange}</div>
-    <div class="legend-row"><span class="dot"></span>${s.station}</div>`;
+    <div class="legend-row"><span class="stopmark"><i></i></span>${s.stopOne}</div>
+    <div class="legend-row"><span class="stopmark"><i class="wide"></i></span>${s.stopShared}</div>
+    <div class="legend-row"><span class="stopmark"><i class="upper"></i><i class="lower"></i>
+      </span>${s.stopSkipped}</div>`;
   box.appendChild(legend);
 
   modeBox = box;

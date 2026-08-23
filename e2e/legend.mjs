@@ -275,8 +275,10 @@ async function run(page) {
 
   await testCase('a mode takes its stops with it', async () => {
     await goto(page, VIEWS.braunschweigStreets, '?modes=tram');
+    // z14.5, so the tram stops are drawn as bars across their bundle rather
+    // than as the dots they collapse to below z11 - see STOP_TIERS.
     const stops = () => page.evaluate(() =>
-      window.__map.queryRenderedFeatures({ layers: ['stations-tram'] }).length);
+      window.__map.queryRenderedFeatures({ layers: ['stop-marks-r3'] }).length);
     check(await stops() > 0, 'tram stops are on screen to begin with');
 
     await toggle(page, 'tram');

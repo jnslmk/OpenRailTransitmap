@@ -150,14 +150,38 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 .legend { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grey); }
 .legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 2px 0; }
 
-.dot {
-  width: 9px; height: 9px;
-  border-radius: 50%;
-  background: #fff;
-  border: 1.4px solid var(--ink);
+/* The stop mark, drawn the way the map draws it: a white bar with a dark
+   outline, laid across the lines that call there, so its length is how many of
+   them do. Turned upright, over a strip of hatching standing in for the bundle
+   - a bar with nothing to span says nothing. */
+.stopmark {
+  position: relative;
+  width: 22px; height: 20px;
   flex: 0 0 auto;
 }
-.dot.interchange { width: 13px; height: 13px; border-width: 2px; }
+.stopmark::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 18px;
+  transform: translateY(-50%);
+  background: repeating-linear-gradient(180deg, var(--grey) 0 3px, transparent 3px 4px);
+}
+.stopmark i {
+  position: absolute;
+  left: 50%;
+  width: 8px; height: 8px;
+  transform: translateX(-50%);
+  top: 6px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1.4px solid var(--ink);
+  box-sizing: border-box;
+}
+.stopmark i.wide { height: 18px; top: 1px; }
+/* Two bars with a gap: the line in the gap is the one running through. */
+.stopmark i.upper { height: 7px; top: 1px; }
+.stopmark i.lower { height: 7px; top: 12px; }
 
 /* The construction legend swatch, drawn the way the map draws a closure: the
    yellow dashes of the reference palette over a dark line. A gradient is the

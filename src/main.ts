@@ -5,8 +5,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import {
   buildStyle, selectionOpacity, highlightOpacity, servedByModes, STATION_FILTERS,
-  CLOSURE_LAYER_IDS, CLOSURE_HIT_LAYER_IDS,
+  STOP_MARK_LAYERS, CLOSURE_LAYER_IDS, CLOSURE_HIT_LAYER_IDS,
 } from './style.ts';
+import { registerPillImages } from './stopmarks.ts';
 import { readState, writeState, type ViewState, type ChromeMode } from './state.ts';
 import { t } from './strings.ts';
 import {
@@ -52,10 +53,18 @@ async function main() {
     style: buildStyle({ base: BASE, osmBasemap: state.osmBasemap, streets: state.streets }),
     center: state.center,
     zoom: state.zoom,
-    maxZoom: 15,
+    // Far enough in that a platform is a platform: from z16 the map stops
+    // pretending the stop mark is the station and draws where the station
+    // actually is, beside the mark that stands for its lines.
+    maxZoom: 18,
     minZoom: 4,
     attributionControl: false,
   });
+
+  // The station marks are bars of arbitrary length, so they are images rather
+  // than a primitive, drawn on demand. Registered before anything renders, and
+  // once only: the handler survives the setStyle a basemap toggle does.
+  registerPillImages(map);
 
   // --- map chrome -----------------------------------------------------------
 
@@ -353,7 +362,7 @@ async function main() {
   // --- interactions ---------------------------------------------------------
 
   const routeLayers = MODES.map((m) => `route-${m}`);
-  const STATION_LAYERS = ['stations', 'stations-tram'];
+  const STATION_LAYERS = [...STOP_MARK_LAYERS, 'station-positions'];
   const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
   // A slow departures response must never paint into a popup that has moved
@@ -417,8 +426,28 @@ async function main() {
     applySelection();
   }
 
+  /**
+   * The station record behind a mark.
+   *
+   * A mark carries only what drawing it takes - the run of lines that bar
+   * covers, and the name - because a junction has one per corridor and copying
+   * a station's whole record onto each of them would be paid for in every tile.
+   * The rest is read back out of the tiles that are already loaded: the mark is
+   * on screen, so the station it belongs to is in one of them. If it somehow is
+   * not, the mark's own properties are a working subset.
+   */
+  function stationOf(f: MapGeoJSONFeature): Record<string, string> {
+    const id = f.properties?.station;
+    if (!id) return f.properties as Record<string, string>;
+    const [hit] = map.querySourceFeatures('rail', {
+      sourceLayer: 'stations',
+      filter: ['==', ['get', 'id'], id],
+    });
+    return (hit?.properties ?? f.properties) as Record<string, string>;
+  }
+
   function showStation(f: MapGeoJSONFeature) {
-    const p = f.properties as Record<string, string>;
+    const p = stationOf(f);
     const served = String(p.lines ?? '').split(',').filter(Boolean)
       .map((id) => byId.get(id)).filter((l): l is LineRecord => !!l)
       .sort(compareLines);

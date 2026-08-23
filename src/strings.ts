@@ -9,7 +9,7 @@ export interface Strings {
   basemap: string; baseLnvg: string; baseOsm: string; stations: string;
   lines: string; servedBy: string; close: string; clearSelection: string;
   network: string; legend: string; noLinesInView: string;
-  interchange: string; station: string;
+  stopOne: string; stopShared: string; stopSkipped: string;
   hideChrome: string; showChrome: string;
   collapsePanel: string; expandPanel: string; panelPeek: string;
   fullscreen: string; exitFullscreen: string;
@@ -71,8 +71,9 @@ const STRINGS: Strings = {
   network: 'Network',
   legend: 'Legend',
   noLinesInView: 'No lines in view',
-  interchange: 'Interchange',
-  station: 'Station',
+  stopOne: 'Stop, one line',
+  stopShared: 'Stop shared by several lines',
+  stopSkipped: 'A line running through without stopping',
   hideChrome: 'Hide panel',
   showChrome: 'Show panel',
   collapsePanel: 'Collapse panel',

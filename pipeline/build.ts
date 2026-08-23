@@ -20,9 +20,10 @@ import { parse as parseYaml } from 'yaml';
 import { writeFeatures } from './lib/write.ts';
 import { resolveStopIds } from './stop-ids.ts';
 import {
-  MODE_SPECS, fallbackColour, normaliseColour, type Mode,
+  MODE_SPECS, STOP_TIER_BY_RANK, fallbackColour, normaliseColour, stopRank, type Mode,
 } from '../shared/lnvg.ts';
 import { chainWays, collapseParallelTracks, type Coord } from './lib/track.ts';
+import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
 import {
   buildRailGraph, nearestNode, routeBetween, metres, type RailWay,
 } from './lib/railpath.ts';
@@ -473,7 +474,11 @@ async function main() {
   console.log(`==> ${segments.size} bundle segments`);
 
   // --- emit route features --------------------------------------------------
+  // The stitched corridors are kept rather than dropped: the station marks are
+  // laid across these exact bands, so they have to be measured on this exact
+  // geometry (see pipeline/lib/stopmarks.ts).
   const features: unknown[] = [];
+  const bundles: MarkBundle[] = [];
   let maxBundle = 0;
   for (const { lineIds, wayIds } of segments.values()) {
     // Snap up to the width the collapse could have left between two stretches
@@ -483,6 +488,7 @@ async function main() {
     if (chains.length === 0) continue;
     const n = lineIds.length;
     maxBundle = Math.max(maxBundle, n);
+    bundles.push({ lineIds, chains });
 
     lineIds.forEach((lineId, i) => {
       const line = lines.get(lineId)!;
@@ -629,9 +635,21 @@ async function main() {
     console.log(`==> stop id resolution failed, continuing without it: ${(err as Error).message}`);
   }
 
+  // --- station marks --------------------------------------------------------
+  // The mark a rider actually sees is not drawn at the station node but across
+  // the bands, covering the lines that call and no others. Computing that is
+  // the one thing here that needs both halves of the build at once - the
+  // stitched corridors and the resolved stop members - so it happens now, with
+  // both in hand. See pipeline/lib/stopmarks.ts for what it is doing and why.
+  const marks = buildStopMarks(
+    bundles,
+    stations.map((st) => ({ id: st.id, coord: st.geometry.coordinates, served: st.served })),
+  );
+
   const stationFeatures = stations.map((st) => {
     const served = [...st.served];
     const modes = [...new Set(served.map((id) => lines.get(id)!.mode))];
+    const major = /Hbf|Hauptbahnhof/.test(st.props.name);
     return {
       type: 'Feature',
       geometry: st.geometry,
@@ -649,17 +667,75 @@ async function main() {
         lines: served.join(','),
         lineCount: served.length,
         modes: modes.join(','),
-        interchange: served.length >= 3 ? 1 : 0,
-        major: /Hbf|Hauptbahnhof/.test(st.props.name) ? 1 : 0,
-        // Tram-only stops are far denser than rail stations and are held back
-        // to high zoom by a separate style layer.
-        tramOnly: modes.length > 0 && modes.every((m) => m === 'tram') ? 1 : 0,
+        major: major ? 1 : 0,
+        // Which zoom this stop earns its mark at - see STOP_TIERS. It replaces
+        // the `interchange` and `tramOnly` flags this used to carry, both of
+        // which it subsumes. An unserved station is drawn at no zoom at all,
+        // so the rank it gets is only somewhere for it to go.
+        rank: served.length ? stopRank(modes, served.length, major) : 3,
+        // Whether the mark is drawn across the bands or, failing that, here.
+        // A station whose corridors are all further off than the snap radius
+        // keeps the old dot on the node rather than vanishing.
+        pill: marks.get(st.id)?.length ? 1 : 0,
       },
     };
   });
 
   const servedCount = stationFeatures.filter((f) => f.properties.lineCount > 0).length;
   console.log(`==> ${stationFeatures.length} stations (${servedCount} with at least one line)`);
+
+  const byRank = new Map<number, number>();
+  const markFeatures = stationFeatures.flatMap((f) => {
+    if (!f.properties.lineCount) return [];
+    const rank = f.properties.rank;
+    byRank.set(rank, (byRank.get(rank) ?? 0) + 1);
+
+    // A station whose corridors are all further off than the snap radius - OSM
+    // has the stop member and the track too far apart to be the same place -
+    // still gets a mark, a one-band one on its own node. That is the dot every
+    // stop used to be, so a data problem costs the mark's precision and never
+    // the mark. `pill` on the station says which of the two happened.
+    const list = marks.get(String(f.properties.id)) ?? [{
+      coord: (f.geometry as { coordinates: Coord }).coordinates,
+      bearing: 0,
+      mid: 0,
+      span: 1,
+      lines: String(f.properties.lines).split(',').filter(Boolean),
+    }];
+
+    // One name per station, on the widest of its bars - a junction has a mark
+    // per corridor and would otherwise be labelled once per corridor too.
+    const widest = list.reduce((a, b) => (b.span > a.span ? b : a));
+    return list.map((m) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: m.coord },
+      properties: {
+        station: f.properties.id,
+        name: f.properties.name,
+        // The lines *this bar* covers, not the station's - so switching a mode
+        // off takes away the bars that were only ever about that mode.
+        lines: m.lines.join(','),
+        span: m.span,
+        mid: Number(m.mid.toFixed(3)),
+        bearing: Number(m.bearing.toFixed(1)),
+        rank,
+        lineCount: f.properties.lineCount,
+        major: f.properties.major,
+        primary: m === widest ? 1 : 0,
+      },
+      // The tier table, written into the tiles: a tram stop is not merely
+      // hidden at z8, it is not carried at z8 at all.
+      tippecanoe: { minzoom: Math.floor(STOP_TIER_BY_RANK[rank].mark) },
+    }));
+  });
+
+  const orphans = servedCount - stationFeatures.filter((f) => f.properties.pill).length;
+  const ranks = [...byRank].sort((a, b) => a[0] - b[0])
+    .map(([r, n]) => `rank ${r}: ${n}`).join(', ');
+  console.log(
+    `==> ${markFeatures.length} station marks (${ranks}`
+    + `${orphans ? `; ${orphans} off their corridor, marked on the node` : ''})`,
+  );
 
   // The station list of every line, keyed by line id: the join key the
   // punctuality pipeline needs, since DB's delay feed names a station but has
@@ -679,6 +755,7 @@ async function main() {
   // --- write ----------------------------------------------------------------
   await writeFeatures(`${OUT}/routes.geojsonl`, features);
   await writeFeatures(`${OUT}/stations.geojsonl`, stationFeatures);
+  await writeFeatures(`${OUT}/stopmarks.geojsonl`, markFeatures);
   await writeClosures(railWays);
 
   // The committed registry: small, diffable, and the thing a human reviews when

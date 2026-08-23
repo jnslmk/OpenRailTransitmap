@@ -128,3 +128,66 @@ export function normaliseColour(raw: string | undefined): string | null {
   };
   return named[v] ?? null;
 }
+
+/**
+ * One band's pitch in screen pixels at the reference scale (offset factor 1).
+ *
+ * Every bundled band is one nominal regional weight wide, so mixed-mode bundles
+ * stay aligned, and 1.02 leaves a hairline between neighbours. Both the route
+ * bands and the station marks that span them measure in this unit, so it lives
+ * here rather than in either of them.
+ */
+export const BUNDLE_PITCH_PX = MODE_SPECS.regional.weightPt * PT_TO_PX * 1.02;
+
+/**
+ * Which stops are drawn at which zoom.
+ *
+ * A geographic map cannot do what the reference poster does - draw every stop
+ * at every scale - because at national zoom Germany's 20,830 stations are one
+ * grey smear. So stops are ranked once, in the pipeline, and each rank earns
+ * its way onto the map at the zoom where there is room for it:
+ *
+ *   0  long-distance calls and the larger Hauptbahnhöfe - the places a map of
+ *      the whole country is *for*. ~400 of them nationally.
+ *   1  interchanges: three or more lines, more than one mode, or an Hbf.
+ *   2  every other heavy-rail, S-Bahn and U-Bahn halt.
+ *   3  tram-only stops, which outnumber rail stations by an order of magnitude.
+ *
+ * `mark` is the zoom the symbol appears at, `label` the zoom its name does -
+ * always later, because a name costs perhaps ten times the space a mark does.
+ * The pipeline writes the same table into the tiles as a per-feature minzoom,
+ * so a rank-3 stop is not merely hidden at z8, it is not in the tile at all.
+ */
+export interface StopTier {
+  rank: number;
+  mark: number;
+  label: number;
+}
+
+export const STOP_TIERS: readonly StopTier[] = [
+  { rank: 0, mark: 6, label: 8 },
+  { rank: 1, mark: 9, label: 10 },
+  { rank: 2, mark: 11, label: 12 },
+  { rank: 3, mark: 12, label: 13.5 },
+];
+
+/** The tier table keyed by rank, for the pipeline's per-feature minzoom. */
+export const STOP_TIER_BY_RANK: Record<number, StopTier> =
+  Object.fromEntries(STOP_TIERS.map((t) => [t.rank, t]));
+
+/**
+ * Which tier a stop belongs to. Deliberately built from what the map already
+ * knows - the lines calling and the name - rather than from passenger figures,
+ * which OSM does not carry and which no open source publishes for all 5,400
+ * German stations.
+ *
+ * The one name test that earns its place is Hbf: a German Hauptbahnhof is the
+ * town's principal station by definition, and a two-line Hbf is still the stop
+ * a map of the region should show before the halt one street over.
+ */
+export function stopRank(modes: readonly Mode[], lineCount: number, major: boolean): number {
+  if (modes.length > 0 && modes.every((m) => m === 'tram')) return 3;
+  if (modes.includes('longdistance') || (major && lineCount >= 3)) return 0;
+  if (lineCount >= 3 || major || modes.length >= 2) return 1;
+  return 2;
+}

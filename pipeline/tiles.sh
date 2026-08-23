@@ -31,6 +31,17 @@ fi
 
 # Modes are zoom-gated in shared/lnvg.ts; matching the tile minzoom keeps the
 # urban layers out of low-zoom tiles entirely rather than just hiding them.
+#
+# `stopmarks` carries the same idea per feature: build.ts stamps each mark with
+# the zoom its tier appears at (STOP_TIERS), so the tile covering the whole of
+# Germany holds the 400-odd long-distance stops and not the 12,000 tram ones.
+# That stamp is also what keeps them: tippecanoe implements its point drop rate
+# *as* a per-feature minzoom, so an explicit one replaces it, and the ranking
+# decides what a low-zoom tile keeps instead of a pseudo-random sample.
+#
+# `stations` is left to the drop rate as before. It is no longer what the map
+# draws below z16, only what the search box reads and what a stop off its own
+# corridor falls back to.
 echo "==> building rail.pmtiles"
 tippecanoe \
   -o "$OUT/rail.pmtiles" --force \
@@ -43,6 +54,7 @@ tippecanoe \
   --detect-shared-borders \
   -L routes:"$BUILD/routes.geojsonl" \
   -L stations:"$BUILD/stations.geojsonl" \
+  -L stopmarks:"$BUILD/stopmarks.geojsonl" \
   "${CLOSURES[@]}" \
   2>&1 | tail -3
 
