@@ -57,6 +57,16 @@ jobs:
           key: pbf-${{ hashFiles('config/regions.yaml') }}-${{ github.run_id }}
           restore-keys: pbf-${{ hashFiles('config/regions.yaml') }}-
 
+      # The coach feed is 32 MB and republished about weekly, so it is cached
+      # by day rather than fetched on every run. `coach.ts` reuses a copy under
+      # 12 hours old and refetches otherwise, so a stale cache self-heals.
+      - name: Restore coach feed cache
+        uses: actions/cache@v4
+        with:
+          path: .work/coach
+          key: coach-${{ github.run_id }}
+          restore-keys: coach-
+
       - name: Fetch OSM extract
         run: bash pipeline/fetch.sh
 
@@ -70,6 +80,14 @@ jobs:
       # whole nightly deploy. build.ts and tiles.sh both handle its absence.
       - name: Read the construction plan
         run: npx tsx pipeline/closures.ts || true
+
+      # Read before build.ts for the same reason as the closure plan, and with
+      # the same `|| true`: the coach network is an addition to the rail map, so
+      # FlixBus changing a URL costs a night of coach lines rather than the
+      # deploy. `coach.ts` already swallows a failed feed internally; this is the
+      # belt to that pair of braces. build.ts handles a missing snapshot.
+      - name: Read the long-distance coach network
+        run: npx tsx pipeline/coach.ts || true
 
       - name: Build data
         # The national route set needs more than Node's default heap.

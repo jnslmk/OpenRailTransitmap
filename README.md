@@ -12,7 +12,15 @@ GitHub Pages and rebuilt nightly.
 ## What it does
 
 - **Every passenger mode, individually selectable** — long-distance (ICE/IC/EC),
-  regional (RE/RB), S-Bahn, U-Bahn and tram.
+  regional (RE/RB), S-Bahn, U-Bahn, tram and long-distance coach.
+- **Long-distance coach, which OSM does not have.** `route=coach` is two
+  relations in the whole of Germany, so the Fernbus network is read from the
+  operator's own GTFS instead — 347 lines and 337 stops, drawn on the road
+  alignment the operator publishes rather than chorded between stops, dashed
+  because it is not a railway, and merged into the same layers as the rail
+  network so it selects, searches and filters like any other mode. A coach stop
+  within 400 m of a station becomes part of that station rather than a second
+  dot beside it. See [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Parallel route bundling.** Lines sharing a corridor draw as adjacent coloured
   bands instead of stacking into one indistinguishable stroke.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
@@ -71,6 +79,7 @@ pipeline/
   fetch.sh                 download the Geofabrik extract
   extract.sh               osmium -> route relations, ways, stations, basemap
   closures.ts              DB InfraGO possessions + the history log
+  coach.ts                 long-distance coach from the operators' GTFS
   lib/railpath.ts          route a closure onto the track it closes
   build.ts                 stitch routes, bundle corridors, snap stops
   build-basemap.ts         water, state borders, place labels
@@ -144,6 +153,7 @@ npm ci
 bash pipeline/fetch.sh          # download the extract
 bash pipeline/extract.sh        # osmium filtering
 npx tsx pipeline/closures.ts    # today's construction closures (optional)
+npx tsx pipeline/coach.ts       # long-distance coach network (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
 npx tsx pipeline/build-basemap.ts
 npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
@@ -245,6 +255,13 @@ public possession register. It is published as information rather than under an
 open licence, so it is credited in the sidebar and in the map's attribution
 control whenever a closure is on screen, and the feed itself is not
 redistributed — only the change log described above.
+
+Long-distance coach comes from **FlixBus**'s own GTFS feed, published by
+FlixMobility Tech GmbH. Like the possession register it carries no licence — the
+Transitous feed registry records one for BlaBlaCar and Optima and none for this
+one — so it gets the same handling: the feed is not redistributed, only the
+lines derived from it are drawn, and FlixMobility is credited in the sidebar and
+in the map's attribution control whenever a coach line is in view.
 
 Punctuality is derived from Deutsche Bahn's published delay record via the
 [`piebro/deutsche-bahn-data`](https://huggingface.co/datasets/piebro/deutsche-bahn-data)

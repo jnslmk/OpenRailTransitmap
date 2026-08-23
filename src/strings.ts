@@ -5,7 +5,7 @@ import type { ClosureDirection, ClosureEffect } from '../shared/closures.ts';
 export interface Strings {
   search: string; noResults: string;
   modes: string; longdistance: string; regional: string; suburban: string;
-  subway: string; tram: string; operator: string; allOperators: string;
+  subway: string; tram: string; coach: string; operator: string; allOperators: string;
   basemap: string; baseLnvg: string; baseOsm: string; stations: string;
   lines: string; servedBy: string; close: string; clearSelection: string;
   network: string; legend: string; noLinesInView: string;
@@ -47,6 +47,7 @@ export interface Strings {
   closureNoHistory: string;
   closureAsOf: (day: string) => string;
   closureAttribution: string;
+  coachAttribution: string;
 }
 
 const STRINGS: Strings = {
@@ -58,6 +59,7 @@ const STRINGS: Strings = {
   suburban: 'S-Bahn',
   subway: 'Metro',
   tram: 'Tram',
+  coach: 'Long-distance coach',
   operator: 'Operator',
   allOperators: 'All operators',
   basemap: 'Basemap',
@@ -164,6 +166,8 @@ const STRINGS: Strings = {
   closureAsOf: (day) => `Construction as planned on ${day}`,
   closureAttribution:
     'Construction: <a href="https://strecken-info.de">DB InfraGO strecken.info</a>',
+  coachAttribution:
+    'Coach: <a href="https://global.flixbus.com">FlixMobility Tech GmbH</a>',
 };
 
 export const t = (): Strings => STRINGS;

@@ -131,6 +131,8 @@ function routeLayers(): LayerSpecification[] {
           'line-width': scaled(spec.weightPt),
           'line-offset': bandOffset,
           'line-opacity': selectionOpacity(null),
+          // Only a mode that does not run on rails carries one; see MODE_SPECS.
+          ...(spec.dash ? { 'line-dasharray': [...spec.dash] } : {}),
         },
       },
     ];
@@ -166,11 +168,24 @@ function badgeLayer(): LayerSpecification {
 }
 
 // Tram stops outnumber rail stations by an order of magnitude, so they are
-// held back to high zoom rather than being allowed to swamp the network.
+// held back to high zoom rather than being allowed to swamp the network. A
+// coach stop that is not also a station - a ZOB, an airport forecourt - is held
+// back for the same reason and one better: it is not a railway station at all,
+// and drawing it as one at national zoom would misdescribe the network.
+//
+// `!= 1` rather than `== 0` on coachOnly, deliberately: a tile built before this
+// property existed carries no value for it, and `null == 0` is false, which
+// would empty the station layer against any tile set older than this style.
 const isRail: ExpressionSpecification =
-  ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 0]];
+  ['all',
+    ['>', ['get', 'lineCount'], 0],
+    ['==', ['get', 'tramOnly'], 0],
+    ['!=', ['get', 'coachOnly'], 1],
+  ];
 const isTram: ExpressionSpecification =
   ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 1]];
+const isCoach: ExpressionSpecification =
+  ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'coachOnly'], 1]];
 
 /** Station layers and the base filter each one is built with. */
 export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
@@ -178,6 +193,8 @@ export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
   'station-labels': isRail,
   'stations-tram': isTram,
   'station-labels-tram': isTram,
+  'stations-coach': isCoach,
+  'station-labels-coach': isCoach,
 };
 
 /**
@@ -225,6 +242,15 @@ function stationLayers(): LayerSpecification[] {
       paint: circlePaint,
     },
     {
+      id: 'stations-coach',
+      type: 'circle',
+      source: 'rail',
+      'source-layer': 'stations',
+      minzoom: 8,
+      filter: isCoach,
+      paint: circlePaint,
+    },
+    {
       id: 'stations',
       type: 'circle',
       source: 'rail',
@@ -232,6 +258,26 @@ function stationLayers(): LayerSpecification[] {
       minzoom: 7,
       filter: isRail,
       paint: circlePaint,
+    },
+    {
+      id: 'station-labels-coach',
+      type: 'symbol',
+      source: 'rail',
+      'source-layer': 'stations',
+      minzoom: 10,
+      filter: isCoach,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT_REGULAR,
+        'text-size': 11,
+        'text-anchor': 'left',
+        'text-offset': [0.6, 0],
+      },
+      paint: {
+        'text-color': '#5a5a5a',
+        'text-halo-color': LNVG.ground,
+        'text-halo-width': 1.4,
+      },
     },
     {
       id: 'station-labels-tram',

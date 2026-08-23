@@ -96,8 +96,18 @@ Two smaller families are the opposite — cheap enough to draw tomorrow:
 
 `route=coach` being 2 nationally is worth sitting with: **Fernbus is not in OSM.**
 FlixBus exists in Transitous — `pipeline/stop-ids.test.ts` already has
-`eu-flixbus_…` stop ids in its fixtures — so long-distance coach, if it is
-wanted, is a *routing* feature and a *departures* feature, never a tiles feature.
+`eu-flixbus_…` stop ids in its fixtures — so long-distance coach cannot come out
+of the extract.
+
+> **Superseded, and built.** This section originally concluded that coach was
+> therefore "a *routing* feature and a *departures* feature, never a tiles
+> feature". That was wrong, and only because it looked no further than OSM and
+> MOTIS. The operator publishes its own GTFS, `shapes.txt` and all — 2.8 M
+> points over 3,586 shapes, median 618 points a shape, which is real road
+> alignment rather than a chord between stops. `pipeline/coach.ts` reads it and
+> `build.ts` merges the result into the same tile layers as the rail network, so
+> coach is drawn, selectable, searchable and in the legend like any other mode.
+> See §10.
 
 ### 1.3 "Globus"
 
@@ -432,3 +442,56 @@ the selected itinerary, which is what makes it shareable.
 | **4c** | Buses on the map, tier chosen with 4a's usage as evidence, probably via GTFS (§5, option D) | A new pipeline stage |
 
 4a and 4b together are the whole user-visible feature. 4c is a separate map.
+
+**Done since:** long-distance coach (§10) and the routing seam. Local bus on the
+map — the 16,462-relations-per-state problem — is still 4c, and still waiting on
+the evidence 4a is there to produce.
+
+## 10. What was built: long-distance coach
+
+Option D of §5, scoped to Fernbus, which is the part of it small enough to be
+certain about: **347 lines and 337 stops nationally**, against the 16,462
+`route=bus` relations in one state that make the local layer a separate decision.
+
+`pipeline/coach.ts` reads FlixBus's own GTFS — a 32 MB zip, cached 12 hours,
+parsed with a ~70-line ZIP reader rather than a new dependency — and writes a
+snapshot in the shape `closures.ts` established. `build.ts` reads that snapshot
+and merges coach into `routes.geojsonl`, `stations.geojsonl` and
+`data/lines.json`, which is what buys selection, search, the legend, the mode
+filter, the line panel and deep links without a line of new UI code.
+
+Five decisions worth recording:
+
+- **Not MOTIS.** `/api/v1/map/trips` does return road-routed coach polylines
+  (measured: 588 COACH segments in one national z6 call), but coverage is
+  whatever happens to be running in the window — 285 distinct routes in ten
+  minutes, 312 in sixty — so full coverage costs several multi-megabyte calls a
+  night against the endpoint Transitous names as resource-intensive, for data
+  that does not change nightly. The GTFS is complete, cheaper and better
+  described.
+- **The whole feed, then clipped — per segment, not per point.** A European
+  coach network is not pre-clipped the way an osmium extract is. Point-wise
+  clipping drew a **627 km spike** out of the region on the Kyiv and Bucharest
+  services, whose shapes stride that far between points once they leave the EU
+  core, and it silently dropped any line crossing the region without a point
+  inside it. Liang-Barsky against the region box fixes both.
+- **FlixTrain is excluded by agency id.** FlixMobility ships FlixBus and
+  FlixTrain in one file; FlixTrain is rail, already on this map from OSM under
+  its FLX refs, and letting it through would draw those three lines twice.
+- **Coach stops attach to a rail station within 400 m.** "Dresden Hbf" and
+  "Dresden central station (Bayrische Straße)" are one place, and two dots say
+  they are not. The 334 that are genuinely their own — ZOBs, airport forecourts,
+  motorway services — get a lighter symbol held back to z8, because a bus bay
+  drawn like a Hauptbahnhof at national zoom misdescribes the network.
+- **No bundling, deliberately.** GTFS shapes share no way ids, so the trick that
+  makes rail corridors legible is unavailable and coach lines down the same
+  autobahn stack. It costs little: the feed gives every route one brand colour,
+  so a stack reads as one green trunk, which is what it is. §5.2 stays open.
+
+The feed carries no licence, and Transitous — which records `ODbL-1.0` for
+BlaBlaCar and `CC0-1.0` for Optima — records none for it either. That is the same
+footing as DB InfraGO's possession register, so it gets the same treatment: never
+committed, only the rendering ships, FlixMobility credited in the sidebar and in
+the map's attribution control whenever a coach line is in view. **This is a
+judgement call rather than a settled licence question** — if it needs revisiting,
+BlaBlaCar's feed *is* ODbL and `COACH_SOURCES` takes a second entry.

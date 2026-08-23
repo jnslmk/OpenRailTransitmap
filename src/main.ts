@@ -14,6 +14,7 @@ import {
   syncSheetHandle, setVisibleModes, unpinModes, setLiveAttributionUsed,
   setVisibleLines, setLinePunctuality, setPunctualityAttributionUsed,
   setVisibleClosures, setClosureDay, setClosureAttributionUsed,
+  setCoachAttributionUsed,
 } from './ui.ts';
 import { ChromeToggleControl, labelControls } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
@@ -128,9 +129,9 @@ async function main() {
    * starts empty - which is exactly what made this one function rather than one
    * copy of it per source.
    */
-  const earned = new Set<'live' | 'punctuality' | 'closures'>();
+  const earned = new Set<'live' | 'punctuality' | 'closures' | 'coach'>();
 
-  function credit(source: 'live' | 'punctuality' | 'closures') {
+  function credit(source: 'live' | 'punctuality' | 'closures' | 'coach') {
     if (earned.has(source)) return;
     earned.add(source);
     const s = t();
@@ -142,6 +143,7 @@ async function main() {
         ...(earned.has('live') ? [s.liveAttribution] : []),
         ...(earned.has('punctuality') ? [s.punctualityAttribution] : []),
         ...(earned.has('closures') ? [s.closureAttribution] : []),
+        ...(earned.has('coach') ? [s.coachAttribution] : []),
       ],
     });
     map.addControl(attribution, 'bottom-right');
@@ -203,6 +205,17 @@ async function main() {
   function markClosuresUsed() {
     credit('closures');
     setClosureAttributionUsed();
+  }
+
+  /**
+   * FlixBus publishes its GTFS without a licence attached, so the operator is
+   * credited whenever a line built from it is on screen. Earned off the legend
+   * count rather than a click, for the same reason closures are: the coach
+   * layer is drawn before anyone interacts with it.
+   */
+  function markCoachUsed() {
+    credit('coach');
+    setCoachAttributionUsed();
   }
 
   /**
@@ -304,6 +317,7 @@ async function main() {
     }
     setVisibleModes(new Map([...lines].map(([mode, set]) => [mode, set.size])));
     setVisibleLines(ids);
+    if (lines.get('coach')?.size) markCoachUsed();
   }
 
   /**

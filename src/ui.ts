@@ -410,7 +410,8 @@ function draw() {
     <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>
     <span class="live-attrib" hidden>${s.liveAttribution}</span>
     <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>
-    <span class="closure-attrib" hidden>${s.closureAttribution}</span>`);
+    <span class="closure-attrib" hidden>${s.closureAttribution}</span>
+    <span class="coach-attrib" hidden>${s.coachAttribution}</span>`);
   root.appendChild(footer);
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
@@ -418,6 +419,8 @@ function draw() {
   punctAttribEl!.hidden = !punctualityUsed;
   closureAttribEl = footer.querySelector('.closure-attrib');
   closureAttribEl!.hidden = !closuresUsed;
+  coachAttribEl = footer.querySelector('.coach-attrib');
+  coachAttribEl!.hidden = !coachUsed;
 }
 
 /**
@@ -462,6 +465,22 @@ export function setClosureAttributionUsed() {
   if (closuresUsed) return;
   closuresUsed = true;
   if (closureAttribEl) closureAttribEl.hidden = false;
+}
+
+/**
+ * The coach network comes out of the operator's own GTFS, which - like the
+ * construction plan, and unlike everything else on this map - is published
+ * without a licence attached. Same latch, earned the first time a coach line is
+ * counted in view rather than by a click, since it is drawn before anyone
+ * touches it. See pipeline/coach.ts.
+ */
+let coachAttribEl: HTMLElement | null = null;
+let coachUsed = false;
+
+export function setCoachAttributionUsed() {
+  if (coachUsed) return;
+  coachUsed = true;
+  if (coachAttribEl) coachAttribEl.hidden = false;
 }
 
 /**
