@@ -109,6 +109,7 @@ pipeline/
   closures.ts              DB InfraGO possessions + the history log
   coach.ts                 long-distance coach from the operators' GTFS
   lib/railpath.ts          route a closure onto the track it closes
+  lib/orient.ts            agree which way a corridor's chains run
   lib/stopmarks.ts         lay a stop's mark across the bands that call there
   build.ts                 stitch routes, bundle corridors, snap stops
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
@@ -147,6 +148,17 @@ one segment, and each line gets a perpendicular offset ordinal, centred so the
 bundle straddles its alignment. The ordinal is ranked across a whole corridor
 rather than per segment, so a line holds one slot for as long as it stays in
 that corridor. No geometric matching required.
+
+An ordinal is only a *side* once the chains carrying it agree which way they
+run, though, because `line-offset` is signed against a feature's own direction
+of travel and the stitcher seeds each chain from whichever way it met first.
+So before any slot is assigned, chain ends that meet and carry straight on are
+made to agree — a parity problem over the chains, solved with a union-find that
+carries a bit. Without it a corridor mirrored at every seam where the stitching
+direction happened to flip: each line stepped across to the band opposite, and
+the taper below dutifully ramped it there, drawing the seam as a bundle-wide
+braid. That was 43 of 44 slot changes on a Braunschweig-area extract, and the
+staircases they forced were half of all route features.
 
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.

@@ -30,6 +30,7 @@ import {
   onOccupiedSlot, type TaperStep,
 } from './lib/taper.ts';
 import { adjacentSegmentPairs, groupCorridors, rankCorridorLines } from './lib/corridor.ts';
+import { coorientChains } from './lib/orient.ts';
 import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
 import {
   buildRailGraph, nearestNode, routeBetween, metres, type RailWay,
@@ -539,6 +540,30 @@ async function main() {
     segInfos.push({ lineIds, chains });
   }
 
+  // --- one slot, one side -----------------------------------------------------
+  // A slot is only a physical band once the chain carrying it has an agreed
+  // direction: `line-offset` is signed against a feature's own direction of
+  // travel, and `chainWays` seeds each chain from whichever way came first.
+  // Two stretches of one corridor stitched opposite ways therefore draw the
+  // same slot on opposite sides, and the whole bundle mirrors at the seam.
+  // Turn round the chains that disagree with their neighbours first, so
+  // everything below - the slot jumps the taper looks for, the bands the stop
+  // marks are laid across - is measured on geometry that means one thing.
+  // See pipeline/lib/orient.ts.
+  {
+    const flat = segInfos.flatMap((seg, segIdx) =>
+      seg.chains.map((chain, chainIdx) => ({ segIdx, chainIdx, chain })));
+    const flips = coorientChains(flat.map((f) => f.chain));
+    let reversed = 0;
+    flips.forEach((flip, i) => {
+      if (!flip) return;
+      const { segIdx, chainIdx } = flat[i];
+      segInfos[segIdx].chains[chainIdx] = [...segInfos[segIdx].chains[chainIdx]].reverse();
+      reversed++;
+    });
+    console.log(`==> ${reversed} of ${flat.length} chains turned round to keep one slot on one side`);
+  }
+
   // --- corridor-wide slots ----------------------------------------------------
   // A line's slot used to be assigned per segment, purely from that segment's
   // own membership - so a line joining or leaving the corridor renumbered
@@ -657,13 +682,13 @@ async function main() {
       const slotA = slotFor(idxA, lineId), slotB = slotFor(idxB, lineId);
 
       // buildTaper wants a chain ending at the junction and one starting
-      // there. Which original end sits at the junction is arbitrary per
-      // segment - chainWays seeds each segment independently, so segment A's
-      // and B's orientations have no relation to one another - so a side that
-      // does not already fit is handed in reversed, with its slot negated to
-      // match: line-offset is relative to a feature's own direction of
-      // travel, so reversing a copy of the geometry without also flipping the
-      // sign it is offset by would flip which physical side it draws on.
+      // there. Co-orienting above settles which way each chain runs but not
+      // which of its ends the junction is - two chains agreeing perfectly
+      // still meet start-to-start where the corridor turns back on itself -
+      // so a side that does not already fit is handed in reversed, with its
+      // slot negated to match: line-offset is relative to a feature's own
+      // direction of travel, so reversing a copy of the geometry without also
+      // flipping the sign it is offset by would flip which side it draws on.
       const chainA = segA.chains[refA.chainIdx];
       const chainB = segB.chains[refB.chainIdx];
       const up = refA.atStart

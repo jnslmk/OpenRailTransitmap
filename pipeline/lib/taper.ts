@@ -36,13 +36,17 @@ export function chainLengthM(chain: Coord[]): number {
  *
  * Centred rather than floored onto whole numbers, and the symmetry is the
  * point rather than a preference. `line-offset` is signed relative to a
- * feature's own direction of travel, so one physical band is `+s` in a stretch
- * stitched one way and `-s` in a stretch stitched the other, and `chainWays`
- * orients each segment independently. Only a lattice closed under negation
- * renders the same either way: a floored one is not - a two-line bundle is
- * {0, 1} forward and {0, -1} reversed - so a corridor stitched both ways would
- * step a whole band sideways at the seam, and a station mark laid across it
- * would span three bands where it should span two.
+ * feature's own direction of travel, so one physical band is `+s` read one way
+ * and `-s` read the other. Only a lattice closed under negation renders the
+ * same either way: a floored one is not - a two-line bundle is {0, 1} forward
+ * and {0, -1} reversed - so a stretch read backwards steps a whole band
+ * sideways, and a station mark laid across it spans three bands where it
+ * should span two.
+ *
+ * Directions are agreed before slots are assigned now (lib/orient.ts), so that
+ * is a backstop rather than the daily case: it covers the chains no set of
+ * junction constraints could reconcile, where a stretch still ends up read
+ * against its neighbours.
  *
  * The parity slide this was once floored to avoid is not a reason to give that
  * up: it came from re-indexing a line per segment, and slots are ranked per
