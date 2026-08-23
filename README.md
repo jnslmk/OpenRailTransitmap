@@ -12,7 +12,15 @@ GitHub Pages and rebuilt nightly.
 ## What it does
 
 - **Every passenger mode, individually selectable** — long-distance (ICE/IC/EC),
-  regional (RE/RB), S-Bahn, U-Bahn and tram.
+  regional (RE/RB), S-Bahn, U-Bahn, tram and long-distance coach.
+- **Long-distance coach, which OSM does not have.** `route=coach` is two
+  relations in the whole of Germany, so the Fernbus network is read from the
+  operator's own GTFS instead — 347 lines and 337 stops, drawn on the road
+  alignment the operator publishes rather than chorded between stops, dashed
+  because it is not a railway, and merged into the same layers as the rail
+  network so it selects, searches and filters like any other mode. A coach stop
+  within 400 m of a station becomes part of that station rather than a second
+  dot beside it. See [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Parallel route bundling.** Lines sharing a corridor draw as adjacent coloured
   bands instead of stacking into one indistinguishable stroke.
 - **Stops marked across their lines, not beside them.** A station is a white bar
@@ -56,6 +64,18 @@ GitHub Pages and rebuilt nightly.
   entering the plan, its dates moving, and its withdrawal. The panel reads it
   back — "was to finish 12 Dec" is a fact no snapshot of the current plan can
   tell you.
+- **A journey planner with a bike in it.** A second sidebar tab: enter where you
+  are and where you are going, and get itineraries over rail, bus, coach and
+  ferry — with one control that is the point of the whole thing, *how far will
+  you ride at each end?* Slide it from "no bike" to 90 minutes and the answer
+  changes from the station down the road to any station in the county. The
+  chosen journey draws on the map in the map's own colours — an RE8 leg painted
+  as the map paints RE8 — with bike and walk legs dashed and the rest of the
+  network dimmed behind it. Bike carriage is reported honestly: German feeds
+  mostly do not publish it, and the panel says so rather than inventing a
+  refusal. A plan is a link, itinerary and all. Runs on the
+  [Transitous](https://transitous.org) MOTIS API; see
+  [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Search, mode and operator filters**, and deep-linkable URLs that restore
   position, filters and selection.
 - **A legend of what is actually on screen.** Only modes with lines in the
@@ -86,6 +106,7 @@ pipeline/
   fetch.sh                 download the Geofabrik extract
   extract.sh               osmium -> route relations, ways, stations, basemap
   closures.ts              DB InfraGO possessions + the history log
+  coach.ts                 long-distance coach from the operators' GTFS
   lib/railpath.ts          route a closure onto the track it closes
   lib/stopmarks.ts         lay a stop's mark across the bands that call there
   build.ts                 stitch routes, bundle corridors, snap stops
@@ -96,6 +117,8 @@ pipeline/
 shared/lnvg.ts             design tokens read out of the reference PDF
 src/stopmarks.ts           the stop bars, drawn to canvas and handed to MapLibre
 src/                       MapLibre app (style, state, UI, controls, strings)
+  live.ts / routing.ts     the only two modules that talk to Transitous
+  planner.ts               the Plan tab
 ```
 
 ### Region switching
@@ -169,7 +192,7 @@ so a rank is not merely hidden below its zoom, it is not carried there:
 | rank | what it is | mark | name |
 | --- | --- | --- | --- |
 | 0 | a long-distance call, or an Hbf with three or more lines | z6 | z8 |
-| 1 | an interchange: 3+ lines, more than one mode, or an Hbf | z9 | z10 |
+| 1 | an interchange: 3+ lines, more than one mode, or an Hbf — and a coach stop of its own, which is an intercity point and one of a few hundred | z9 | z10 |
 | 2 | every other heavy-rail, S-Bahn and U-Bahn halt | z11 | z12 |
 | 3 | tram-only stops | z12 | z13.5 |
 
@@ -178,6 +201,11 @@ name test that earns its place is Hbf: a German Hauptbahnhof is its town's
 principal station by definition, and a two-line Hbf is still the stop a regional
 view should show before the halt one street over. Passenger figures would be the
 better signal, and no open source publishes them for all 5,400 German stations.
+
+Coach stops keep the quieter of the two name colours whatever rank they land on,
+and they are the one kind of stop still marked on their own node: a coach line is
+a GTFS shape rather than one of the bundles the bars are measured on, so there is
+no corridor to lay a bar across.
 
 ### The sea
 
@@ -206,6 +234,7 @@ npm ci
 bash pipeline/fetch.sh          # download the extract
 bash pipeline/extract.sh        # osmium filtering
 npx tsx pipeline/closures.ts    # today's construction closures (optional)
+npx tsx pipeline/coach.ts       # long-distance coach network (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
 npx tsx pipeline/build-basemap.ts
 npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
@@ -247,7 +276,14 @@ npx playwright install chromium     # once, unless a browser is already present
 node e2e/legend.mjs                                # https://jnslmk.github.io/OpenRailTransitmap/
 node e2e/legend.mjs --url http://127.0.0.1:5173/   # a local dev server
 node e2e/legend.mjs --headed                       # watch it run
+
+node e2e/planner.mjs                               # the journey planner
 ```
+
+`planner.mjs` is a live conversation with Transitous, so it pins down what must
+hold whatever the timetable returns — that a place resolves, that the itinerary
+is drawn on the map, that the bike slider reaches the request and that a link
+restores the whole plan — rather than any particular journey.
 
 A local run needs tiles, which the pipeline builds; the quickest way to get
 them without running it is to copy the deployed ones into `public/`.
@@ -274,10 +310,18 @@ so the repository does not grow by tens of megabytes a night.
 
 Phases 1–3 (pipeline, style, interactions, scale-up) are the map itself.
 
-**Phase 4 is a bike + train journey planner**: enter A and B, get itineraries
-with a bike/train time split you can bias with a slider — "cycle an hour, take
-the train an hour". It will run on the [Transitous](https://transitous.org)
-MOTIS API behind a `RoutingProvider` interface.
+**Phase 4 is a bike + train journey planner** — enter A and B, get itineraries
+with a bike/train time split you can bias with a slider, "cycle an hour, take the
+train an hour". It is **built**: see the feature list above, and
+[`docs/buses-and-routing.md`](docs/buses-and-routing.md) §11 for the design and
+the two places the API says something it does not mean.
+
+What is left of Phase 4 is local bus *on the map*. The planner already routes
+over it — that comes free with the feed — but drawing it is a different
+proposition: 16,462 `route=bus` relations in Niedersachsen alone against 878 rail
+ones, and 129,506 bus stops against 20,830 rail stations nationally. Which of
+them belong on a rail map is a question the planner's own usage is better placed
+to answer than a tag heuristic, so it waits.
 
 That backend was validated up front — see
 [`docs/spike-transitous.md`](docs/spike-transitous.md). Two findings worth
@@ -285,6 +329,15 @@ knowing: hour-long bike legs work fine on the public instance, so no self-hosted
 routing engine is needed; but `requireBikeTransport` cannot be the default,
 because most German GTFS feeds omit `bikes_allowed` and requiring it silently
 returns zero regional journeys.
+
+**Buses come with it.** MOTIS routes on the DELFI GTFS aggregate, so a plan
+already returns local and regional bus legs — measured, a village near Rethem to
+Hannover Hbf comes back as `bike 19 → bus 510 → RB38 → bike 4` with no pipeline
+change at all. Drawing buses on the map is the separate, much larger question:
+eighteen `route=bus` relations for every rail one in Niedersachsen alone. The
+design for both, and for a Google-Maps-shaped planner that stays inside this map
+instead of taking it over, is in
+[`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 
 ## Attribution and licensing
 
@@ -298,6 +351,13 @@ public possession register. It is published as information rather than under an
 open licence, so it is credited in the sidebar and in the map's attribution
 control whenever a closure is on screen, and the feed itself is not
 redistributed — only the change log described above.
+
+Long-distance coach comes from **FlixBus**'s own GTFS feed, published by
+FlixMobility Tech GmbH. Like the possession register it carries no licence — the
+Transitous feed registry records one for BlaBlaCar and Optima and none for this
+one — so it gets the same handling: the feed is not redistributed, only the
+lines derived from it are drawn, and FlixMobility is credited in the sidebar and
+in the map's attribution control whenever a coach line is in view.
 
 Punctuality is derived from Deutsche Bahn's published delay record via the
 [`piebro/deutsche-bahn-data`](https://huggingface.co/datasets/piebro/deutsche-bahn-data)

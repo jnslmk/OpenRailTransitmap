@@ -129,6 +129,8 @@ function routeLayers(): LayerSpecification[] {
           'line-width': scaled(spec.weightPt),
           'line-offset': bandOffset,
           'line-opacity': selectionOpacity(null),
+          // Only a mode that does not run on rails carries one; see MODE_SPECS.
+          ...(spec.dash ? { 'line-dasharray': [...spec.dash] } : {}),
         },
       },
     ];
@@ -206,6 +208,8 @@ export function servedByModes(modes: Mode[]): ExpressionSpecification {
 // ---------------------------------------------------------------------------
 
 const INK = '#1a1a1a';
+/** For a stop that is on the map but is not a railway station. */
+const MUTED_INK = '#5a5a5a';
 
 /** Where the bars start to fade in, and where they have wholly replaced dots. */
 const PILL_IN = 10.2;
@@ -419,7 +423,11 @@ function stationLayers(): LayerSpecification[] {
       },
       paint: {
         'icon-opacity': fadeIn,
-        'text-color': muted ? '#5a5a5a' : INK,
+        // Trams get the quieter colour by tier; a coach bay of its own gets it
+        // by being one, wherever it has been ranked. It is not a railway
+        // station and is not named as loudly as one.
+        'text-color': muted ? MUTED_INK
+          : ['case', ['==', ['get', 'coachOnly'], 1], MUTED_INK, INK] as ExpressionSpecification,
         'text-halo-color': LNVG.ground,
         'text-halo-width': 1.6,
       },
