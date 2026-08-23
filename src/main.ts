@@ -122,6 +122,27 @@ async function main() {
     '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
   let attribution = new maplibregl.AttributionControl({ compact: true, customAttribution: OSM_ATTRIBUTION });
   map.addControl(attribution, 'bottom-right');
+  collapseAttribution();
+
+  /**
+   * A compact attribution control expands itself the moment it is added, which
+   * on a phone means the credits cover a third of the map on every page load
+   * until they are tapped away. Collapse it back to the "i" button.
+   *
+   * The state written here is the one the control's own toggle leaves behind
+   * when it closes - `open` on the `<details>`, the `-show` class off - reached
+   * through the DOM rather than through an underscore-prefixed method, for the
+   * reason spelled out below. Doing it once after `addControl` is enough:
+   * MapLibre only expands the control on the pass that first marks it compact,
+   * so neither a resize nor a later source credit re-opens it.
+   */
+  function collapseAttribution() {
+    const el = map.getContainer()
+      .querySelector('.maplibregl-ctrl-attrib.maplibregl-compact');
+    if (!el) return;
+    el.setAttribute('open', '');
+    el.classList.remove('maplibregl-compact-show');
+  }
 
   /**
    * Credits beyond OSM are added only once the data behind them is actually on
@@ -162,6 +183,7 @@ async function main() {
       ],
     });
     map.addControl(attribution, 'bottom-right');
+    collapseAttribution();
   }
 
   function markLiveDataUsed() {
