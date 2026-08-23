@@ -22,7 +22,7 @@ import {
 } from './ui.ts';
 import { setPlannerPlace, restorePlannerResult, type PlannerHost } from './planner.ts';
 import type { Itinerary, Leg, Place } from './routing.ts';
-import { ChromeToggleControl, labelControls } from './controls.ts';
+import { ChromeToggleControl, labelControls, ZoomReadoutControl, DEBUG } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
 import { parseClosure } from './closures.ts';
@@ -118,6 +118,11 @@ async function main() {
     // the status toast live outside the map container and would be hidden.
     map.addControl(new maplibregl.FullscreenControl({ container: document.body }), 'bottom-right');
   }
+  // Debugging only: the zoom thresholds this map is built out of - stop tiers,
+  // the bar changeover, closure tiers - can only be adjusted by someone who can
+  // see the zoom while adjusting them.
+  if (DEBUG) map.addControl(new ZoomReadoutControl(), 'bottom-left');
+
   const OSM_ATTRIBUTION =
     '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
   let attribution = new maplibregl.AttributionControl({ compact: true, customAttribution: OSM_ATTRIBUTION });

@@ -220,12 +220,27 @@ const MUTED_INK = '#5a5a5a';
 const PILL_IN = 10.2;
 const PILL_FULL = 11;
 
+/**
+ * ...except for the tier a map of the whole country is *for*.
+ *
+ * Rank 0 - the long-distance calls and the larger Hauptbahnhöfe, 400 stops
+ * nationally - is marked from z6, five zooms before anything else. A dot there
+ * says a station exists; the bar says a train stops, laid across the corridor
+ * at its own angle. That is the difference this map is built on, so rank 0
+ * crosses over at z7 and every other tier keeps the z11 changeover, where the
+ * stops are dense enough that bars any earlier would be a wall of white.
+ */
+const PILL_EARLY: Record<number, [number, number]> = { 0: [6.4, 7] };
+
+/** The zooms a tier's bars fade in over: first visible, then dots wholly gone. */
+const pillZooms = (rank: number): [number, number] =>
+  PILL_EARLY[rank] ?? [PILL_IN, PILL_FULL];
+
 /** Zoom at which the true position of the station itself is finally drawn. */
 const TRUE_POSITION_ZOOM = 16;
 
-/** The bundle spread factor at a zoom, read off the same table the bands use. */
-function spreadAt(zoom: number): number {
-  const stops = OFFSET_STOPS;
+/** A zoom-keyed factor table, read the way MapLibre reads an `interpolate`. */
+function factorAt(stops: readonly [number, number][], zoom: number): number {
   if (zoom <= stops[0][0]) return stops[0][1];
   for (let i = 1; i < stops.length; i++) {
     const [z0, f0] = stops[i - 1], [z1, f1] = stops[i];
@@ -234,14 +249,56 @@ function spreadAt(zoom: number): number {
   return stops[stops.length - 1][1];
 }
 
-const fadeIn: ExpressionSpecification =
-  ['interpolate', ['linear'], ['zoom'], PILL_IN, 0, PILL_FULL, 1];
-const fadeOut: ExpressionSpecification =
-  ['interpolate', ['linear'], ['zoom'], PILL_IN, 1, PILL_FULL, 0];
+/** The bundle spread factor at a zoom, read off the same table the bands use. */
+const spreadAt = (zoom: number): number => factorAt(OFFSET_STOPS, zoom);
 
-/** `icon-size`: exactly the factor the bundle spread uses, and nothing else. */
+/**
+ * The size a bar is *drawn* at: the bundle spread, floored.
+ *
+ * Below z8.5 the spread collapses towards zero so that national-scale bundles
+ * read as one trunk, and at z7 it is 0.24 - a bar drawn at that would be two
+ * pixels thick and two long, which is not a mark, it is a speck. So the size
+ * floors at the value that makes a bar exactly as thick as the dot it replaces
+ * is wide, and nothing changes size as one becomes the other.
+ *
+ * The price is that a floored bar is longer than the bands it covers, and it
+ * is the right price. At z7 the bands are a pixel apart and nothing on the map
+ * is band-accurate, so a bar there cannot be read as naming six lines out of
+ * eight; what it can be read as is *a stop on this corridor*, which is what the
+ * dot said and is true. Its centre stays honest all the same - see `barCentre`
+ * - so the bar is still over the part of the trunk its lines run in.
+ */
+const PILL_MIN_SIZE = 0.5;
+
+/**
+ * The spread table with that floor applied - and with a stop inserted where the
+ * true spread crosses it, so that above the crossing the curve *is* the spread
+ * again and a bar goes back to covering exactly the bands it names.
+ */
+const PILL_SIZE_STOPS: [number, number][] = OFFSET_STOPS.flatMap(([z, f], i) => {
+  const prev = OFFSET_STOPS[i - 1];
+  const crossing: [number, number][] =
+    prev && prev[1] < PILL_MIN_SIZE && f > PILL_MIN_SIZE
+      ? [[prev[0] + ((z - prev[0]) * (PILL_MIN_SIZE - prev[1])) / (f - prev[1]),
+          PILL_MIN_SIZE]]
+      : [];
+  return [...crossing, [z, Math.max(PILL_MIN_SIZE, f)] as [number, number]];
+});
+
+const sizeAt = (zoom: number): number => factorAt(PILL_SIZE_STOPS, zoom);
+
+const fadeIn = (rank: number): ExpressionSpecification => {
+  const [from, to] = pillZooms(rank);
+  return ['interpolate', ['linear'], ['zoom'], from, 0, to, 1];
+};
+const fadeOut = (rank: number): ExpressionSpecification => {
+  const [from, to] = pillZooms(rank);
+  return ['interpolate', ['linear'], ['zoom'], from, 1, to, 0];
+};
+
+/** `icon-size`: the factor the bundle spread uses, once it is big enough. */
 const spreadFactor: ExpressionSpecification = [
-  'interpolate', ['linear'], ['zoom'], ...OFFSET_STOPS.flatMap(([z, f]) => [z, f]),
+  'interpolate', ['linear'], ['zoom'], ...PILL_SIZE_STOPS.flatMap(([z, f]) => [z, f]),
 ] as ExpressionSpecification;
 
 /**
@@ -255,11 +312,39 @@ const spreadFactor: ExpressionSpecification = [
  * alignment rather than to a wrong band.
  */
 const HALF_BANDS = 48;
-const barCentre = [
+const centreTable = (ratio: number) => [
   'match', ['round', ['*', ['get', 'mid'], 2]],
   ...Array.from({ length: 2 * HALF_BANDS + 1 }, (_, i) => i - HALF_BANDS)
-    .flatMap((half) => [half, ['literal', [(half / 2) * PILL_PITCH, 0]]]),
+    .flatMap((half) => [half, ['literal', [(half / 2) * PILL_PITCH * ratio, 0]]]),
   ['literal', [0, 0]],
+];
+
+/**
+ * ...and where the size has been floored, the offset is divided by exactly as
+ * much, because MapLibre multiplies the two: `offset * size` stays the band
+ * displacement the spread actually has, so an enlarged bar still has its centre
+ * on the band its centre ordinal names. Above the crossing the ratio is 1 and
+ * this is the plain table it always was.
+ *
+ * Stepped on whole zooms rather than interpolated, for the reason `nameOffset`
+ * gives below: a data-driven layout property is evaluated once per tile, at
+ * that tile's own integer zoom, so a whole-number step changes exactly when the
+ * buckets are rebuilt anyway and an interpolate would quantise into a jump.
+ *
+ * Which leaves one choice to make. A bucket's offset is baked once but is shown
+ * across a whole zoom of continuous spreading, so it cannot be right throughout
+ * - and the ratio is therefore read at the zoom the bucket *ends* at, not the
+ * one it starts at. That biases the bar outwards, and outwards is the safe
+ * direction: a floored bar is longer than its bands need, so a centre pushed
+ * too far out still covers them, while a centre left too far in leaves the
+ * outermost band of a wide trunk beyond the end of its own mark.
+ */
+const CENTRE_STEPS = [7, 8];
+const bucketRatio = (z: number) => spreadAt(z) / sizeAt(z);
+const barCentre = [
+  'step', ['zoom'],
+  centreTable(bucketRatio(CENTRE_STEPS[0])),
+  ...CENTRE_STEPS.flatMap((z) => [z, centreTable(bucketRatio(z + 1))]),
 ] as unknown as ExpressionSpecification;
 
 /** Everything that puts a bar on its bands, shared by the two layers that do. */
@@ -292,8 +377,8 @@ const barLayout: SymbolLayerSpecification['layout'] = {
  * exactly. Below the changeover the mark is a dot and none of this applies.
  */
 const LABEL_EM = 12;
-const radialEm = (span: number, spread: number) =>
-  (pillLength(span) * spread) / 2 / LABEL_EM + 0.45;
+const radialEm = (span: number, size: number) =>
+  (pillLength(span) * size) / 2 / LABEL_EM + 0.45;
 
 /**
  * ...and it steps rather than interpolates with zoom, because a symbol's layout
@@ -301,15 +386,19 @@ const radialEm = (span: number, spread: number) =>
  * are whole numbers changes exactly when the buckets are rebuilt anyway, so
  * nothing jumps; an interpolate would quantise into a jump of its own.
  */
-const byLength = (spread: number): ExpressionSpecification =>
+const byLength = (size: number): ExpressionSpecification =>
   ['interpolate', ['linear'], ['number', ['get', 'span']],
-    1, radialEm(1, spread), 64, radialEm(64, spread)] as ExpressionSpecification;
+    1, radialEm(1, size), 64, radialEm(64, size)] as ExpressionSpecification;
 
-const nameOffset: ExpressionSpecification = [
-  'step', ['zoom'],
-  0.9,
-  ...[PILL_FULL, 12, 13, 14].flatMap((z) => [z, byLength(spreadAt(z))]),
-] as ExpressionSpecification;
+const nameOffset = (rank: number): ExpressionSpecification => {
+  const [, full] = pillZooms(rank);
+  const steps: number[] = [];
+  for (let z = Math.ceil(full); z <= 14; z++) steps.push(z);
+  return ['step', ['zoom'],
+    0.9,
+    ...steps.flatMap((z) => [z, byLength(sizeAt(z))]),
+  ] as ExpressionSpecification;
+};
 
 const rankIs = (rank: number): ExpressionSpecification =>
   ['==', ['get', 'rank'], rank];
@@ -329,7 +418,7 @@ const labelLayer = (rank: number) => `stop-labels-r${rank}`;
  * are largest.
  */
 export const STOP_MARK_LAYERS: string[] = STOP_TIERS.flatMap((t) => [
-  ...(t.mark < PILL_FULL ? [dotLayer(t.rank)] : []),
+  ...(t.mark < pillZooms(t.rank)[1] ? [dotLayer(t.rank)] : []),
   markLayer(t.rank),
   labelLayer(t.rank),
 ]);
@@ -337,7 +426,7 @@ export const STOP_MARK_LAYERS: string[] = STOP_TIERS.flatMap((t) => [
 /** Station layers and the base filter each one is built with. */
 export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
   ...Object.fromEntries(STOP_TIERS.flatMap((t) => [
-    ...(t.mark < PILL_FULL ? [[dotLayer(t.rank), rankIs(t.rank)]] : []),
+    ...(t.mark < pillZooms(t.rank)[1] ? [[dotLayer(t.rank), rankIs(t.rank)]] : []),
     [markLayer(t.rank), rankIs(t.rank)],
     [labelLayer(t.rank),
       ['all', rankIs(t.rank), primary] as ExpressionSpecification],
@@ -349,37 +438,43 @@ function stationLayers(): LayerSpecification[] {
   const layers: LayerSpecification[] = [];
 
   // Rank still shows through below the changeover: a long-distance stop is a
-  // little larger than the interchange beside it, as it is on the poster.
-  const dotRadius: ExpressionSpecification = [
-    'interpolate', ['linear'], ['zoom'],
-    6, ['case', rankIs(0), 1.9, 1.5],
-    9, ['case', rankIs(0), 2.9, 2.3],
-    // Meets the bar's own thickness exactly, so the changeover only widens.
-    PILL_FULL, PILL_THICKNESS / 2,
-  ] as ExpressionSpecification;
+  // little larger than the interchange beside it, as it is on the poster. Its
+  // dot also has three zooms rather than five to grow over, rank 0 becoming a
+  // bar at z7, so the ramp is built per tier and ends where that tier's bar
+  // starts - meeting the bar's drawn thickness exactly, so the changeover
+  // swaps the shape and never the size.
+  const dotRadius = (rank: number): ExpressionSpecification => {
+    const [, full] = pillZooms(rank);
+    const stops: [number, number][] = [[6, rank === 0 ? 1.9 : 1.5]];
+    if (full > 9) stops.push([9, rank === 0 ? 2.9 : 2.3]);
+    stops.push([full, (PILL_THICKNESS * sizeAt(full)) / 2]);
+    return ['interpolate', ['linear'], ['zoom'],
+      ...stops.flatMap(([z, r]) => [z, r])] as ExpressionSpecification;
+  };
 
   // Placement runs from the top layer down, so a tier pushed later is placed
   // earlier and wins its collisions. Ranks therefore go out backwards: rank 0
   // ends up last, which makes it both the first placed and the last painted.
   for (const tier of [...STOP_TIERS].sort((a, b) => b.rank - a.rank)) {
-    if (tier.mark < PILL_FULL) {
+    const [, pillFull] = pillZooms(tier.rank);
+    if (tier.mark < pillFull) {
       layers.push({
         id: dotLayer(tier.rank),
         type: 'circle',
         source: 'rail',
         'source-layer': 'stopmarks',
         minzoom: tier.mark,
-        maxzoom: PILL_FULL,
+        maxzoom: pillFull,
         filter: rankIs(tier.rank),
         paint: {
-          'circle-radius': dotRadius,
+          'circle-radius': dotRadius(tier.rank),
           'circle-color': LNVG.white,
           'circle-stroke-color': INK,
           'circle-stroke-width': [
-            'interpolate', ['linear'], ['zoom'], 6, 0.7, PILL_FULL, 1.5,
+            'interpolate', ['linear'], ['zoom'], 6, 0.7, pillFull, 1.5,
           ] as ExpressionSpecification,
-          'circle-opacity': fadeOut,
-          'circle-stroke-opacity': fadeOut,
+          'circle-opacity': fadeOut(tier.rank),
+          'circle-stroke-opacity': fadeOut(tier.rank),
         },
       });
     }
@@ -397,7 +492,7 @@ function stationLayers(): LayerSpecification[] {
       minzoom: tier.mark,
       filter: rankIs(tier.rank),
       layout: barLayout,
-      paint: { 'icon-opacity': fadeIn },
+      paint: { 'icon-opacity': fadeIn(tier.rank) },
     });
 
     // ...and, over the top of one of them, that same bar again with its name
@@ -420,14 +515,14 @@ function stationLayers(): LayerSpecification[] {
           ? 11
           : ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 13] as ExpressionSpecification,
         'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
-        'text-radial-offset': nameOffset,
+        'text-radial-offset': nameOffset(tier.rank),
         'text-justify': 'auto',
         // A name that cannot be fitted is dropped; the stop it belongs to is
         // not. Losing the mark would be losing the fact that there is a stop.
         'text-optional': true,
       },
       paint: {
-        'icon-opacity': fadeIn,
+        'icon-opacity': fadeIn(tier.rank),
         // Trams get the quieter colour by tier; a coach bay of its own gets it
         // by being one, wherever it has been ranked. It is not a railway
         // station and is not named as loudly as one.

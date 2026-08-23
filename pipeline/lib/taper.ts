@@ -48,9 +48,14 @@ export function chainLengthM(chain: Coord[]): number {
  * junction constraints could reconcile, where a stretch still ends up read
  * against its neighbours.
  *
- * The parity slide this was once floored to avoid is not a reason to give that
- * up: it came from re-indexing a line per segment, and slots are ranked per
- * corridor now (lib/corridor.ts), so it cannot arise.
+ * Centring does tie a slot to the size of the bundle it centres, so a line
+ * joining or leaving flips the parity and slides every band half a pitch -
+ * the slide the lattice was once floored onto whole numbers to avoid. That
+ * floor is not the answer: it broke the negation invariant above, which is
+ * wrong at every seam rather than merely fussy, and it bought its stability
+ * with the same trick corridor-wide ranking later did - moving the problem
+ * rather than drawing it. Half a pitch is the smallest move the taper below
+ * ever ramps, and it ramps it like any other.
  */
 export function slotOffset(i: number, n: number): number {
   return i - (n - 1) / 2;
@@ -63,12 +68,69 @@ export function slotOffset(i: number, n: number): number {
  * block, so a wide taper would visibly eat into the next one; every other
  * mode moves fast enough, and its junctions sit far enough apart, to afford
  * double the room.
+ *
+ * These are the length of a *one pitch* ramp. Slots are compacted per bundle
+ * segment, so a line whose inboard neighbours leave together moves several
+ * bands at once, and a fixed length would ramp a four-band move over the same
+ * ground as a one-band move - the wider the move, the steeper the diagonal,
+ * until it reads as the hard step the taper exists to remove. Length scales
+ * with the move so the ramp holds roughly one angle whatever it spans.
  */
 const TRAM_TAPER_M = 40;
 const OTHER_TAPER_M = 80;
 
-export function taperLengthM(mode: Mode): number {
-  return mode === 'tram' ? TRAM_TAPER_M : OTHER_TAPER_M;
+/**
+ * Ceiling on that scaling, in pitches. A wide move is nearly always a line
+ * merging into or out of a busy corridor, which is exactly where junctions
+ * come thickest: past three pitches the ramp is long enough to reach the next
+ * junction, and `fitTaperLength` would only claw it back again. Better to
+ * accept a slightly steeper diagonal on the rare very wide move than to ask
+ * for room that is not there.
+ */
+const MAX_TAPER_PITCHES = 3;
+
+export function taperLengthM(mode: Mode, slotDelta = 1): number {
+  const perPitch = mode === 'tram' ? TRAM_TAPER_M : OTHER_TAPER_M;
+  const pitches = Math.min(Math.max(Math.abs(slotDelta), 1), MAX_TAPER_PITCHES);
+  return perPitch * pitches;
+}
+
+/**
+ * The most of its own chain either side may spend on its half of one taper.
+ *
+ * A chain has two ends and can be tapered at both, so anything above a half
+ * lets two junctions ask for more than the chain has between them - which is
+ * what the trim-collision check in build.ts exists to catch. At 0.4 the two
+ * halves come to at most 0.8 of the chain, so the collision is impossible by
+ * construction rather than caught afterwards, and what is left in the middle
+ * is still the majority of the chain, drawn at its own slot.
+ */
+const MAX_CHAIN_SHARE = 0.4;
+
+/**
+ * Shortest ramp worth drawing. The tiles stop at z13, where a metre is about
+ * a twelfth of a pixel, so below this the staircase - and equally the hard
+ * step it would replace - is under one pixel at every zoom that ships. There
+ * is nothing to smooth at that size.
+ */
+const MIN_TAPER_M = 12;
+
+/**
+ * The ramp length a junction can actually afford: what it asked for, or as
+ * much of it as the shorter of the two chains can give up, whichever is less.
+ * Returns 0 when even that is too short to draw, and the caller should leave
+ * the hard step alone.
+ *
+ * Fitting rather than refusing is the point. `buildTaper` used to want both
+ * chains at least a full `L` long and gave up otherwise, which cost a ramp at
+ * thousands of junctions - and a skipped ramp is precisely the sideways jump
+ * this module exists to remove. A short chain does not need the full 80 m to
+ * read as a diagonal; it needs a diagonal that fits.
+ */
+export function fitTaperLength(upM: number, downM: number, wantM: number): number {
+  const afford = 2 * MAX_CHAIN_SHARE * Math.min(upM, downM);
+  const fitted = Math.min(wantM, afford);
+  return fitted >= MIN_TAPER_M ? fitted : 0;
 }
 
 /**
@@ -100,6 +162,32 @@ export function taperMinzoom(lengthM: number): number {
  * noticeably lower tiling cost.
  */
 export const TAPER_STEPS = 3;
+
+/**
+ * Widest sideways move one step may make, in pitches.
+ *
+ * Three steps is enough for the one- and two-pitch moves that make up almost
+ * every junction, but it is a step *count*, not a step *size*: spread over a
+ * six-pitch move the same three steps jump two bands each, and the staircase
+ * reads as three hard steps instead of one. Holding the step size instead
+ * keeps the tread-to-riser ratio roughly constant, so a wide ramp looks like
+ * a long diagonal rather than a coarser one. Three quarters of a pitch keeps
+ * every riser below a band's width.
+ */
+const MAX_STEP_PITCH = 0.75;
+
+/**
+ * Hard cap on the step count. A ramp is a handful of pixels end to end even
+ * at z13, so past this the extra features resolve finer than the display can
+ * show; the very widest moves accept a slightly coarser stair instead.
+ */
+const MAX_TAPER_STEPS = 8;
+
+/** How many steps a `slotDelta`-pitch move gets. */
+export function taperSteps(slotDelta: number): number {
+  const wanted = Math.ceil(Math.abs(slotDelta) / MAX_STEP_PITCH);
+  return Math.min(MAX_TAPER_STEPS, Math.max(TAPER_STEPS, wanted));
+}
 
 export interface Trim {
   /** The chain with the cut stretch removed, in the original vertex order. */
@@ -207,14 +295,15 @@ const NUDGE_PITCH = 0.2;
  * Whether `v` sits exactly on a slot another line rests at, strictly between
  * the two ends of the ramp.
  *
- * A corridor's slots are its line ranking centred, so they lie one pitch apart
+ * A bundle's slots are its line ranking centred, so they lie one pitch apart
  * and every one of them shares the fractional part of any other. That makes
  * "is this an occupied slot" a question about the distance to an endpoint
  * being a whole number, not about the value being a whole number - the two
  * only coincide when the lattice happens to be integral. Both ends are
- * checked because a taper fires precisely where two segments disagree, which
- * under corridor-wide ranking means they belong to different corridors, whose
- * lattices can differ by half a pitch.
+ * checked because a taper fires precisely where two segments disagree, and
+ * two bundles of different size sit on lattices half a pitch apart: the
+ * everyday case now that slots are compacted per segment, since a line
+ * joining or leaving changes the count the lattice is centred on.
  */
 export function onOccupiedSlot(v: number, slotUp: number, slotDown: number): boolean {
   const lo = Math.min(slotUp, slotDown);
@@ -235,9 +324,13 @@ export function onOccupiedSlot(v: number, slotUp: number, slotDown: number): boo
  * this function guessing from geometry. `slotUp`/`slotDown` are that line's
  * `slotOffset` in each segment.
  *
- * Returns null - leave the hard jump alone - when either chain is shorter
- * than `lengthM`: there is not enough of the line's own chain to trim without
- * eating into whatever lies beyond it, e.g. another junction close by.
+ * `lengthM` is expected to have been through `fitTaperLength` already, which
+ * is what decides how much of these two chains the ramp may spend. The check
+ * below is a backstop for a caller that did not: it returns null - leave the
+ * hard jump alone - when either chain is shorter than `lengthM`, since there
+ * is then not enough of the line's own chain to trim without eating into
+ * whatever lies beyond it, e.g. another junction close by. A fitted length
+ * clears it with room to spare, by construction.
  */
 export function buildTaper(
   upChain: Coord[],
