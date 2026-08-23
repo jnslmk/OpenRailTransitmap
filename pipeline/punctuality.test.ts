@@ -2,8 +2,9 @@
  * The punctuality pipeline turns DB's delay feed into a number the map
  * publishes as fact, so the two places it can silently lie are what is tested
  * here: the join (a row attributed to the wrong S1 puts another city's delays
- * on a line) and the counters (a cancellation folded in as "late", an early
- * departure netting off a real one).
+ * on a line, or a long-distance ride's stops get pinned to the wrong IC) and
+ * the counters (a cancellation folded in as "late", an early departure
+ * netting off a real one).
  *
  * The feed values below - the `train_type` spellings especially - are real
  * ones sampled from data-2026-07.parquet.
@@ -14,7 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  normaliseRef, rowRef, buildIndex, departureDelayMin, Aggregator,
+  normaliseRef, rowRef, buildIndex, buildLongDistanceIndex, departureDelayMin, Aggregator,
   ON_TIME_THRESHOLD_MIN, BUCKET_EDGES, bucketOf, quantile,
 } from './punctuality.ts';
 
@@ -118,6 +119,98 @@ test('memoises without changing the answer', () => {
   const first = ix.match('s1', 'Hannover Hbf');
   assert.equal(ix.match('s1', 'Hannover Hbf'), first);
   assert.equal(ix.stats.hits, 2);
+});
+
+// ---------------------------------------------------------------------------
+// The long-distance join: whole-ride itinerary matching
+// ---------------------------------------------------------------------------
+
+// Real corridors, trimmed to what each test needs. IC 87 and the stop
+// spellings are the Gäubahn (Stuttgart - Tuttlingen); EC 80/EC 81 are two of
+// the 16 real long-distance entries in data/line-stations.json whose OSM
+// route relation stops at the Austrian border, leaving them with the exact
+// same three-station remainder - a genuine, not a fabricated, ambiguity.
+const LD_STATIONS = {
+  'longdistance|db intercity|ic 87': [
+    'Böblingen', 'Horb', 'Rottweil', 'Singen (Hohentwiel)', 'Stuttgart Hauptbahnhof', 'Tuttlingen',
+  ],
+  'longdistance|db intercityexpress|ice 49': [
+    'Hamburg Hauptbahnhof', 'Berlin Hauptbahnhof', 'Leipzig Hauptbahnhof', 'München Hauptbahnhof',
+  ],
+  'longdistance|db intercity;eurocity;öbb|ec 80': ['München Hauptbahnhof', 'München Ost', 'Rosenheim'],
+  'longdistance|db intercity;eurocity;öbb|ec 81': ['München Hauptbahnhof', 'München Ost', 'Rosenheim'],
+  'suburban|s-bahn nowhere|s9': ['Foo Hauptbahnhof', 'Bar Hauptbahnhof'],
+};
+const LD_MODES: Record<string, string> = {
+  'longdistance|db intercity|ic 87': 'longdistance',
+  'longdistance|db intercityexpress|ice 49': 'longdistance',
+  'longdistance|db intercity;eurocity;öbb|ec 80': 'longdistance',
+  'longdistance|db intercity;eurocity;öbb|ec 81': 'longdistance',
+  'suburban|s-bahn nowhere|s9': 'suburban',
+};
+const ldIndex = () => buildLongDistanceIndex(LD_STATIONS, (id) => LD_MODES[id]);
+
+test('attributes a ride to the one line whose stations cover every stop it made', () => {
+  const ix = ldIndex();
+  assert.equal(
+    ix.match(['Böblingen', 'Horb', 'Rottweil', 'Singen (Hohentwiel)', 'Stuttgart Hauptbahnhof', 'Tuttlingen']),
+    'longdistance|db intercity|ic 87',
+  );
+});
+
+test('a partial ride - fewer stops than the line has - still attributes, in the feed\'s own spelling', () => {
+  const ix = ldIndex();
+  // A train that this month only ever ran Hamburg - Berlin - Leipzig, never
+  // reaching ICE 49's fourth stop, and named with the feed's "Hbf" rather
+  // than the OSM "Hauptbahnhof" the line list was built from.
+  assert.equal(
+    ix.match(['Hamburg Hbf', 'Berlin Hbf', 'Leipzig Hbf']),
+    'longdistance|db intercityexpress|ice 49',
+  );
+});
+
+test('a stop the winning line does not serve at all sinks the whole ride', () => {
+  const ix = ldIndex();
+  // Gäufelden is a real Gäubahn stop but not one on IC 87's list - the ride
+  // is dropped rather than attributed on the three stops that do match.
+  assert.equal(ix.match(['Stuttgart Hauptbahnhof', 'Böblingen', 'Horb', 'Gäufelden']), null);
+  assert.equal(ix.stats.unmatched, 1);
+});
+
+test('drops a ride two lines could equally claim rather than guessing', () => {
+  const ix = ldIndex();
+  assert.equal(ix.match(['München Hauptbahnhof', 'München Ost', 'Rosenheim']), null);
+  assert.equal(ix.stats.ambiguous, 1);
+});
+
+test('never attributes to a line outside the longdistance mode', () => {
+  const ix = ldIndex();
+  // These two stations are the S9's whole route - a real match if the S9
+  // were wrongly in the candidate pool, but it is filed under 'suburban'.
+  assert.equal(ix.match(['Foo Hauptbahnhof', 'Bar Hauptbahnhof']), null);
+  assert.equal(ix.stats.unmatched, 1);
+});
+
+test('a single-station ride cannot discriminate between lines, so it is not attributed', () => {
+  const ix = ldIndex();
+  assert.equal(ix.match(['Stuttgart Hauptbahnhof']), null);
+  assert.equal(ix.stats.tooSmall, 1);
+});
+
+test('a ride touching no long-distance line\'s stations matches nothing', () => {
+  const ix = ldIndex();
+  assert.equal(ix.match(['Nowhereville', 'Somewhere Else']), null);
+  assert.equal(ix.stats.unmatched, 1);
+});
+
+test('repeated stops in a ride do not inflate or change the answer', () => {
+  const ix = ldIndex();
+  // A ride's rows accumulate the same stop across many calendar days, so the
+  // input is rarely a clean set - match() must not assume it already is one.
+  assert.equal(
+    ix.match(['Böblingen', 'Böblingen', 'Horb', 'Horb', 'Rottweil']),
+    'longdistance|db intercity|ic 87',
+  );
 });
 
 // ---------------------------------------------------------------------------

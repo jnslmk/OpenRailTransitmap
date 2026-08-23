@@ -13,6 +13,12 @@
  * positions, see docs/live-data.md §2): another thin function that calls
  * `request()` with its own path/params and response type, sitting next to
  * `fetchDepartures` below.
+ *
+ * `routing.ts` is the journey planner's half of the same seam. It is a separate
+ * module because it is a great deal larger than a departure board and models a
+ * different set of shapes, but it calls `request()` from here rather than
+ * `fetch()` of its own, so there is still exactly one place where this app
+ * talks to Transitous.
  */
 
 import { normaliseColour } from '../shared/lnvg.ts';
@@ -49,7 +55,13 @@ const RAIL_RESPONSE_MODES = new Set([
  */
 export class LiveDataError extends Error {}
 
-async function request<T>(
+/**
+ * Exported for `routing.ts`, which is the journey planner's half of this seam
+ * and must go through the same one function for the same reason - see the
+ * module note above. Nothing else may use it: a `fetch()` anywhere else in
+ * `src/` is the bug this export exists to make unnecessary.
+ */
+export async function request<T>(
   path: string, params: Record<string, string>, signal: AbortSignal,
 ): Promise<T> {
   const url = `${BASE_URL}${path}?${new URLSearchParams(params)}`;

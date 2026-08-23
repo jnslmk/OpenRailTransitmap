@@ -15,14 +15,15 @@
  * A rolling 12-month window is ~5.7 GB of Parquet, which is a silly thing to
  * download to compute six counters per station. But Parquet is columnar and
  * HuggingFace serves range requests, so `hyparquet` fetches only the byte
- * ranges of the columns actually named in `COLUMNS` - six of eighteen, and
- * the six cheap ones: measured at 0.68 MB per row group against 5.14 MB for
- * the whole group, i.e. ~78 MB per monthly file rather than 591 MB. The whole
- * window costs ~0.9 GB and no disk at all.
+ * ranges of the columns actually named in `COLUMNS` - seven of eighteen:
+ * measured across the whole file (data-2026-07.parquet, 115 row groups,
+ * 591 MB - the exact Content-Length), those seven columns sum to 127.56 MB,
+ * i.e. ~128 MB per monthly file rather than ~591 MB. The whole window costs
+ * ~1.5 GB and no disk at all - see `COLUMNS` for what the seventh column buys.
  *
  * ## Why it is not in the nightly pipeline
  * The upstream files are published monthly, so a nightly recompute would
- * re-read the same 0.9 GB for the same answer, off a free volunteer-adjacent
+ * re-read the same 1.5 GB for the same answer, off a free volunteer-adjacent
  * host. Instead this is a standalone `npm run build:punctuality` whose output
  * is committed at `data/punctuality.json`, the same shape as data/stop-ids.json:
  * CI never pushes (the workflow runs with `contents: read`), it just copies
@@ -34,6 +35,31 @@
  * to disambiguate with, so the station name *is* the disambiguator: a row for
  * S1 at Hannover Hbf belongs to the Hannover S1 and to no other. That is why
  * build.ts emits data/line-stations.json - see `buildIndex` below.
+ *
+ * ## Long-distance is a different join, not the same one widened
+ * `line_number` is 0% populated for every long-distance train_type - measured
+ * across a full month (data-2025-12.parquet, 15.46M rows): ICE, IC, EC, ECE,
+ * NJ, RJ, RJX, EN, TGV and IR all read empty, FLX alone is 100% populated
+ * (it's a bare corridor number, "10"/"20"/"30", not a train ref). So there is
+ * no ref to join on at all - `rowRef` returns '' for every one of these and
+ * always has (see "gives up on a row that names no line" below).
+ *
+ * What the row does carry is `train_line_ride_id` and `train_line_station_num`,
+ * which turn out to identify something more useful than a single physical
+ * journey: sampled against ICE 618 (München Hbf -> Kiel Hbf) in
+ * data-2025-01.parquet, one ride id covers 31 different calendar days of that
+ * same train number, `train_line_station_num` restarting at 1 and increasing
+ * monotonically each day. So a "ride" here means one scheduled long-distance
+ * service's stops accumulated over the whole month, not one train's one trip -
+ * which is *better* for matching: it is the fullest itinerary the month can
+ * show, gaps from any single day's diversions or a partial read averaged out.
+ * `train_line_station_num` itself is not read: matching below is set-based
+ * (which stops does the ride touch, not in what order), and order carries no
+ * information the station set doesn't already have for this purpose.
+ *
+ * `buildLongDistanceIndex` attributes a whole ride to the one long-distance
+ * line whose station list contains every stop the ride touched - see the
+ * function for the measured numbers behind that rule.
  */
 
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'node:fs';
@@ -66,9 +92,20 @@ const DEFAULT_MONTHS = 12;
 export const ON_TIME_THRESHOLD_MIN = 6;
 
 /**
- * The six columns the join and the counters need, out of the eighteen in the
- * file. Every name added here costs bandwidth on every row group of every
- * month - see the header.
+ * The seven columns the join and the counters need, out of the eighteen in
+ * the file. Every name added here costs bandwidth on every row group of
+ * every month - see the header.
+ *
+ * `train_line_ride_id` is the expensive one: measured across the whole file
+ * (data-2026-07.parquet, 115 row groups, 591 MB total), the other six
+ * columns together sum to 76.45 MB but this one column alone is another
+ * 51.11 MB - a high-entropy per-ride identifier compresses far worse than the
+ * booleans and timestamps around it. That takes a monthly file from ~76 MB to
+ * ~128 MB and the 12-month window from ~0.9 GB to ~1.5 GB. It earns its place
+ * anyway: without it, long-distance has no ref and no way to group a train's
+ * stops together at all - see "Long-distance is a different join" in the
+ * header. `train_line_station_num` is *not* read, despite being the other
+ * half of that pair - see the same section for why order is not needed here.
  */
 const COLUMNS = [
   'station_name',
@@ -77,17 +114,44 @@ const COLUMNS = [
   'departure_is_canceled',
   'departure_planned_time',
   'departure_change_time',
+  'train_line_ride_id',
 ] as const;
 
 /**
- * Modes whose refs this can join at all. Long-distance carries no
- * `line_number` in the feed (ICE/IC/EC rows identify a *train*, not a line),
- * and tram/subway refs are bare numbers against an operator-abbreviated
- * `train_type`, which collides far too readily to attribute safely. Both are
- * deferred; the data model below is not mode-specific, so widening the scope
- * is a matter of solving their ref problem, not of reshaping anything here.
+ * Modes whose refs this can join ref-first, the way `buildIndex` below does
+ * it. Tram/subway refs are bare numbers against an operator-abbreviated
+ * `train_type`, which collides far too readily to attribute safely - that one
+ * stays deferred. Long-distance used to be deferred for the same kind of
+ * reason (no usable ref at all, not just a colliding one) but is scored
+ * separately below, by whole-ride itinerary rather than by ref - see
+ * `buildLongDistanceIndex` and `LONGDISTANCE_TRAIN_TYPES`.
  */
 const SCORED_MODES = new Set(['regional', 'suburban']);
+
+/** The registry mode long-distance lines are filed under. */
+const LONGDISTANCE_MODE = 'longdistance';
+
+/**
+ * Feed spellings of `train_type` that name a long-distance product, i.e. rows
+ * worth holding for ride grouping at all - everything else takes the ref+
+ * station path above (or is dropped there, for the modes this doesn't score).
+ *
+ * ICE/IC/EC obviously; ECE, EN, RJ, RJX and TGV are their Austrian, night and
+ * cross-border siblings; FLX is the open-access competitor (whose rows *do*
+ * carry a usable `line_number` - "10", "20", "30" - but are still routed
+ * through ride-matching rather than given a second code path, since itinerary
+ * matching gets the right answer for FLX too and a train_type check is one
+ * path, not two). IR and D are rare (0.007% and 0.0002% of rows in the
+ * measured month) but real: the registry's own longdistance refs include an
+ * SBB "IR75" and a legacy "D25".
+ *
+ * Measured on a full month (data-2025-12.parquet, 15,463,467 rows): these
+ * types are 1.85% of all rows, close to the ballpark the regional/suburban
+ * path already runs at.
+ */
+const LONGDISTANCE_TRAIN_TYPES = new Set([
+  'ICE', 'IC', 'EC', 'ECE', 'EN', 'RJ', 'RJX', 'NJ', 'FLX', 'TGV', 'IR', 'D',
+]);
 
 /**
  * A delay this large is a feed artefact (a stale change-time left on a row, a
@@ -230,7 +294,7 @@ export function buildIndex(
   return {
     stats,
     match(ref, stationName) {
-      const key = `${ref} ${stationName}`;
+      const key = `${ref} ${stationName}`;
       let hit = memo.get(key);
       if (hit === undefined) {
         hit = resolve(ref, stationName);
@@ -238,6 +302,138 @@ export function buildIndex(
       }
       if (hit) stats.hits++; else stats.misses++;
       return hit;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Long-distance: whole-ride itinerary matching
+// ---------------------------------------------------------------------------
+
+/**
+ * A ride with only one distinct station name proves nothing - every
+ * long-distance line calling anywhere near it "covers" it, so the row is
+ * unattributable in principle, not just in practice. Two is the minimum that
+ * can discriminate at all.
+ */
+const MIN_RIDE_STATIONS = 2;
+
+export interface LongDistanceIndex {
+  /**
+   * The line whose station list contains every one of these stops, or `null`
+   * when no long-distance line covers all of them, when more than one does,
+   * or when there are too few stops to tell.
+   */
+  match(stationNames: Iterable<string>): string | null;
+  /** Diagnostics for the run report; not part of the output file. */
+  readonly stats: { attributed: number; ambiguous: number; unmatched: number; tooSmall: number };
+}
+
+/**
+ * Build the lookup a ride goes through: is there exactly one long-distance
+ * line whose stations are a superset of everywhere this ride called?
+ *
+ * There is no ref to bucket by first (see the header), so every ride is
+ * checked against all 110 long-distance lines in `data/line-stations.json` -
+ * cheap enough, since the expensive part (does line L serve station S) is
+ * memoised per distinct station name, and there are only a few thousand of
+ * those in a month, not per ride.
+ *
+ * The rule is full containment of the *ride's* stops, not overlap count and
+ * not overlap of the *line's* stops: a candidate only wins if every station
+ * the ride touched is on its list, however much of the candidate's own route
+ * that leaves untouched. That is what makes a partial ride attributable (a
+ * train terminating early, or a ride assembled from a partial month, still
+ * has every one of its real stops explained by its real line) while keeping
+ * a wrong candidate from winning just by being large - a giant trunk line
+ * happening to contain two or three of a ride's stops does not get credit for
+ * the ones it is missing, because it is disqualified the moment it is missing
+ * any of them. Overlap *count* alone would not do this: scored by raw count a
+ * large line that coincidentally contains most of a small ride's stops can
+ * outscore the true, smaller line, because count has no sense of "and nothing
+ * left over" the way full containment does.
+ *
+ * The failure mode this rule accepts, silently, is a single bad day taking
+ * down a whole month. A ride pools every calendar day of one scheduled
+ * service (see the header) into one station set, so one anomalous day - a
+ * reroute, a rail-replacement bus leg standing in for a closed section, a
+ * feed glitch that logs the wrong station once - adds a stop the real line
+ * does not serve, and full containment then fails for *every* day that ride
+ * covers, not just the bad one. The ride is dropped as if the line were
+ * never seen at all that month, indistinguishable from a service genuinely
+ * missing from `data/line-stations.json` - the same kind of silence
+ * `Aggregator.hasRealtime` calls out at Waldshut, where a station with no
+ * realtime looks perfect rather than unmeasured. There is no cheap way to
+ * tell "one bad day" apart from "this line's OSM route is genuinely
+ * incomplete" from the station set alone, so nothing here tries to. What is
+ * measurable: of the rides `data-2025-12.parquet` left unmatched (991, see
+ * below), 442 (45%) missed full containment by exactly one station and
+ * another 369 (37%) by two or three - most "no line covers this ride"
+ * verdicts are near misses, not wild ones, which is consistent with (but
+ * does not prove) a single contaminating stop rather than a wrong month.
+ *
+ * Ties are dropped rather than guessed at, the same call `buildIndex` makes
+ * for two lines sharing a ref at the same station - and here they are common:
+ * long-distance lines share corridors for real (IC 30/31/32 down the Rhine),
+ * and 16 of the 110 long-distance entries in `data/line-stations.json` are
+ * *exactly* the same three stations (München Hbf, München Ost, Rosenheim) -
+ * a clutch of EC services whose OSM route relation stops at the Austrian
+ * border, so nothing this month's data can see tells them apart.
+ *
+ * Measured on two full months (data-2025-12.parquet, data-2026-01.parquet):
+ * of the rides with 2+ distinct stations, 18-24% attribute (346/1,910 and
+ * 246/1,450), 30-35% tie between two or more lines and are dropped, and the
+ * rest touch no long-distance line's stations at all - not necessarily wrong,
+ * since the candidate pool is only the 110 lines `data/line-stations.json`
+ * carries a station list for, not every long-distance service DB operates.
+ * Attribution reaches 24/110 and 18/110 distinct lines in those two months
+ * respectively; the rolling 12-month window a real run reads sees more months
+ * and more calendar variation, so the true reach is at least that.
+ */
+export function buildLongDistanceIndex(
+  lineStations: Record<string, string[]>,
+  modeOf: (lineId: string) => string | undefined,
+): LongDistanceIndex {
+  const candidates: Candidate[] = [];
+  for (const [id, names] of Object.entries(lineStations)) {
+    if (modeOf(id) !== LONGDISTANCE_MODE) continue;
+    candidates.push({
+      id,
+      exact: new Set(names.map((n) => normaliseName(n)).filter(Boolean)),
+      raw: names,
+    });
+  }
+
+  const stats = { attributed: 0, ambiguous: 0, unmatched: 0, tooSmall: 0 };
+
+  // Per distinct station name: which candidates serve it. Memoised because
+  // the same station name recurs across many rides within a month.
+  const servesMemo = new Map<string, boolean[]>();
+  function servesVector(stationName: string): boolean[] {
+    let hit = servesMemo.get(stationName);
+    if (hit) return hit;
+    const normalised = normaliseName(stationName);
+    hit = candidates.map((c) =>
+      (normalised !== '' && c.exact.has(normalised)) || c.raw.some((n) => namesMatch(n, stationName)));
+    servesMemo.set(stationName, hit);
+    return hit;
+  }
+
+  return {
+    stats,
+    match(stationNames) {
+      const stations = [...new Set(stationNames)];
+      if (stations.length < MIN_RIDE_STATIONS) { stats.tooSmall++; return null; }
+
+      let winner = -1;
+      let winners = 0;
+      for (let i = 0; i < candidates.length; i++) {
+        if (stations.every((s) => servesVector(s)[i])) { winner = i; winners++; }
+      }
+      if (winners === 0) { stats.unmatched++; return null; }
+      if (winners > 1) { stats.ambiguous++; return null; }
+      stats.attributed++;
+      return candidates[winner].id;
     },
   };
 }
@@ -632,6 +828,14 @@ interface Row {
   departure_is_canceled: boolean | null;
   departure_planned_time: Date | null;
   departure_change_time: Date | null;
+  train_line_ride_id: string | null;
+}
+
+/** One buffered long-distance row, held until its ride's line is known. */
+interface RideRow {
+  station: string;
+  delay: number | null;
+  cancelled: boolean;
 }
 
 /**
@@ -642,8 +846,21 @@ interface Row {
  * discarded before the next is fetched. `CONCURRENCY` groups are in flight at
  * once so the next fetch overlaps the current decode - the aggregator itself
  * needs no locking, since `await` only yields between whole groups.
+ *
+ * Long-distance rows are the exception to "discarded before the next group":
+ * a ride's rows are scattered across the whole file (a ride is a month of one
+ * scheduled service's calendar days, not a contiguous slice of it - see the
+ * header), so which line a ride belongs to cannot be known until every group
+ * has been read. Those rows - ~1.85% of the file, see
+ * `LONGDISTANCE_TRAIN_TYPES` - are buffered by ride id instead of being
+ * dropped per group, and matched once, after the loop below.
  */
-async function readMonth(month: string, index: LineIndex, agg: Aggregator): Promise<number> {
+async function readMonth(
+  month: string,
+  index: LineIndex,
+  ldIndex: LongDistanceIndex,
+  agg: Aggregator,
+): Promise<number> {
   // Deliberately modest. The rate limit is on request *count*, not on how many
   // are in flight, so parallelism cannot buy more throughput than the window
   // allows - all it can do is spend the allowance in a burst and arrive at the
@@ -661,6 +878,7 @@ async function readMonth(month: string, index: LineIndex, agg: Aggregator): Prom
   }
 
   let used = 0;
+  const rides = new Map<string, RideRow[]>();
   let next = 0;
   const worker = async () => {
     for (let i = next++; i < groups.length; i = next++) {
@@ -675,6 +893,18 @@ async function readMonth(month: string, index: LineIndex, agg: Aggregator): Prom
       for (const row of rows) {
         const station = row.station_name;
         if (!station) continue;
+
+        if (row.train_type && LONGDISTANCE_TRAIN_TYPES.has(row.train_type)) {
+          const rideId = row.train_line_ride_id;
+          if (!rideId) continue; // measured 100% populated for these types; defensive only
+          const delay = departureDelayMin(row.departure_planned_time, row.departure_change_time);
+          const bucket = rides.get(rideId);
+          const entry: RideRow = { station, delay, cancelled: row.departure_is_canceled === true };
+          if (bucket) bucket.push(entry);
+          else rides.set(rideId, [entry]);
+          continue;
+        }
+
         const ref = rowRef(row.line_number, row.train_type);
         if (!ref) continue;
         const delay = departureDelayMin(row.departure_planned_time, row.departure_change_time);
@@ -688,6 +918,19 @@ async function readMonth(month: string, index: LineIndex, agg: Aggregator): Prom
   };
 
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+  // Every group is in by now, so every ride's stops are all accounted for -
+  // attribute the whole ride at once, and only then feed its rows in.
+  for (const rows of rides.values()) {
+    const lineId = ldIndex.match(rows.map((r) => r.station));
+    if (!lineId) continue;
+    for (const r of rows) {
+      if (r.delay === null) continue;
+      agg.add(lineId, r.station, r.delay, r.cancelled);
+      used++;
+    }
+  }
+
   return used;
 }
 
@@ -697,7 +940,7 @@ async function readMonth(month: string, index: LineIndex, agg: Aggregator): Prom
 
 /**
  * `PUNCTUALITY_MONTHS` shortens the window for a development run - one month
- * is ~78 MB and a couple of minutes, against ~0.9 GB for the real twelve.
+ * is ~128 MB and a couple of minutes, against ~1.5 GB for the real twelve.
  */
 function envMonths(): number {
   const raw = process.env.PUNCTUALITY_MONTHS;
@@ -736,6 +979,7 @@ async function main() {
     (id) => byId.get(id)?.mode,
     (id) => byId.get(id)?.ref,
   );
+  const ldIndex = buildLongDistanceIndex(lineStations, (id) => byId.get(id)?.mode);
 
   const months = (await listMonths()).slice(-envMonths());
   if (!months.length) throw new Error('no monthly files found upstream');
@@ -744,7 +988,7 @@ async function main() {
   const agg = new Aggregator();
   for (const month of months) {
     const started = Date.now();
-    const used = await readMonth(month, index, agg);
+    const used = await readMonth(month, index, ldIndex, agg);
     console.log(`==> ${month}: ${used} departures matched in ${((Date.now() - started) / 1000).toFixed(0)}s`);
   }
 
@@ -753,6 +997,13 @@ async function main() {
   console.log(
     `==> join: ${s.hits}/${total} rows attributed (${Math.round((100 * s.hits) / (total || 1))}%), ` +
     `${s.ambiguous} distinct (ref, station) pairs left ambiguous`,
+  );
+
+  const ld = ldIndex.stats;
+  const ldTotal = ld.attributed + ld.ambiguous + ld.unmatched + ld.tooSmall;
+  console.log(
+    `==> long-distance: ${ld.attributed}/${ldTotal} rides attributed, ` +
+    `${ld.ambiguous} tied between lines, ${ld.unmatched} matched no line, ${ld.tooSmall} too small to tell`,
   );
 
   const lines = agg.result();
@@ -767,11 +1018,11 @@ async function main() {
   });
 
   const scored = Object.keys(lines).length;
-  const scoreable = registry.lines.filter((l) => SCORED_MODES.has(l.mode)).length;
-  console.log(`==> ${scored}/${scoreable} regional and suburban lines scored -> ${OUT_PATH}`);
+  const scoreable = registry.lines.filter((l) => SCORED_MODES.has(l.mode) || l.mode === LONGDISTANCE_MODE).length;
+  console.log(`==> ${scored}/${scoreable} regional, suburban and long-distance lines scored -> ${OUT_PATH}`);
 }
 
-// Only when run directly; importing this from a test must not start a 0.9 GB
+// Only when run directly; importing this from a test must not start a 1.5 GB
 // download.
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => { console.error(err); process.exit(1); });

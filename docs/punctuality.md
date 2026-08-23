@@ -61,10 +61,28 @@ Probed against `data-2026-07.parquet` — 14,052,153 rows, 115 row groups,
   against an `S46`. It is only trusted to supply a mode prefix when
   `line_number` is a bare number.
 - **`line_number` is usually already prefixed** (`S3`, `RB55`, `RE5`) and is
-  null for long-distance.
-- **Column projection is the whole ballgame.** The six columns needed are
-  0.68 MB of a 5.14 MB row group, so a monthly file costs ~78 MB rather than
-  591 MB and the 12-month window ~0.9 GB rather than 5.7 GB, with no disk used.
+  0% populated for every long-distance `train_type` — measured on a full
+  month (`data-2025-12.parquet`, 15,463,467 rows): ICE, IC, EC, ECE, NJ, RJ,
+  RJX, EN, TGV and IR all read empty. FLX alone is 100% populated, but it's a
+  bare corridor number ("10"/"20"/"30"), not a train ref.
+- **`train_line_ride_id` and `train_line_station_num` are 100% populated for
+  every long-distance row**, and identify something more useful than one
+  physical trip: sampled against ICE 618 (München Hbf → Kiel Hbf) in
+  `data-2025-01.parquet`, one ride id covered 31 different calendar days of
+  that same train number in the month, `train_line_station_num` restarting at
+  1 and increasing monotonically each day. A "ride" is one scheduled service's
+  stops accumulated over the whole month, not one train's one journey — see
+  Long-distance matching below.
+- **Column projection is the whole ballgame.** The seven columns needed
+  (six plus `train_line_ride_id`, added for long-distance) sum to 127.56 MB of
+  the file's 591 MB (measured across all 115 row groups of the same
+  `data-2026-07.parquet` quoted above — not a per-row-group estimate), so a
+  monthly file costs ~128 MB rather than ~591 MB and the 12-month window
+  ~1.5 GB rather than 5.7 GB, with no disk used. `train_line_ride_id` alone is
+  51.11 MB of that — a high-entropy per-ride identifier compresses far worse
+  than the booleans and timestamps it joins. `train_line_station_num` is *not*
+  read: long-distance matching (below) is set-based, and station order
+  carries no information the set doesn't already have for that purpose.
 
 ### A station with no realtime looks perfect
 
@@ -157,12 +175,83 @@ Measured over the full 12-month window (2025-08 … 2026-07): **110,787,442 of
 lines scored. Weighted mean on-time share across them is **85.0%**, which sits
 where DB's own published regional figures do.
 
+## Long-distance matching — a different join, not the same one widened
+
+Long-distance has no ref to join on at all (see above), so it cannot go
+through `buildIndex`. What it has instead is a *ride*: every long-distance row
+carries `train_line_ride_id`, and a ride's rows, taken together, are the
+itinerary of one scheduled service — see the ICE 618 finding above.
+`buildLongDistanceIndex` attributes the **whole ride** to the one
+long-distance line in `data/line-stations.json` whose station list contains
+**every** stop the ride touched.
+
+Full containment of the ride's stops, not overlap count and not overlap of
+the line's own stops, is the rule. A candidate wins only if every station the
+ride touched is on its list, however much of the candidate's own route that
+leaves untouched — which is what makes a **partial ride** attributable (a
+train that only ran part of its route this month still has every one of its
+real stops explained by its real line) while keeping a large line from
+winning just by being large: a trunk line that happens to contain two or
+three of a ride's stops gets no credit for the ones it's missing, because it
+is disqualified the moment it's missing any of them. Plain overlap *count*
+does not have that property — scored by count, a big line that coincidentally
+contains most of a small ride's stops can outscore the true, smaller line.
+
+**The failure mode this rule accepts, silently, is a single bad day taking
+down a whole month.** A ride pools every calendar day of one scheduled
+service into one station set, so one anomalous day — a reroute, a
+rail-replacement bus leg, a feed glitch that logs the wrong station once —
+adds a stop the real line does not serve, and full containment then fails
+for *every* day that ride covers, not just the bad one. The ride is dropped
+as if the line were never seen that month at all, indistinguishable from a
+service genuinely missing from `data/line-stations.json` — the same shape of
+silence as the Waldshut passage above (a station with no realtime looking
+perfect rather than unmeasured). There is no cheap way to tell "one bad day"
+apart from "this line's OSM route is genuinely incomplete" from the station
+set alone, so nothing here tries to. What *is* measurable: of the 991 rides
+`data-2025-12.parquet` left unmatched, 442 (45%) missed full containment by
+exactly one station and another 369 (37%) by two or three — most "no line
+covers this ride" verdicts are near misses, not wild ones, which is
+consistent with (but does not prove) a single contaminating stop rather than
+a wrong month.
+
+Ties are dropped rather than guessed at — the same call `buildIndex` makes for
+two lines sharing a ref at one station — and here they are common by
+construction: long-distance lines share corridors for real (IC 30/31/32 down
+the Rhine), and **16 of the 110 long-distance entries in
+`data/line-stations.json` are *exactly* the same three stations** (München
+Hbf, München Ost, Rosenheim) — a clutch of EC services whose OSM route
+relation stops at the Austrian border. Nothing in a month's ride data can tell
+those 16 apart, so rides that only ever touch that shared remainder stay
+unattributed, permanently, until the underlying route data improves.
+
+Measured on two full months (`data-2025-12.parquet`, `data-2026-01.parquet`),
+of rides with 2+ distinct stations: **18–24% attribute** (346/1,910 and
+246/1,450), 30–35% tie between two or more lines and are dropped, and the rest
+touch no long-distance line's stations in `data/line-stations.json` at all
+(not necessarily wrong — the candidate pool is only the 110 lines that have a
+station list, not every long-distance service DB operates). Distinct lines
+reached: 24/110 and 18/110 in those two months. A throwaway single-month
+verification run (`PUNCTUALITY_MONTHS=1` against `data-2026-07.parquet`, not
+committed) scored **15 long-distance lines** with real on-time/median/p90
+figures that had never had any before (on-time shares 19.7–71.8%, sample
+sizes 217–9,747 departures — the low end is EC 378 at 19.7%/n=300, the high
+end ICE 49 at n=9,747/53.1% on time). The committed `data/punctuality.json`
+still needs a
+real 12-month re-run (`npm run build:punctuality`) to pick this up; the
+rolling window sees more months and more calendar variation than either
+single-month probe above, so the true reach is at least what's measured here.
+
 ## Design
 
-- **Modes:** regional + suburban (`SCORED_MODES`). Long-distance carries no
-  `line_number`; tram and subway refs are bare numbers against an
-  operator-abbreviated `train_type`. Both deferred — the data model is not
-  mode-specific, so widening scope means solving their ref problem, nothing else.
+- **Modes:** regional + suburban join ref-first (`SCORED_MODES`, `buildIndex`).
+  Long-distance carries no `line_number` at all, so it is scored separately by
+  whole-ride itinerary instead (`LONGDISTANCE_TRAIN_TYPES`,
+  `buildLongDistanceIndex` — see Long-distance matching above). Tram and
+  subway refs are bare numbers against an operator-abbreviated `train_type`,
+  which collides far too readily to attribute safely; that one stays
+  deferred — the data model is not mode-specific, so widening scope means
+  solving its ref problem, nothing else.
 - **On time:** departure delay `< 6 min`, DB's own "pünktlich" threshold, so the
   number is comparable with the ones DB publishes.
 - **Reported statistics:** on-time share, **median** ("typically X min late"),
@@ -213,7 +302,7 @@ where DB's own published regional figures do.
 ## Why it is not in the nightly build
 
 The upstream files are published monthly, so a nightly recompute would re-read
-~0.9 GB for the same answer. CI runs with `contents: read` and cannot push, so —
+~1.5 GB for the same answer. CI runs with `contents: read` and cannot push, so —
 exactly like `data/stop-ids.json` — the output is committed and CI only copies
 it into `public/`. A human runs `npm run build:punctuality` when a new month
 lands. `PUNCTUALITY_MONTHS=1` shortens the window for a development run.
@@ -223,7 +312,14 @@ lands. `PUNCTUALITY_MONTHS=1` shortens the window for a development run.
 - **Coverage skew.** Files before 2025-11 only cover the top 100 stations, so
   regional lines through small stations have ~9 months of real data in a
   12-month window, not 12. Self-correcting from 2026-11 onwards.
-- **Long-distance, tram, subway** are unscored — see `SCORED_MODES`.
+- **Tram and subway** are unscored — see `SCORED_MODES`. Long-distance is now
+  scored (see Long-distance matching above), but only reaches a minority of
+  the 110 candidate lines: 16 of them are permanently indistinguishable from
+  each other on the data `data/line-stations.json` currently has (identical
+  truncated station lists), and more share enough of a corridor that most
+  months tie rather than attribute. Improving the underlying OSM route
+  relations (so a shared-corridor line's unique endpoints are actually in its
+  station list) would raise this without any change here.
 - **Time of day is not split.** "My 07:42" is a different question from "this
   line on average", and `departure_planned_time` makes a peak/off-peak or
   hour-of-day profile computable. Deliberately deferred.

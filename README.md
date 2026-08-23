@@ -1,5 +1,7 @@
 # OpenRailTransitmap
 
+**[Open the map →](https://jnslmk.github.io/OpenRailTransitmap/)**
+
 An interactive map of Germany's passenger rail network, built from OpenStreetMap
 data and styled after the **LNVG Niedersachsen *Streckenfahrplan***. Published to
 GitHub Pages and rebuilt nightly.
@@ -12,11 +14,34 @@ GitHub Pages and rebuilt nightly.
 ## What it does
 
 - **Every passenger mode, individually selectable** — long-distance (ICE/IC/EC),
-  regional (RE/RB), S-Bahn, U-Bahn and tram.
+  regional (RE/RB), S-Bahn, U-Bahn, tram and long-distance coach.
+- **Long-distance coach, which OSM does not have.** `route=coach` is two
+  relations in the whole of Germany, so the Fernbus network is read from the
+  operator's own GTFS instead — 347 lines and 337 stops, drawn on the road
+  alignment the operator publishes rather than chorded between stops, dashed
+  because it is not a railway, and merged into the same layers as the rail
+  network so it selects, searches and filters like any other mode. A coach stop
+  within 400 m of a station becomes part of that station rather than a second
+  dot beside it. See [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Parallel route bundling.** Lines sharing a corridor draw as adjacent coloured
   bands instead of stacking into one indistinguishable stroke.
+- **Stops marked across their lines, not beside them.** A station is a white bar
+  laid across the bundle, covering exactly the bands of the lines that call
+  there — so where six lines run through Rathenow and one of them stops, the
+  mark says which one, and a dot beside the tracks never could. A junction gets
+  one bar per corridor, at its own angle. The bar sits on the drawn alignment
+  rather than on the station node, which is a building or a car park off to one
+  side; **from z16 the map draws the node too**, as a hollow ring, once the
+  difference between the two is a fact about the place rather than noise.
+- **Stops that earn their zoom.** Germany's 20,830 stations are one grey smear
+  at national scale, so they are ranked once in the pipeline — long-distance
+  calls and the larger Hauptbahnhöfe, then interchanges, then ordinary halts,
+  then tram stops — and each rank appears at the zoom there is room for it,
+  names one step behind marks. The ranking is written into the tiles as a
+  per-feature minzoom, so a low-zoom tile carries the 400 stops it draws rather
+  than the 20,830 it does not.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
-  station** for every line calling there.
+  stop** for every line calling there.
 - **Punctuality on the line panel.** How often the line actually departs on
   time over a rolling 12 months, broken down by station, worst first — so
   "RE70 runs at 73%" comes with the fact that it is 39% at Hannover-Linden and
@@ -27,6 +52,32 @@ GitHub Pages and rebuilt nightly.
   to it would put a third of departures at a negative delay. Built from
   Deutsche Bahn's published delay record (CC BY 4.0); regional and S-Bahn only,
   for now. See [`docs/punctuality.md`](docs/punctuality.md).
+- **What is shut today.** Construction closures from DB InfraGO's own
+  possession register, drawn as a hazard stripe along the track they actually
+  close — routed onto the real alignment rather than chorded between the two
+  operating points DB names, which for the longest of them is 125 km of straight
+  line across open country. Full closures and single-track working show from
+  zoom 6, lesser restrictions from zoom 10, and clicking one gives the works,
+  the hours it applies today and the dates it runs between. Off with one
+  checkbox (`?closures=0`). See [`docs/closures.md`](docs/closures.md).
+- **A closure history, because nobody else keeps one.** strecken.info serves the
+  plan as it stands and nothing before it, so the archive is ours:
+  `data/closure-log.jsonl` is appended to daily and records a possession
+  entering the plan, its dates moving, and its withdrawal. The panel reads it
+  back — "was to finish 12 Dec" is a fact no snapshot of the current plan can
+  tell you.
+- **A journey planner with a bike in it.** A second sidebar tab: enter where you
+  are and where you are going, and get itineraries over rail, bus, coach and
+  ferry — with one control that is the point of the whole thing, *how far will
+  you ride at each end?* Slide it from "no bike" to 90 minutes and the answer
+  changes from the station down the road to any station in the county. The
+  chosen journey draws on the map in the map's own colours — an RE8 leg painted
+  as the map paints RE8 — with bike and walk legs dashed and the rest of the
+  network dimmed behind it. Bike carriage is reported honestly: German feeds
+  mostly do not publish it, and the panel says so rather than inventing a
+  refusal. A plan is a link, itinerary and all. Runs on the
+  [Transitous](https://transitous.org) MOTIS API; see
+  [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Search, mode and operator filters**, and deep-linkable URLs that restore
   position, filters and selection.
 - **A legend of what is actually on screen.** Only modes with lines in the
@@ -43,11 +94,10 @@ GitHub Pages and rebuilt nightly.
   has search one tap away. Both states are part of the URL (`?ui=map`, `?ui=peek`).
 - **Own location**, with an accuracy circle and continuous tracking, and a
   compass that puts the map back to north after an accidental twist.
-- **Streets where they help.** From zoom 13 the OSM standard raster fades in
-  under the network, heavily desaturated, so a tram stop can be placed on an
-  actual street. Off with one checkbox (`?streets=0`).
-- **A minimal LNVG-styled basemap** with an OpenStreetMap raster toggle. The
-  interface is English; station and line names stay as OSM has them, in German.
+- **The OpenStreetMap standard raster underneath**, heavily desaturated and
+  half-transparent so the rail bands still dominate, and so a tram stop can be
+  placed on an actual street. The interface is English; station and line names
+  stay as OSM has them, in German.
 
 ## How it is built
 
@@ -55,14 +105,19 @@ GitHub Pages and rebuilt nightly.
 config/regions.yaml        one value switches the whole pipeline's region
 pipeline/
   fetch.sh                 download the Geofabrik extract
-  extract.sh               osmium -> route relations, ways, stations, basemap
+  extract.sh               osmium -> route relations, ways, stations
+  closures.ts              DB InfraGO possessions + the history log
+  coach.ts                 long-distance coach from the operators' GTFS
+  lib/railpath.ts          route a closure onto the track it closes
+  lib/stopmarks.ts         lay a stop's mark across the bands that call there
   build.ts                 stitch routes, bundle corridors, snap stops
-  build-basemap.ts         water, state borders, place labels
-  coastline.ts             ocean polygons (the sea is not natural=water)
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
-  tiles.sh                 tippecanoe -> rail.pmtiles + base.pmtiles
+  tiles.sh                 tippecanoe -> rail.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
+src/stopmarks.ts           the stop bars, drawn to canvas and handed to MapLibre
 src/                       MapLibre app (style, state, UI, controls, strings)
+  live.ts / routing.ts     the only two modules that talk to Transitous
+  planner.ts               the Plan tab
 ```
 
 ### Region switching
@@ -102,13 +157,55 @@ PTv2 relations reference `public_transport=stop_position` nodes rather than the
 300 m using a grid index. This lifted station coverage from 11 to 1,264 of 1,748
 stations on the Niedersachsen extract, and yields 16,865 of 20,830 nationally.
 
-### The sea
+### Station marks
 
-OSM models the sea as `natural=coastline` *ways* that must be assembled into
-polygons, so a `natural=water` filter yields no ocean at all and the coast
-renders as flat land. `coastline.ts` pulls the pre-assembled simplified water
-polygons from osmdata.openstreetmap.de and reprojects them from EPSG:3857 to
-WGS84 in pure JS, which avoids adding GDAL to CI for a single job.
+Knowing *that* a station is served is not the same as knowing *which* of the six
+bands running past it stop there, and that is the question a stop symbol exists
+to answer. So each station gets a bar per corridor it is served from, spanning
+the run of band ordinals belonging to the lines that call — the same centred
+ordinals `build.ts` gives the route features, so the two agree without anything
+having to be measured in pixels. Lines that run through without stopping leave a
+gap, and the gap splits the bar in two.
+
+Corridors that merely *change composition* at a station — a line terminating, a
+branch peeling off — are two bundles on one alignment, and their two bars are
+merged back into one: same heading, and anchors that differ along the corridor
+rather than across it. Two alignments genuinely running side by side, an S-Bahn
+beside its mainline, differ *across* and stay two bars.
+
+Drawing it is one trick. MapLibre multiplies `icon-offset` by `icon-size` and
+rotates it with `icon-rotate`, so setting `icon-size` to exactly the factor the
+bundle spread uses at that zoom makes an offset of `mid × pitch` land on the band
+that ordinal names, at every zoom, with neither expression knowing about the
+other. The bar itself is a canvas-drawn image per span, added on demand — of
+MapLibre's point primitives only a symbol can be a bar of arbitrary length at an
+arbitrary angle measured in pixels. The price is that the bar's *thickness*
+scales with the spread too, which is why below z11 — where the spread
+deliberately collapses so national-scale bundles read as one trunk — the marks
+are plain dots on the same anchors, and the bars fade in over the changeover.
+
+### Which stops show at which zoom
+
+Ranked in `shared/lnvg.ts` and written into the tiles as a per-feature minzoom,
+so a rank is not merely hidden below its zoom, it is not carried there:
+
+| rank | what it is | mark | name |
+| --- | --- | --- | --- |
+| 0 | a long-distance call, or an Hbf with three or more lines | z6 | z8 |
+| 1 | an interchange: 3+ lines, more than one mode, or an Hbf — and a coach stop of its own, which is an intercity point and one of a few hundred | z9 | z10 |
+| 2 | every other heavy-rail, S-Bahn and U-Bahn halt | z11 | z12 |
+| 3 | tram-only stops | z12 | z13.5 |
+
+Built from what the map already knows — the lines calling, and the name. The one
+name test that earns its place is Hbf: a German Hauptbahnhof is its town's
+principal station by definition, and a two-line Hbf is still the stop a regional
+view should show before the halt one street over. Passenger figures would be the
+better signal, and no open source publishes them for all 5,400 German stations.
+
+Coach stops keep the quieter of the two name colours whatever rank they land on,
+and they are the one kind of stop still marked on their own node: a coach line is
+a GTFS shape rather than one of the bundles the bars are measured on, so there is
+no corridor to lay a bar across.
 
 ### Colours
 
@@ -128,9 +225,9 @@ npm ci
 
 bash pipeline/fetch.sh          # download the extract
 bash pipeline/extract.sh        # osmium filtering
+npx tsx pipeline/closures.ts    # today's construction closures (optional)
+npx tsx pipeline/coach.ts       # long-distance coach network (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
-npx tsx pipeline/build-basemap.ts
-npx tsx pipeline/coastline.ts   # ocean polygons (24 MB download, cached)
 npx tsx pipeline/fonts.ts       # glyphs (cached after the first run)
 bash pipeline/tiles.sh          # PMTiles
 npm run publish:data            # committed data -> public/
@@ -144,6 +241,15 @@ rather than nightly and a pass costs ~0.9 GB of range requests:
 ```bash
 npm run build:punctuality       # ~15 min; commit the data/punctuality.json it writes
 PUNCTUALITY_MONTHS=1 npm run build:punctuality   # one month, for development
+```
+
+The closure log is refreshed on its own daily schedule rather than with the map,
+because a day missed is a day of the plan gone for good — see
+[`.github/workflows/closures.yml`](.github/workflows/closures.yml). It is the
+only job in this repository with `contents: write`, and it writes one file:
+
+```bash
+npm run log:closures            # append today's changes to data/closure-log.jsonl
 ```
 
 ## Checking the deployed map
@@ -160,7 +266,14 @@ npx playwright install chromium     # once, unless a browser is already present
 node e2e/legend.mjs                                # https://jnslmk.github.io/OpenRailTransitmap/
 node e2e/legend.mjs --url http://127.0.0.1:5173/   # a local dev server
 node e2e/legend.mjs --headed                       # watch it run
+
+node e2e/planner.mjs                               # the journey planner
 ```
+
+`planner.mjs` is a live conversation with Transitous, so it pins down what must
+hold whatever the timetable returns — that a place resolves, that the itinerary
+is drawn on the map, that the bike slider reaches the request and that a link
+restores the whole plan — rather than any particular journey.
 
 A local run needs tiles, which the pipeline builds; the quickest way to get
 them without running it is to copy the deployed ones into `public/`.
@@ -171,8 +284,14 @@ them without running it is to copy the deployed ones into `public/`.
 mode, operator and stop count — plus `data/overrides.yaml`,
 `data/line-stations.json` (each line's stations, the key the punctuality join
 needs) and `data/punctuality.json` (the scores themselves). The last two are
-committed because CI runs with `contents: read` and cannot push, so anything it
-computed would be thrown away; a human refreshes them and commits the diff.
+committed because the build runs with `contents: read` and cannot push, so
+anything it computed would be thrown away; a human refreshes them and commits
+the diff.
+
+`data/closure-log.jsonl` is the exception that is written by CI, by the one job
+that may. It is append-only and it is the archive: 4.6 MB seeded, then about
+50 KB of events a day. The closures the map *draws* are not committed at all —
+they change daily, they ride in the tiles, and the build reads them fresh.
 
 Tiles, glyphs and the extract are built in CI and shipped as the Pages artifact,
 so the repository does not grow by tens of megabytes a night.
@@ -181,10 +300,18 @@ so the repository does not grow by tens of megabytes a night.
 
 Phases 1–3 (pipeline, style, interactions, scale-up) are the map itself.
 
-**Phase 4 is a bike + train journey planner**: enter A and B, get itineraries
-with a bike/train time split you can bias with a slider — "cycle an hour, take
-the train an hour". It will run on the [Transitous](https://transitous.org)
-MOTIS API behind a `RoutingProvider` interface.
+**Phase 4 is a bike + train journey planner** — enter A and B, get itineraries
+with a bike/train time split you can bias with a slider, "cycle an hour, take the
+train an hour". It is **built**: see the feature list above, and
+[`docs/buses-and-routing.md`](docs/buses-and-routing.md) §11 for the design and
+the two places the API says something it does not mean.
+
+What is left of Phase 4 is local bus *on the map*. The planner already routes
+over it — that comes free with the feed — but drawing it is a different
+proposition: 16,462 `route=bus` relations in Niedersachsen alone against 878 rail
+ones, and 129,506 bus stops against 20,830 rail stations nationally. Which of
+them belong on a rail map is a question the planner's own usage is better placed
+to answer than a tag heuristic, so it waits.
 
 That backend was validated up front — see
 [`docs/spike-transitous.md`](docs/spike-transitous.md). Two findings worth
@@ -193,11 +320,34 @@ routing engine is needed; but `requireBikeTransport` cannot be the default,
 because most German GTFS feeds omit `bikes_allowed` and requiring it silently
 returns zero regional journeys.
 
+**Buses come with it.** MOTIS routes on the DELFI GTFS aggregate, so a plan
+already returns local and regional bus legs — measured, a village near Rethem to
+Hannover Hbf comes back as `bike 19 → bus 510 → RB38 → bike 4` with no pipeline
+change at all. Drawing buses on the map is the separate, much larger question:
+eighteen `route=bus` relations for every rail one in Niedersachsen alone. The
+design for both, and for a Google-Maps-shaped planner that stays inside this map
+instead of taking it over, is in
+[`docs/buses-and-routing.md`](docs/buses-and-routing.md).
+
 ## Attribution and licensing
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors,
-licensed under the **ODbL**. The OpenStreetMap raster basemap toggle uses
-openstreetmap.org tiles and is subject to the OSMF tile usage policy.
+licensed under the **ODbL**. The raster basemap uses openstreetmap.org tiles
+and is subject to the OSMF tile usage policy.
+
+Construction closures come from **DB InfraGO**'s
+[strecken.info](https://strecken-info.de), the infrastructure manager's own
+public possession register. It is published as information rather than under an
+open licence, so it is credited in the sidebar and in the map's attribution
+control whenever a closure is on screen, and the feed itself is not
+redistributed — only the change log described above.
+
+Long-distance coach comes from **FlixBus**'s own GTFS feed, published by
+FlixMobility Tech GmbH. Like the possession register it carries no licence — the
+Transitous feed registry records one for BlaBlaCar and Optima and none for this
+one — so it gets the same handling: the feed is not redistributed, only the
+lines derived from it are drawn, and FlixMobility is credited in the sidebar and
+in the map's attribution control whenever a coach line is in view.
 
 Punctuality is derived from Deutsche Bahn's published delay record via the
 [`piebro/deutsche-bahn-data`](https://huggingface.co/datasets/piebro/deutsche-bahn-data)

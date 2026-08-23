@@ -15,14 +15,14 @@ import type {
   StyleSpecification, LayerSpecification, ExpressionSpecification,
   SymbolLayerSpecification,
 } from 'maplibre-gl';
-import { LNVG, MODES, MODE_SPECS, PT_TO_PX, type Mode } from '../shared/lnvg.ts';
+import {
+  BUNDLE_PITCH_PX, LNVG, MODES, MODE_SPECS, PT_TO_PX, STOP_TIERS, type Mode,
+} from '../shared/lnvg.ts';
+import { PILL_IMAGE_PREFIX, PILL_PITCH, PILL_THICKNESS, pillLength } from './stopmarks.ts';
 
 export const FONT_REGULAR = ['Fira Sans Regular'];
 export const FONT_MEDIUM = ['Fira Sans Medium'];
 export const FONT_BOLD = ['Fira Sans Bold'];
-
-/** Bundle pitch: one nominal band width, so mixed-mode bundles stay aligned. */
-const PITCH_PT = MODE_SPECS.regional.weightPt;
 
 /**
  * How line weights grow with zoom.
@@ -72,9 +72,7 @@ const OFFSET_STOPS: [number, number][] = [
  */
 const bandOffset: ExpressionSpecification = [
   'interpolate', ['linear'], ['zoom'],
-  ...OFFSET_STOPS.flatMap(([z, f]) => [
-    z, ['*', ['get', 'offset'], PITCH_PT * PT_TO_PX * 1.02 * f],
-  ]),
+  ...OFFSET_STOPS.flatMap(([z, f]) => [z, ['*', ['get', 'offset'], BUNDLE_PITCH_PX * f]]),
 ] as ExpressionSpecification;
 
 /**
@@ -136,6 +134,8 @@ function routeLayers(): LayerSpecification[] {
           'line-width': scaled(spec.weightPt),
           'line-offset': bandOffset,
           'line-opacity': selectionOpacity(null),
+          // Only a mode that does not run on rails carries one; see MODE_SPECS.
+          ...(spec.dash ? { 'line-dasharray': [...spec.dash] } : {}),
         },
       },
     ];
@@ -170,29 +170,16 @@ function badgeLayer(): LayerSpecification {
   };
 }
 
-// Tram stops outnumber rail stations by an order of magnitude, so they are
-// held back to high zoom rather than being allowed to swamp the network.
-const isRail: ExpressionSpecification =
-  ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 0]];
-const isTram: ExpressionSpecification =
-  ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'tramOnly'], 1]];
-
-/** Station layers and the base filter each one is built with. */
-export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
-  stations: isRail,
-  'station-labels': isRail,
-  'stations-tram': isTram,
-  'station-labels-tram': isTram,
-};
-
 /**
- * Stations that at least one of `modes` calls at.
- *
  * A station carries `lines` - the comma-joined ids of the lines serving it -
  * and an id is `mode|network|ref`, so a substring test for `mode|` is enough to
  * tell which modes stop there without shipping a second property. Without this
- * the stop dots and their names survived a mode being switched off, which left
+ * the stop marks and their names survived a mode being switched off, which left
  * a place like Braunschweig looking untouched when the trams were hidden.
+ *
+ * On a `stopmarks` feature `lines` is the run *that bar* covers rather than
+ * everything the station sees, so switching a mode off takes away the bars that
+ * were only ever about that mode and leaves the rest of the station standing.
  */
 export function servedByModes(modes: Mode[]): ExpressionSpecification {
   return ['any', ...modes.map((m) =>
@@ -200,195 +187,429 @@ export function servedByModes(modes: Mode[]): ExpressionSpecification {
   )] as ExpressionSpecification;
 }
 
+// ---------------------------------------------------------------------------
+// Station marks
+//
+// The reference poster marks a stop with a bar laid across the bundle, covering
+// exactly the lines that call there. That is a far better answer to "can I get
+// this train from here?" than a dot beside the corridor, which says a station
+// exists and nothing about which of the six bands running past it stop at it.
+//
+// The bar cannot go on the station node - the node is a building or a car park,
+// off to one side of the alignment the bands are drawn on - so the pipeline
+// anchors each one on the corridor itself and gives it the band ordinals it
+// covers (pipeline/lib/stopmarks.ts). What is left here is arithmetic:
+//
+//   icon-size   := the bundle's own spread factor at this zoom
+//   icon-offset := the bar's centre ordinal, in band pitches
+//
+// and because MapLibre multiplies the second by the first and rotates it with
+// `icon-rotate`, the bar sits on its bands at every zoom without either
+// expression knowing about the other. See src/stopmarks.ts.
+//
+// Below z11 the spread deliberately collapses, so that there is nothing to span
+// and the marks are drawn as plain dots - on the corridor still, so nothing
+// moves at the changeover, only fills out.
+// ---------------------------------------------------------------------------
+
+const INK = '#1a1a1a';
+/** For a stop that is on the map but is not a railway station. */
+const MUTED_INK = '#5a5a5a';
+
+/** Where the bars start to fade in, and where they have wholly replaced dots. */
+const PILL_IN = 10.2;
+const PILL_FULL = 11;
+
+/** Zoom at which the true position of the station itself is finally drawn. */
+const TRUE_POSITION_ZOOM = 16;
+
+/** The bundle spread factor at a zoom, read off the same table the bands use. */
+function spreadAt(zoom: number): number {
+  const stops = OFFSET_STOPS;
+  if (zoom <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [z0, f0] = stops[i - 1], [z1, f1] = stops[i];
+    if (zoom <= z1) return f0 + ((f1 - f0) * (zoom - z0)) / (z1 - z0);
+  }
+  return stops[stops.length - 1][1];
+}
+
+const fadeIn: ExpressionSpecification =
+  ['interpolate', ['linear'], ['zoom'], PILL_IN, 0, PILL_FULL, 1];
+const fadeOut: ExpressionSpecification =
+  ['interpolate', ['linear'], ['zoom'], PILL_IN, 1, PILL_FULL, 0];
+
+/** `icon-size`: exactly the factor the bundle spread uses, and nothing else. */
+const spreadFactor: ExpressionSpecification = [
+  'interpolate', ['linear'], ['zoom'], ...OFFSET_STOPS.flatMap(([z, f]) => [z, f]),
+] as ExpressionSpecification;
+
+/**
+ * The bar's centre, in image pixels along its own long axis.
+ *
+ * `icon-offset` is an `array<number, 2>` and expressions cannot build an array
+ * from a computed value, so the only data-driven form available is a `match`
+ * that picks between literals. Centre ordinals are always whole half-bands, so
+ * the table is finite: half-band steps out to +/-24 bands covers every bundle
+ * on the network with room to spare, and anything beyond it falls back to the
+ * alignment rather than to a wrong band.
+ */
+const HALF_BANDS = 48;
+const barCentre = [
+  'match', ['round', ['*', ['get', 'mid'], 2]],
+  ...Array.from({ length: 2 * HALF_BANDS + 1 }, (_, i) => i - HALF_BANDS)
+    .flatMap((half) => [half, ['literal', [(half / 2) * PILL_PITCH, 0]]]),
+  ['literal', [0, 0]],
+] as unknown as ExpressionSpecification;
+
+/** Everything that puts a bar on its bands, shared by the two layers that do. */
+const barLayout: SymbolLayerSpecification['layout'] = {
+  'icon-image': ['concat', PILL_IMAGE_PREFIX,
+    ['to-string', ['round', ['get', 'span']]]] as ExpressionSpecification,
+  'icon-size': spreadFactor,
+  'icon-offset': barCentre,
+  'icon-rotate': ['get', 'bearing'] as ExpressionSpecification,
+  'icon-rotation-alignment': 'map',
+  'icon-pitch-alignment': 'map',
+  // A stop is the map's anchor and is never dropped for want of room, but it
+  // still goes into the collision index, so names step around the bars.
+  'icon-allow-overlap': true,
+  'icon-ignore-placement': false,
+  // Interchanges and Hauptbahnhöfe win what collisions there are.
+  'symbol-sort-key': [
+    '-', 0, ['+', ['get', 'lineCount'], ['*', 10, ['get', 'major']]],
+  ] as ExpressionSpecification,
+};
+
+/**
+ * How far a name sits from its own bar, in ems.
+ *
+ * A symbol's text is never collision-tested against its own icon, so a fixed
+ * offset that clears a one-line dot is a name lying across an eight-line bar.
+ * The clearance is therefore the bar's own half-length - which, being radial,
+ * works whichever of the four anchors the placement picks and whichever way the
+ * bar is turned. `pillLength` is affine in span, so two stops interpolate it
+ * exactly. Below the changeover the mark is a dot and none of this applies.
+ */
+const LABEL_EM = 12;
+const radialEm = (span: number, spread: number) =>
+  (pillLength(span) * spread) / 2 / LABEL_EM + 0.45;
+
+/**
+ * ...and it steps rather than interpolates with zoom, because a symbol's layout
+ * is evaluated once per tile at that tile's own zoom. A step whose thresholds
+ * are whole numbers changes exactly when the buckets are rebuilt anyway, so
+ * nothing jumps; an interpolate would quantise into a jump of its own.
+ */
+const byLength = (spread: number): ExpressionSpecification =>
+  ['interpolate', ['linear'], ['number', ['get', 'span']],
+    1, radialEm(1, spread), 64, radialEm(64, spread)] as ExpressionSpecification;
+
+const nameOffset: ExpressionSpecification = [
+  'step', ['zoom'],
+  0.9,
+  ...[PILL_FULL, 12, 13, 14].flatMap((z) => [z, byLength(spreadAt(z))]),
+] as ExpressionSpecification;
+
+const rankIs = (rank: number): ExpressionSpecification =>
+  ['==', ['get', 'rank'], rank];
+
+const primary: ExpressionSpecification =
+  ['all', ['==', ['get', 'primary'], 1]];
+
+const dotLayer = (rank: number) => `stop-dots-r${rank}`;
+const markLayer = (rank: number) => `stop-marks-r${rank}`;
+const labelLayer = (rank: number) => `stop-labels-r${rank}`;
+
+/**
+ * Layers that carry a station mark, and are therefore what a click on a stop
+ * has to be tested against. The name layers are in it because above a tier's
+ * label zoom they are what draws the bar - the mark-only layer has ended by
+ * then, so leaving them out would make the bars unclickable exactly where they
+ * are largest.
+ */
+export const STOP_MARK_LAYERS: string[] = STOP_TIERS.flatMap((t) => [
+  ...(t.mark < PILL_FULL ? [dotLayer(t.rank)] : []),
+  markLayer(t.rank),
+  labelLayer(t.rank),
+]);
+
+/** Station layers and the base filter each one is built with. */
+export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
+  ...Object.fromEntries(STOP_TIERS.flatMap((t) => [
+    ...(t.mark < PILL_FULL ? [[dotLayer(t.rank), rankIs(t.rank)]] : []),
+    [markLayer(t.rank), rankIs(t.rank)],
+    [labelLayer(t.rank),
+      ['all', rankIs(t.rank), primary] as ExpressionSpecification],
+  ])),
+  'station-positions': ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'pill'], 1]],
+};
+
 function stationLayers(): LayerSpecification[] {
-  // Interchanges are the map's anchors, so they get the larger white-filled
-  // symbol; ordinary halts stay small ticks.
-  const radius: ExpressionSpecification = [
+  const layers: LayerSpecification[] = [];
+
+  // Rank still shows through below the changeover: a long-distance stop is a
+  // little larger than the interchange beside it, as it is on the poster.
+  const dotRadius: ExpressionSpecification = [
     'interpolate', ['linear'], ['zoom'],
-    7, ['case', ['>=', ['get', 'lineCount'], 3], 2.6, 1.4],
-    11, ['case', ['>=', ['get', 'lineCount'], 3], 5.0, 3.0],
-    14, ['case', ['>=', ['get', 'lineCount'], 3], 7.5, 4.5],
-  ];
+    6, ['case', rankIs(0), 1.9, 1.5],
+    9, ['case', rankIs(0), 2.9, 2.3],
+    // Meets the bar's own thickness exactly, so the changeover only widens.
+    PILL_FULL, PILL_THICKNESS / 2,
+  ] as ExpressionSpecification;
 
-  const circlePaint = {
-    'circle-radius': radius,
-    'circle-color': LNVG.white,
-    'circle-stroke-color': '#1a1a1a',
-    'circle-stroke-width': [
-      'interpolate', ['linear'], ['zoom'], 7, 0.7, 14, 1.8,
-    ] as ExpressionSpecification,
-  };
+  // Placement runs from the top layer down, so a tier pushed later is placed
+  // earlier and wins its collisions. Ranks therefore go out backwards: rank 0
+  // ends up last, which makes it both the first placed and the last painted.
+  for (const tier of [...STOP_TIERS].sort((a, b) => b.rank - a.rank)) {
+    if (tier.mark < PILL_FULL) {
+      layers.push({
+        id: dotLayer(tier.rank),
+        type: 'circle',
+        source: 'rail',
+        'source-layer': 'stopmarks',
+        minzoom: tier.mark,
+        maxzoom: PILL_FULL,
+        filter: rankIs(tier.rank),
+        paint: {
+          'circle-radius': dotRadius,
+          'circle-color': LNVG.white,
+          'circle-stroke-color': INK,
+          'circle-stroke-width': [
+            'interpolate', ['linear'], ['zoom'], 6, 0.7, PILL_FULL, 1.5,
+          ] as ExpressionSpecification,
+          'circle-opacity': fadeOut,
+          'circle-stroke-opacity': fadeOut,
+        },
+      });
+    }
 
-  return [
-    {
-      id: 'stations-tram',
-      type: 'circle',
-      source: 'rail',
-      'source-layer': 'stations',
-      minzoom: 12,
-      filter: isTram,
-      paint: circlePaint,
-    },
-    {
-      id: 'stations',
-      type: 'circle',
-      source: 'rail',
-      'source-layer': 'stations',
-      minzoom: 7,
-      filter: isRail,
-      paint: circlePaint,
-    },
-    {
-      id: 'station-labels-tram',
+    // Every bar of the tier. Below the changeover it is invisible and the dots
+    // above are what is seen - but it is still placed, so it holds the space
+    // its name will later need and city labels give it the room they always
+    // did. It keeps drawing above the label zoom too, because a junction has a
+    // bar per corridor and only one of them is the one that carries the name.
+    layers.push({
+      id: markLayer(tier.rank),
       type: 'symbol',
       source: 'rail',
-      'source-layer': 'stations',
-      minzoom: 13,
-      filter: isTram,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-font': FONT_REGULAR,
-        'text-size': 11,
-        'text-anchor': 'left',
-        'text-offset': [0.6, 0],
-      },
-      paint: {
-        'text-color': '#5a5a5a',
-        'text-halo-color': LNVG.ground,
-        'text-halo-width': 1.4,
-      },
-    },
-    {
-      id: 'station-labels',
+      'source-layer': 'stopmarks',
+      minzoom: tier.mark,
+      filter: rankIs(tier.rank),
+      layout: barLayout,
+      paint: { 'icon-opacity': fadeIn },
+    });
+
+    // ...and, over the top of one of them, that same bar again with its name
+    // attached. Drawn twice deliberately: a name is only ever kept off its own
+    // bar by being placed *with* it, as one symbol, and the second copy of an
+    // opaque white bar in the same place at the same size is invisible.
+    const muted = tier.rank === 3;
+    layers.push({
+      id: labelLayer(tier.rank),
       type: 'symbol',
       source: 'rail',
-      'source-layer': 'stations',
-      minzoom: 9,
-      filter: isRail,
+      'source-layer': 'stopmarks',
+      minzoom: tier.label,
+      filter: STATION_FILTERS[labelLayer(tier.rank)],
       layout: {
+        ...barLayout,
         'text-field': ['get', 'name'],
-        'text-font': FONT_MEDIUM,
-        'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 13],
-        'text-anchor': 'left',
-        'text-offset': [0.7, 0],
-        // Interchanges and Hauptbahnhöfe win label collisions.
-        'symbol-sort-key': [
-          '-', 0, ['+', ['get', 'lineCount'], ['*', 10, ['get', 'major']]],
-        ] as ExpressionSpecification,
+        'text-font': muted ? FONT_REGULAR : FONT_MEDIUM,
+        'text-size': muted
+          ? 11
+          : ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 13] as ExpressionSpecification,
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-radial-offset': nameOffset,
+        'text-justify': 'auto',
+        // A name that cannot be fitted is dropped; the stop it belongs to is
+        // not. Losing the mark would be losing the fact that there is a stop.
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#1a1a1a',
+        'icon-opacity': fadeIn,
+        // Trams get the quieter colour by tier; a coach bay of its own gets it
+        // by being one, wherever it has been ranked. It is not a railway
+        // station and is not named as loudly as one.
+        'text-color': muted ? MUTED_INK
+          : ['case', ['==', ['get', 'coachOnly'], 1], MUTED_INK, INK] as ExpressionSpecification,
         'text-halo-color': LNVG.ground,
         'text-halo-width': 1.6,
       },
-    },
-  ];
-}
+    });
+  }
 
-function baseLayers(): LayerSpecification[] {
-  return [
-    {
-      id: 'background',
-      type: 'background',
-      paint: { 'background-color': LNVG.ground },
-    },
-    // The sea comes from assembled coastline polygons, not from natural=water,
-    // which contains no ocean at all (see pipeline/coastline.ts).
-    {
-      id: 'ocean',
-      type: 'fill',
-      source: 'base',
-      'source-layer': 'ocean',
-      paint: { 'fill-color': LNVG.paleBlue },
-    },
-    {
-      id: 'water',
-      type: 'fill',
-      source: 'base',
-      'source-layer': 'water',
-      paint: { 'fill-color': LNVG.paleBlue },
-    },
-    {
-      id: 'boundaries',
-      type: 'line',
-      source: 'base',
-      'source-layer': 'boundaries',
-      paint: {
-        'line-color': LNVG.grey,
-        'line-width': 1.1,
-        'line-dasharray': [3, 2],
-      },
-    },
-  ];
-}
-
-/**
- * City labels, appended last so they hold the highest symbol-placement priority.
- *
- * Placement runs from the top layer down, so when these sat at the bottom of the
- * style every rail label outranked them and Berlin, Hamburg and München lost
- * their labels to whichever village happened to be nearby.
- *
- * Major and minor are separate layers so the two can be zoom-gated apart: at
- * national zoom only the big cities appear, which is all there is room for.
- */
-function placeLayers(): LayerSpecification[] {
-  const MAJOR = 250000;
-
-  // Lower sort keys are placed first, so negating population makes the largest
-  // city win any collision.
-  const byPopulation: ExpressionSpecification =
-    ['-', 0, ['get', 'population']];
-
-  const label = (id: string, size: ExpressionSpecification): SymbolLayerSpecification => ({
-    id,
-    type: 'symbol',
-    source: 'base',
-    'source-layer': 'places',
-    layout: {
-      'text-field': ['get', 'name'],
-      'text-font': FONT_REGULAR,
-      'text-size': size,
-      'text-transform': 'uppercase',
-      'text-letter-spacing': 0.08,
-      'text-padding': 6,
-      'symbol-sort-key': byPopulation,
-    },
+  // --- and, at last, where the station actually is --------------------------
+  // Held back to the zoom at which the difference is a fact about the place
+  // rather than noise: which side of the tracks the entrance is on, how far the
+  // platforms run. A hollow ring, so it reads as a position and not as a stop.
+  layers.push({
+    id: 'station-positions',
+    type: 'circle',
+    source: 'rail',
+    'source-layer': 'stations',
+    minzoom: TRUE_POSITION_ZOOM,
+    filter: STATION_FILTERS['station-positions'],
     paint: {
-      'text-color': '#8a8a8a',
-      'text-halo-color': LNVG.ground,
-      'text-halo-width': 1.5,
+      'circle-radius': [
+        'interpolate', ['linear'], ['zoom'], TRUE_POSITION_ZOOM, 2.4, 18, 4,
+      ] as ExpressionSpecification,
+      'circle-opacity': 0,
+      'circle-stroke-color': INK,
+      'circle-stroke-width': 1.3,
+      'circle-stroke-opacity': [
+        'interpolate', ['linear'], ['zoom'], TRUE_POSITION_ZOOM, 0, TRUE_POSITION_ZOOM + 0.6, 0.8,
+      ] as ExpressionSpecification,
     },
   });
 
-  const major = label('places-major',
-    ['interpolate', ['linear'], ['zoom'], 4, 10, 8, 13, 11, 15]);
-  major.minzoom = 4;
-  major.maxzoom = 11;
-  major.filter = ['>=', ['get', 'population'], MAJOR];
+  return layers;
+}
 
-  const minor = label('places-minor',
-    ['interpolate', ['linear'], ['zoom'], 7, 9, 10, 12]);
-  minor.minzoom = 7;
-  minor.maxzoom = 10;
-  minor.filter = ['<', ['get', 'population'], MAJOR];
+// ---------------------------------------------------------------------------
+// Construction closures
+//
+// These are an overlay, not part of the network: they sit above the route bands
+// so they can be seen against them, and below the stations, which are the map's
+// anchors and must not be buried under a possession.
+//
+// The mark is a hazard stripe - a dark line with the reference palette's yellow
+// dashed over it - rather than another coloured band. It has to read as "not a
+// service" at a glance, and every solid colour on this map already means a line
+// of some kind. Nothing is drawn on the true alignment except this, so a
+// closure sits in the middle of whatever bundle it interrupts.
+// ---------------------------------------------------------------------------
 
-  return [major, minor];
+/**
+ * A full closure or a line down to one track is the thing the layer exists for
+ * and shows from the zoom the regional network appears at. The rest - a
+ * timetable deviation, a few minutes of extra running time, an unspecified
+ * restriction - is real but minor, and the 1,900 of them in an ordinary day's
+ * feed, drawn across Germany at national zoom, would bury the network they
+ * annotate. They wait until the view
+ * is close enough for them to be about somewhere.
+ */
+export const CLOSURE_TIERS = {
+  major: { effects: ['closed', 'single-track'], minzoom: 6, weight: 1 },
+  minor: { effects: ['diverted', 'slower', 'other'], minzoom: 10, weight: 0.62 },
+} as const;
+
+/**
+ * Closure width, which deliberately does not follow the route weight curve.
+ *
+ * Around 500 sections of the German network are closed outright on an ordinary
+ * day and another 280 are down to one track - not a quirk of one reading, and
+ * their median spell in effect is seven hours, so they cannot be filtered down
+ * to a handful of "real" ones without lying about the rest. Drawn at the route
+ * bands' weight, that many stripes at national zoom bury the network they are
+ * annotating: the map stops being a rail map with construction on it and
+ * becomes a construction map.
+ *
+ * So the stripe is thinner than a route band while the whole country is on
+ * screen - enough to read where the work is concentrated, not enough to
+ * compete - and grows past the bands only once the view is close enough for one
+ * closure to be about one place.
+ */
+const CLOSURE_WIDTH_STOPS: [number, number][] = [
+  [5, 1.2], [8, 2.4], [11, 5.0], [14, 8.0],
+];
+
+const closureWidth = (weight: number): ExpressionSpecification =>
+  ['interpolate', ['linear'], ['zoom'],
+    ...CLOSURE_WIDTH_STOPS.flatMap(([z, px]) => [z, px * weight]),
+  ] as ExpressionSpecification;
+
+export type ClosureTier = keyof typeof CLOSURE_TIERS;
+
+/** Every closure layer, in draw order - for visibility toggling. */
+export const CLOSURE_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
+  .flatMap((tier) => [
+    `closures-${tier}-casing`, `closures-${tier}-hazard`, `closures-${tier}-point`,
+  ]);
+
+/** Layers a click should hit-test - the visible marks, not the casings. */
+export const CLOSURE_HIT_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
+  .flatMap((tier) => [`closures-${tier}-hazard`, `closures-${tier}-point`]);
+
+const HAZARD_DARK = '#2b2b2b';
+
+function closureLayers(): LayerSpecification[] {
+  return (Object.keys(CLOSURE_TIERS) as ClosureTier[]).flatMap((tier) => {
+    const { effects, minzoom, weight } = CLOSURE_TIERS[tier];
+    const width = closureWidth(weight);
+    const ofTier: ExpressionSpecification =
+      ['in', ['get', 'effect'], ['literal', [...effects]]];
+    // A circle layer draws one circle per *vertex*, so without this the marker
+    // layer beads every routed closure along its own geometry - which reads as
+    // a row of stations that are not there.
+    const lines: ExpressionSpecification =
+      ['all', ofTier, ['!=', ['geometry-type'], 'Point']];
+    const points: ExpressionSpecification =
+      ['all', ofTier, ['==', ['geometry-type'], 'Point']];
+
+    return [
+      {
+        id: `closures-${tier}-casing`,
+        type: 'line',
+        source: 'rail',
+        'source-layer': 'closures',
+        minzoom,
+        filter: lines,
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: { 'line-color': HAZARD_DARK, 'line-width': width },
+      },
+      {
+        // The stripes. `line-dasharray` is in multiples of the line width, so
+        // the pattern keeps its proportions as the width grows with zoom
+        // instead of turning into a solid line at one end of the range. A dash
+        // longer than it is wide survives the thin end of that range, where a
+        // square one aliases into a dotted grey.
+        id: `closures-${tier}-hazard`,
+        type: 'line',
+        source: 'rail',
+        'source-layer': 'closures',
+        minzoom,
+        filter: lines,
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
+          'line-color': LNVG.yellow,
+          'line-width': width,
+          'line-dasharray': [1.6, 1.2],
+        },
+      },
+      {
+        // 43% of a day's restrictions are inside one station and have no
+        // extent to draw, so they get a mark rather than being left off.
+        id: `closures-${tier}-point`,
+        type: 'circle',
+        source: 'rail',
+        'source-layer': 'closures',
+        minzoom,
+        filter: points,
+        paint: {
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3.4, 14, 5.4,
+          ] as ExpressionSpecification,
+          'circle-color': LNVG.yellow,
+          'circle-stroke-color': HAZARD_DARK,
+          'circle-stroke-width': [
+            'interpolate', ['linear'], ['zoom'], 6, 0.8, 14, 2,
+          ] as ExpressionSpecification,
+        },
+      },
+    ];
+  });
 }
 
 /**
- * Zoom at which the street underlay starts to fade in.
+ * The OpenStreetMap standard raster, the ground everything else is drawn on.
  *
- * The vector basemap carries water, borders and place labels and nothing else,
- * so once you are close enough to read tram stop names there is no context left
- * to place them against. Streets come from the OSM standard raster rather than
- * the pipeline: Germany's highway network at this zoom is orders of magnitude
- * larger than the whole rail extract and could not be tiled nightly. Gating it
- * to the top two zoom levels keeps the request volume off that tile server for
- * ordinary browsing of the network.
+ * Desaturated and half-transparent over the flat LNVG ground, so it reads as
+ * context rather than as the map: the rail bands have to dominate, and OSM's
+ * own colours - motorway orange, forest green - would otherwise argue with
+ * them. Its labels are the map's place names too, which is why the style
+ * carries none of its own.
  */
-const STREETS_MINZOOM = 13;
-
 const osmRasterSource = () => ({
   type: 'raster' as const,
   tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
@@ -399,69 +620,32 @@ const osmRasterSource = () => ({
 export interface StyleOptions {
   /** Base path the site is served from, e.g. "/OpenRailTransitmap/". */
   base: string;
-  /** Draw the OSM standard raster underneath instead of the flat LNVG ground. */
-  osmBasemap: boolean;
-  /** Fade the OSM raster in at high zoom for street-level context. */
-  streets: boolean;
 }
 
-export function buildStyle({ base, osmBasemap, streets }: StyleOptions): StyleSpecification {
+export function buildStyle({ base }: StyleOptions): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
     name: 'OpenRailTransitmap',
     glyphs: `${base}fonts/{fontstack}/{range}.pbf`,
     sources: {
-      base: { type: 'vector', url: `pmtiles://${base}tiles/base.pmtiles` },
       rail: { type: 'vector', url: `pmtiles://${base}tiles/rail.pmtiles` },
+      osm: osmRasterSource(),
     },
-    layers: [],
-  };
-
-  if (osmBasemap) {
-    style.sources.osm = osmRasterSource();
-    style.layers = [
+    layers: [
       { id: 'background', type: 'background', paint: { 'background-color': LNVG.ground } },
-      // Desaturated so the rail bands still dominate.
       {
         id: 'osm',
         type: 'raster',
         source: 'osm',
         paint: { 'raster-opacity': 0.55, 'raster-saturation': -0.7 },
       },
-    ];
-  } else {
-    style.layers = baseLayers();
-
-    if (streets) {
-      style.sources.osm = osmRasterSource();
-      // Above the vector water and borders, below every rail layer.
-      style.layers.push({
-        id: 'streets',
-        type: 'raster',
-        source: 'osm',
-        minzoom: STREETS_MINZOOM,
-        paint: {
-          'raster-opacity': [
-            'interpolate', ['linear'], ['zoom'],
-            STREETS_MINZOOM, 0,
-            STREETS_MINZOOM + 1, 0.5,
-            STREETS_MINZOOM + 2, 0.62,
-          ],
-          // Nearly grey: streets are there to locate a stop, not to be read.
-          'raster-saturation': -0.85,
-        },
-      });
-    }
-  }
+    ],
+  };
 
   // Symbol placement priority runs from the *top* layer down, so whatever is
   // pushed last wins collisions. Station names matter more than repeated line
-  // badges, so the badge layer goes underneath them, and city labels sit above
-  // both - they are the map's orientation anchors and there are few of them.
-  style.layers.push(...routeLayers(), badgeLayer(), ...stationLayers());
-
-  // Place labels live in the vector basemap, which the raster mode replaces.
-  if (!osmBasemap) style.layers.push(...placeLayers());
+  // badges, so the badge layer goes underneath them.
+  style.layers.push(...routeLayers(), badgeLayer(), ...closureLayers(), ...stationLayers());
   return style;
 }
 

@@ -173,8 +173,8 @@ mean something. The honest ceiling is likely around 93–95%, not 100%.
   pass running alongside it. Use it for every build that is not deliberately
   resolving.
 - **The cache alone changes nothing on screen.** The `stopId` is baked into
-  `rail.pmtiles`, so tiles must be rebuilt: `npx tsx pipeline/build.ts &&
-  pipeline/build-basemap.ts && coastline.ts && bash pipeline/tiles.sh`.
+  `rail.pmtiles`, so tiles must be rebuilt: `npx tsx pipeline/build.ts && bash
+  pipeline/tiles.sh`.
 - **CI cannot improve coverage.** `.github/workflows/build.yml` runs with
   `contents: read`, so the 500 lookups every build spends are thrown away.
   Coverage only moves when a locally-run pass is committed. Worth fixing with a

@@ -20,7 +20,7 @@ import { parse as parseYaml } from 'yaml';
 import { writeFeatures } from './lib/write.ts';
 import { resolveStopIds } from './stop-ids.ts';
 import {
-  MODE_SPECS, fallbackColour, normaliseColour, type Mode,
+  MODE_SPECS, STOP_TIER_BY_RANK, fallbackColour, normaliseColour, stopRank, type Mode,
 } from '../shared/lnvg.ts';
 import {
   chainWays, collapseParallelTracks, endpointKey, type Coord,
@@ -29,6 +29,15 @@ import {
   slotOffset, taperLengthM, taperMinzoom, buildTaper, trimEnd, chainLengthM, type TaperStep,
 } from './lib/taper.ts';
 import { adjacentSegmentPairs, groupCorridors, rankCorridorLines } from './lib/corridor.ts';
+import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
+import {
+  buildRailGraph, nearestNode, routeBetween, metres, type RailWay,
+} from './lib/railpath.ts';
+import {
+  readLog, replayLog, windowsOn, SNAPSHOT_PATH, EFFECT_RANK,
+  type Closure, type LoggedClosure,
+} from './closures.ts';
+import { readSnapshot as readCoachSnapshot } from './coach.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const EXTRACT = `${WORK}/extract`;
@@ -135,7 +144,8 @@ interface Line {
   name: string;
   mode: Mode;
   colour: string;
-  colourSource: 'osm' | 'override' | 'fallback';
+  /** `feed` is a colour the operator published with the data, as coach does. */
+  colourSource: 'osm' | 'override' | 'feed' | 'fallback';
   operator: string;
   network: string;
   wayIds: string[];
@@ -173,6 +183,134 @@ function cleanName(tags: Record<string, string>): string {
 }
 
 // ---------------------------------------------------------------------------
+// Closures
+// ---------------------------------------------------------------------------
+
+/**
+ * Two operating points closer together than this are the same place, and the
+ * restriction is a point on the map rather than a section of it. 43% of a day's
+ * feed is of this kind - work inside one station - and DB states both ends as
+ * the same coordinate for them.
+ */
+const POINT_CLOSURE_M = 100;
+
+/** How far a stated operating point may sit from the network and still match. */
+const CLOSURE_SNAP_M = 2000;
+
+interface ClosureSnapshot {
+  day: string;
+  closures: Closure[];
+}
+
+/** The clock window in effect on `day`, as `03:00-04:00`, or '' for all day. */
+function hoursOn(closure: Closure, day: string): string {
+  const spans = windowsOn(closure, day)
+    .map((w) => `${w.fromTime.slice(0, 5)}\u2013${w.toTime.slice(0, 5)}`)
+    // "00:00-00:00" is how the feed writes a possession that does not stop at
+    // a clock time; saying so is worse than saying nothing.
+    .filter((s) => s !== '00:00\u201300:00');
+  return [...new Set(spans)].join(', ');
+}
+
+/**
+ * Closure features for the tiles.
+ *
+ * Geometry comes from pipeline/lib/railpath.ts, which puts each restriction on
+ * the track it names rather than on the straight line between its ends. A
+ * restriction whose ends cannot be matched to the network is dropped rather
+ * than drawn as a chord: on a map whose whole claim is that the geometry is
+ * true to OSM, a red line lying across open country would be read as track.
+ *
+ * The history the panel shows is folded in here too, from the committed log -
+ * `since` is the day the restriction entered DB's plan as far as we ever saw,
+ * and `extended` counts the times its dates have moved since. Both are empty
+ * on a checkout with no log yet, which is the honest answer: we have no record,
+ * not "it has never been revised".
+ */
+async function writeClosures(railWays: RailWay[]): Promise<void> {
+  if (!existsSync(SNAPSHOT_PATH)) {
+    console.log('==> no closure snapshot in .work - skipping the closure layer');
+    await writeFeatures(`${OUT}/closures.geojsonl`, []);
+    return;
+  }
+
+  const snapshot: ClosureSnapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+  let history = new Map<string, LoggedClosure>();
+  try {
+    history = replayLog(readLog());
+  } catch (err) {
+    // A malformed log is a data problem to fix, not a reason to lose the layer.
+    console.log(`==> closure log unreadable, continuing without history: ${(err as Error).message}`);
+  }
+
+  const graph = buildRailGraph(railWays);
+  const out: unknown[] = [];
+  let points = 0, routed = 0, unmatched = 0;
+
+  // Worst first, so that where several restrictions share a section the one a
+  // rider cares about is the feature drawn on top.
+  const ordered = [...snapshot.closures]
+    .sort((a, b) => EFFECT_RANK[a.effect] - EFFECT_RANK[b.effect]);
+
+  for (const c of ordered) {
+    const from: Coord = [c.from.lon, c.from.lat];
+    const to: Coord = [c.to.lon, c.to.lat];
+    const isPoint = metres(from, to) < POINT_CLOSURE_M;
+
+    let geometry: unknown;
+    if (isPoint) {
+      // A point still has to be *on* the network we drew. Without that check a
+      // regional build - which reads the whole country's feed against one
+      // state's extract - scatters markers across track it has never loaded.
+      if (nearestNode(graph, from, CLOSURE_SNAP_M) === null) { unmatched++; continue; }
+      geometry = { type: 'Point', coordinates: from };
+      points++;
+    } else {
+      const path = routeBetween(graph, from, to, {
+        routes: c.routes, snapM: CLOSURE_SNAP_M,
+      });
+      if (!path) { unmatched++; continue; }
+      geometry = { type: 'LineString', coordinates: path.coords };
+      routed++;
+    }
+
+    const logged = history.get(c.id);
+    out.push({
+      type: 'Feature',
+      geometry,
+      properties: {
+        id: c.id,
+        // The day this reading of the plan describes. Carried on every feature
+        // rather than in a side file so the app can state the overlay's date
+        // without a second fetch that could disagree with the tiles.
+        day: snapshot.day,
+        effect: c.effect,
+        direction: c.direction,
+        works: c.works,
+        routes: c.routes.join(', '),
+        fromName: c.from.name,
+        toName: c.to.name,
+        section: isPoint ? c.from.name : `${c.from.name} \u2013 ${c.to.name}`,
+        // Dates only: the panel reads them, and the feed's midnight-to-four
+        // timestamps say less about the possession than its hours do.
+        begin: c.begin.slice(0, 10),
+        end: c.end.slice(0, 10),
+        hours: hoursOn(c, snapshot.day),
+        since: logged?.since ?? '',
+        firstEnd: logged ? logged.firstEnd.slice(0, 10) : '',
+        extended: logged?.revisions ?? 0,
+      },
+    });
+  }
+
+  await writeFeatures(`${OUT}/closures.geojsonl`, out);
+  console.log(
+    `==> ${out.length} closure features for ${snapshot.day}: ` +
+    `${routed} on the network, ${points} at a single operating point, ` +
+    `${unmatched} dropped as unmatchable`);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -186,6 +324,9 @@ function cleanName(tags: Record<string, string>): string {
  */
 const TRACK_PAIR_M: Record<Mode, number> = {
   tram: 15, subway: 20, suburban: 20, regional: 20, longdistance: 20,
+  // Coach carries no way ids at all - its geometry is a GTFS shape, not a
+  // stitched set of OSM ways - so there is no second track to collapse.
+  coach: 0,
 };
 
 async function main() {
@@ -247,6 +388,36 @@ async function main() {
     }
   }
 
+  // --- long-distance coach --------------------------------------------------
+  // Read from the snapshot pipeline/coach.ts writes, exactly as closures are.
+  // Null when that stage has not run or its feed was unavailable, in which case
+  // the map is simply built without a coach layer: it is an addition to the rail
+  // network, and an operator changing a URL must not fail the nightly build.
+  //
+  // Coach lines join `lines` here, before the pass below, so that overrides and
+  // the colour fallback apply to them on exactly the same terms as everything
+  // else - `data/overrides.yaml` can repaint a coach line without this module
+  // growing a second code path to let it.
+  const coach = readCoachSnapshot();
+  if (coach) {
+    for (const cl of coach.lines) {
+      lines.set(cl.id, {
+        id: cl.id,
+        ref: cl.ref,
+        name: cl.name,
+        mode: 'coach',
+        colour: cl.colour,
+        colourSource: cl.colour ? 'feed' : 'fallback',
+        operator: cl.operator,
+        network: cl.network,
+        wayIds: [],
+        stopIds: new Set(cl.stops.map((st) => st.id)),
+        relations: [],
+      });
+    }
+    console.log(`==> ${coach.lines.length} coach lines from ${coach.publishers.join(', ') || 'no feed'}`);
+  }
+
   for (const line of lines.values()) {
     const ov = overrides[line.id];
     if (ov?.colour) { line.colour = ov.colour; line.colourSource = 'override'; }
@@ -258,7 +429,12 @@ async function main() {
   console.log(`==> ${lines.size} lines (${skipped} non-rail relations skipped)`);
 
   // --- way geometry ---------------------------------------------------------
+  // Heavy-rail ways are collected as they go past, with the two tags the
+  // closure router reads: `ref`, which on a German railway way is its VzG line
+  // number, and `service`, which marks a siding or yard. They share the
+  // coordinate arrays with `geom`, so the second list costs a pointer each.
   const geom = new Map<string, Coord[]>();
+  const railWays: RailWay[] = [];
   {
     const rl = createInterface({
       input: createReadStream(`${EXTRACT}/rail-ways.geojsonseq`),
@@ -269,11 +445,18 @@ async function main() {
       if (!text) continue;
       const f = JSON.parse(text);
       if (f.geometry?.type === 'LineString' && typeof f.id === 'string' && f.id[0] === 'w') {
-        geom.set(f.id.slice(1), f.geometry.coordinates as Coord[]);
+        const id = f.id.slice(1);
+        const coords = f.geometry.coordinates as Coord[];
+        geom.set(id, coords);
+        // Only `railway=rail`: closures are DB InfraGO's, and a tram or metro
+        // way is not track its restrictions can be on.
+        if (f.properties?.railway === 'rail') {
+          railWays.push({ id, coords, ref: f.properties.ref, service: f.properties.service });
+        }
       }
     }
   }
-  console.log(`==> ${geom.size} way geometries`);
+  console.log(`==> ${geom.size} way geometries (${railWays.length} heavy rail)`);
 
   // Collapse the second track of every double-track corridor, so each line is
   // drawn once rather than as two strokes a lane apart. Once over the whole
@@ -336,6 +519,12 @@ async function main() {
   console.log(`==> ${segments.size} bundle segments`);
 
   // --- bundle chains, ready for tapering -------------------------------------
+  // The stitched corridors are kept rather than dropped, for two reasons now:
+  // the tapers below need both sides of every junction before any feature can
+  // be emitted, and the station marks are laid across these exact bands, so
+  // they have to be measured on this exact geometry (see lib/stopmarks.ts).
+  // Note these chains stay untrimmed - taper trimming is applied per line when
+  // the feature is built, so what the marks measure is the full band.
   interface SegInfo { lineIds: string[]; chains: Coord[][] }
   const segInfos: SegInfo[] = [];
   let maxBundle = 0;
@@ -622,6 +811,37 @@ async function main() {
   }
   console.log(`==> ${features.length} route features (largest bundle: ${maxBundle} lines)`);
 
+  // Coach rides in the same tile layer as the rail network, which is what gets
+  // it selection, search, the legend, the mode filter and the line panel for
+  // nothing. What it does not get is bundling: a GTFS shape is an independent
+  // polyline with no way ids to share, so `offset` is 0 and `bundle` 1 on every
+  // one of them and lines down the same autobahn stack rather than fanning out.
+  // The feed gives every route one brand colour, so a stack reads as one green
+  // trunk - which is what it is. See docs/buses-and-routing.md §5.2.
+  if (coach) {
+    for (const cl of coach.lines) {
+      const line = lines.get(cl.id)!;
+      features.push({
+        type: 'Feature',
+        geometry: cl.parts.length === 1
+          ? { type: 'LineString', coordinates: cl.parts[0] }
+          : { type: 'MultiLineString', coordinates: cl.parts },
+        properties: {
+          line: line.id,
+          ref: line.ref,
+          name: line.name,
+          mode: line.mode,
+          colour: line.colour,
+          operator: line.operator,
+          network: line.network,
+          offset: 0,
+          bundle: 1,
+        },
+      });
+    }
+    console.log(`==> ${coach.lines.length} coach route features`);
+  }
+
   // --- stations -------------------------------------------------------------
   // Read the station points first; each one becomes a bucket that nearby stop
   // positions are snapped into.
@@ -657,6 +877,8 @@ async function main() {
   // always covers the snap radius.
   const CELL = 0.01;
   const SNAP_M = 300;
+  /** See the coach-stop block below for why this is wider than SNAP_M. */
+  const COACH_SNAP_M = 400;
   const cellKey = (lon: number, lat: number) =>
     `${Math.floor(lon / CELL)}:${Math.floor(lat / CELL)}`;
 
@@ -676,11 +898,11 @@ async function main() {
     return Math.hypot(dx, dy);
   }
 
-  function nearestStation(c: Coord): Station | null {
+  function nearestStation(c: Coord, radiusM = SNAP_M): Station | null {
     const [lon, lat] = c;
     const ci = Math.floor(lon / CELL), cj = Math.floor(lat / CELL);
     let best: Station | null = null;
-    let bestD = SNAP_M;
+    let bestD = radiusM;
     for (let i = ci - 1; i <= ci + 1; i++) {
       for (let j = cj - 1; j <= cj + 1; j++) {
         for (const st of grid.get(`${i}:${j}`) ?? []) {
@@ -708,6 +930,9 @@ async function main() {
 
   let direct = 0, snapped = 0, unmatched = 0;
   for (const line of lines.values()) {
+    // Coach stop ids are the feed's, not OSM node ids; they are matched below,
+    // after stop-id resolution, and would only ever count as unmatched here.
+    if (line.mode === 'coach') continue;
     for (const stopId of line.stopIds) {
       // Some relations reference the station node itself - use it directly.
       const exact = stationByNode.get(stopId);
@@ -743,9 +968,80 @@ async function main() {
     console.log(`==> stop id resolution failed, continuing without it: ${(err as Error).message}`);
   }
 
+  // --- coach stops ----------------------------------------------------------
+  // These need none of the resolution above: the feed's own stop id, prefixed
+  // with its MOTIS feed name, *is* the id the departure board asks for (checked
+  // against /stoptimes - `eu-flixbus_<uuid>` returns the board for Munich ZOB).
+  // That is why this runs after `resolveStopIds` rather than feeding into it.
+  if (coach) {
+    const callers = new Map<string, Set<string>>();
+    for (const cl of coach.lines) {
+      for (const st of cl.stops) {
+        const set = callers.get(st.id);
+        if (set) set.add(cl.id); else callers.set(st.id, new Set([cl.id]));
+      }
+    }
+
+    let attached = 0;
+    let own = 0;
+    for (const cs of coach.stops) {
+      const serving = callers.get(cs.id);
+      if (!serving) continue;
+
+      // A coach stop at a Hauptbahnhof *is* the station, under the operator's
+      // own name and a couple of hundred metres away across the forecourt.
+      // Attaching it keeps one dot where a rider sees one place, rather than
+      // "Dresden Hbf" and "Dresden central station (Bayrische Straße)" sitting
+      // next to each other claiming to be different stations. 400 m rather than
+      // the 300 m used for OSM stop positions, because a coach bay is parked at
+      // the far side of the forecourt more often than a platform is.
+      const st = nearestStation([cs.lon, cs.lat], COACH_SNAP_M);
+      if (st) {
+        for (const id of serving) st.served.add(id);
+        attached++;
+        continue;
+      }
+
+      const stop: Station = {
+        id: `coach/${cs.id}`,
+        geometry: { type: 'Point', coordinates: [cs.lon, cs.lat] },
+        props: { name: cs.name },
+        served: new Set(serving),
+      };
+      stations.push(stop);
+      stopIds.set(stop.id, cs.motisId);
+      own++;
+    }
+    console.log(`==> coach stops: ${attached} at a rail station, ${own} of their own`);
+  }
+
+  // --- station marks --------------------------------------------------------
+  // The mark a rider actually sees is not drawn at the station node but across
+  // the bands, covering the lines that call and no others. Computing that is
+  // the one thing here that needs both halves of the build at once - the
+  // stitched corridors and the resolved stop members - so it happens now, with
+  // both in hand. See pipeline/lib/stopmarks.ts for what it is doing and why.
+  // The marks need the slot each line actually landed on, which under
+  // corridor-wide assignment is no longer its index in the bundle: a line
+  // absent from this stretch keeps its slot reserved, so the ordinals can have
+  // gaps. They stay ascending though - a segment's lineIds and its corridor's
+  // ranking are sorted by the same comparator - so a run of adjacent lineIds
+  // is still a run of ascending ordinals, which is what the bars are built on.
+  const markBundles: MarkBundle[] = segInfos.map((seg, segIdx) => ({
+    lineIds: seg.lineIds,
+    chains: seg.chains,
+    slots: seg.lineIds.map((id) => slotFor(segIdx, id)),
+  }));
+
+  const marks = buildStopMarks(
+    markBundles,
+    stations.map((st) => ({ id: st.id, coord: st.geometry.coordinates, served: st.served })),
+  );
+
   const stationFeatures = stations.map((st) => {
     const served = [...st.served];
     const modes = [...new Set(served.map((id) => lines.get(id)!.mode))];
+    const major = /Hbf|Hauptbahnhof/.test(st.props.name);
     return {
       type: 'Feature',
       geometry: st.geometry,
@@ -763,17 +1059,83 @@ async function main() {
         lines: served.join(','),
         lineCount: served.length,
         modes: modes.join(','),
-        interchange: served.length >= 3 ? 1 : 0,
-        major: /Hbf|Hauptbahnhof/.test(st.props.name) ? 1 : 0,
-        // Tram-only stops are far denser than rail stations and are held back
-        // to high zoom by a separate style layer.
-        tramOnly: modes.length > 0 && modes.every((m) => m === 'tram') ? 1 : 0,
+        major: major ? 1 : 0,
+        // A coach stop that is not also a station is a bus bay - a ZOB, an
+        // airport forecourt, a motorway services. Worth drawing, but not at the
+        // zoom where the map is showing the shape of the rail network, and not
+        // labelled as loudly as a Hauptbahnhof.
+        coachOnly: modes.length > 0 && modes.every((m) => m === 'coach') ? 1 : 0,
+        // Which zoom this stop earns its mark at - see STOP_TIERS. It replaces
+        // the `interchange` and `tramOnly` flags this used to carry, both of
+        // which it subsumes. An unserved station is drawn at no zoom at all,
+        // so the rank it gets is only somewhere for it to go.
+        rank: served.length ? stopRank(modes, served.length, major) : 3,
+        // Whether the mark is drawn across the bands or, failing that, on the
+        // node. A station whose corridors are all further off than the snap
+        // radius keeps the old dot there rather than vanishing - and so does
+        // every coach stop, because a GTFS shape is not one of the bundles the
+        // marks are measured on.
+        pill: marks.get(st.id)?.length ? 1 : 0,
       },
     };
   });
 
   const servedCount = stationFeatures.filter((f) => f.properties.lineCount > 0).length;
   console.log(`==> ${stationFeatures.length} stations (${servedCount} with at least one line)`);
+
+  const byRank = new Map<number, number>();
+  const markFeatures = stationFeatures.flatMap((f) => {
+    if (!f.properties.lineCount) return [];
+    const rank = f.properties.rank;
+    byRank.set(rank, (byRank.get(rank) ?? 0) + 1);
+
+    // A station whose corridors are all further off than the snap radius - OSM
+    // has the stop member and the track too far apart to be the same place -
+    // still gets a mark, a one-band one on its own node. That is the dot every
+    // stop used to be, so a data problem costs the mark's precision and never
+    // the mark. `pill` on the station says which of the two happened.
+    const list = marks.get(String(f.properties.id)) ?? [{
+      coord: (f.geometry as { coordinates: Coord }).coordinates,
+      bearing: 0,
+      mid: 0,
+      span: 1,
+      lines: String(f.properties.lines).split(',').filter(Boolean),
+    }];
+
+    // One name per station, on the widest of its bars - a junction has a mark
+    // per corridor and would otherwise be labelled once per corridor too.
+    const widest = list.reduce((a, b) => (b.span > a.span ? b : a));
+    return list.map((m) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: m.coord },
+      properties: {
+        station: f.properties.id,
+        name: f.properties.name,
+        // The lines *this bar* covers, not the station's - so switching a mode
+        // off takes away the bars that were only ever about that mode.
+        lines: m.lines.join(','),
+        span: m.span,
+        mid: Number(m.mid.toFixed(3)),
+        bearing: Number(m.bearing.toFixed(1)),
+        rank,
+        lineCount: f.properties.lineCount,
+        major: f.properties.major,
+        coachOnly: f.properties.coachOnly,
+        primary: m === widest ? 1 : 0,
+      },
+      // The tier table, written into the tiles: a tram stop is not merely
+      // hidden at z8, it is not carried at z8 at all.
+      tippecanoe: { minzoom: Math.floor(STOP_TIER_BY_RANK[rank].mark) },
+    }));
+  });
+
+  const orphans = servedCount - stationFeatures.filter((f) => f.properties.pill).length;
+  const ranks = [...byRank].sort((a, b) => a[0] - b[0])
+    .map(([r, n]) => `rank ${r}: ${n}`).join(', ');
+  console.log(
+    `==> ${markFeatures.length} station marks (${ranks}`
+    + `${orphans ? `; ${orphans} off their corridor, marked on the node` : ''})`,
+  );
 
   // The station list of every line, keyed by line id: the join key the
   // punctuality pipeline needs, since DB's delay feed names a station but has
@@ -793,6 +1155,8 @@ async function main() {
   // --- write ----------------------------------------------------------------
   await writeFeatures(`${OUT}/routes.geojsonl`, features);
   await writeFeatures(`${OUT}/stations.geojsonl`, stationFeatures);
+  await writeFeatures(`${OUT}/stopmarks.geojsonl`, markFeatures);
+  await writeClosures(railWays);
 
   // The committed registry: small, diffable, and the thing a human reviews when
   // a nightly rebuild changes something.
@@ -814,7 +1178,11 @@ async function main() {
   const byMode = Object.fromEntries(
     Object.keys(MODE_SPECS).map((m) => [m, registry.filter((l) => l.mode === m).length]),
   );
-  const tagged = registry.filter((l) => l.colourSource === 'osm').length;
+  // Coach is excluded from both halves: its colour comes from the operator's
+  // feed, so counting it would move a statistic that is about how much of OSM
+  // carries a `colour` tag.
+  const fromOsm = registry.filter((l) => l.mode !== 'coach');
+  const tagged = fromOsm.filter((l) => l.colourSource === 'osm').length;
 
   writeFileSync(
     `${DATA}/lines.json`,
@@ -822,7 +1190,7 @@ async function main() {
       region: active,
       regionName: region.name,
       counts: { lines: registry.length, stations: stationFeatures.length, byMode },
-      colourCoverage: { osmTagged: tagged, total: registry.length },
+      colourCoverage: { osmTagged: tagged, total: fromOsm.length },
       lines: registry,
     }, null, 2) + '\n',
   );
@@ -836,7 +1204,8 @@ async function main() {
   writeFileSync(`${DATA}/line-stations.json`, `{\n${stationLists}\n}\n`);
 
   console.log('==> by mode:', byMode);
-  console.log(`==> OSM colour coverage: ${tagged}/${registry.length} (${Math.round(100 * tagged / registry.length)}%)`);
+  const pct = fromOsm.length ? Math.round(100 * tagged / fromOsm.length) : 0;
+  console.log(`==> OSM colour coverage: ${tagged}/${fromOsm.length} (${pct}%)`);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

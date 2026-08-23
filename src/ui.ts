@@ -6,7 +6,9 @@ import type { LineRecord, Registry } from './main.ts';
 import {
   worstFirst, bands, formatMinutes, type LineScore, type PunctualityFile,
 } from './punctuality.ts';
-import type { ViewState } from './state.ts';
+import type { Tab, ViewState } from './state.ts';
+import { renderPlanner, type PlannerHost } from './planner.ts';
+import { endMoved, formatDate, type ClosureRecord } from './closures.ts';
 
 export { compareLines };
 
@@ -15,12 +17,13 @@ export interface ChromeOptions {
   state: ViewState;
   onToggleMode: (mode: Mode, on: boolean) => void;
   onOperator: (op: string | null) => void;
-  onBasemap: (osm: boolean) => void;
-  onStreets: (on: boolean) => void;
+  onToggleClosures: (on: boolean) => void;
   onToggleSheet: () => void;
   onSelect: (lineId: string) => void;
   onFlyToStation: (lngLat: [number, number]) => void;
   searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
+  onTab: (tab: Tab) => void;
+  plannerHost: PlannerHost;
 }
 
 /**
@@ -212,11 +215,15 @@ function buildModes(): HTMLElement {
   emptyNote = el('p', 'muted', s.noLinesInView);
   box.appendChild(emptyNote);
 
-  // Station symbology, matching the map.
+  // Stop symbology, matching the map: a bar laid across the lines that call,
+  // so its length is the answer and not decoration. The third row is the one
+  // worth spelling out - a gap in a bar is a line that does not stop.
   const legend = el('div', 'legend');
   legend.innerHTML = `
-    <div class="legend-row"><span class="dot interchange"></span>${s.interchange}</div>
-    <div class="legend-row"><span class="dot"></span>${s.station}</div>`;
+    <div class="legend-row"><span class="stopmark"><i></i></span>${s.stopOne}</div>
+    <div class="legend-row"><span class="stopmark"><i class="wide"></i></span>${s.stopShared}</div>
+    <div class="legend-row"><span class="stopmark"><i class="upper"></i><i class="lower"></i>
+      </span>${s.stopSkipped}</div>`;
   box.appendChild(legend);
 
   modeBox = box;
@@ -245,6 +252,121 @@ function syncModes() {
   emptyNote!.hidden = shown > 0;
 }
 
+// ---------------------------------------------------------------------------
+// Construction
+//
+// Its own panel rather than a sixth row in the mode legend: closures are not a
+// mode of transport, they are an annotation over all of them, and a rider
+// reading "Regional 14" next to "Construction 9" would reasonably take the
+// second number to mean nine more lines.
+//
+// The count follows the same rule as the mode counts - what is on the screen,
+// not what the country has - because that is the only number a reader can check
+// against what they are looking at.
+// ---------------------------------------------------------------------------
+
+let closureCountEl: HTMLElement | null = null;
+let closureDayEl: HTMLElement | null = null;
+let closuresInView: number | null = null;
+
+export function setVisibleClosures(n: number) {
+  closuresInView = n;
+  syncClosures();
+}
+
+function syncClosures() {
+  if (!closureCountEl) return;
+  const s = t();
+  if (!opts.state.closures) { closureCountEl.textContent = ''; return; }
+  closureCountEl.textContent = closuresInView === null
+    ? '' : closuresInView ? s.closureCount(closuresInView) : s.noClosuresInView;
+}
+
+function buildClosures(): HTMLElement {
+  const s = t();
+  const box = el('div', 'panel');
+  box.appendChild(el('h2', '', s.closures));
+
+  const row = el('label', 'toggle');
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.checked = opts.state.closures;
+  cb.onchange = () => { opts.onToggleClosures(cb.checked); syncClosures(); };
+  closureCountEl = el('span', 'count');
+  row.append(cb, el('span', 'label', s.showClosures), closureCountEl);
+  box.appendChild(row);
+
+  const legend = el('div', 'legend');
+  legend.innerHTML = `
+    <div class="legend-row"><span class="hazard major"></span>${s.closureLegendMajor}</div>
+    <div class="legend-row"><span class="hazard minor"></span>${s.closureLegendMinor}</div>`;
+  box.appendChild(legend);
+
+  // Said once, in the sidebar, rather than on every panel: the overlay is the
+  // plan as it stood when the tiles were built, not a live picture.
+  closureDayEl = el('p', 'muted small');
+  box.appendChild(closureDayEl);
+  syncClosureDay();
+
+  syncClosures();
+  return box;
+}
+
+/**
+ * The day the drawn closures describe, read off the tiles rather than passed in
+ * through `ChromeOptions`: it is not known when the sidebar is first drawn,
+ * because no tile has loaded yet.
+ *
+ * Written into the note in place rather than by redrawing the sidebar. The
+ * redraw arrives a second or so after load, which is exactly when someone may
+ * already be typing in the search box, and rebuilding the sidebar under them
+ * would take what they had typed with it.
+ */
+let closureDay = '';
+
+function syncClosureDay() {
+  if (!closureDayEl) return;
+  closureDayEl.textContent = closureDay ? t().closureAsOf(formatDate(closureDay)) : '';
+  closureDayEl.hidden = !closureDay;
+}
+
+export function setClosureDay(day: string) {
+  if (day === closureDay) return;
+  closureDay = day;
+  syncClosureDay();
+}
+
+/**
+ * Explore and Plan share the sidebar, so every reference the Explore half keeps
+ * into the DOM has to be dropped when the Plan half replaces it. Each `sync*`
+ * already no-ops on a null, which turns "the legend is not on screen" from a
+ * crash into nothing happening - which is what it should be.
+ */
+function clearExploreRefs() {
+  modeBox = null;
+  modeRows = new Map();
+  emptyNote = null;
+  closureCountEl = null;
+  closureDayEl = null;
+  lineList = null;
+}
+
+function tabBar(): HTMLElement {
+  const s = t();
+  const bar = el('div', 'tabs');
+  bar.setAttribute('role', 'tablist');
+  ([['explore', s.tabExplore], ['plan', s.tabPlan]] as [Tab, string][]).forEach(([tab, label]) => {
+    const on = opts.state.tab === tab;
+    const b = el('button', `tab${on ? ' on' : ''}`, label);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(on));
+    b.onclick = () => opts.onTab(tab);
+    bar.appendChild(b);
+  });
+  return bar;
+}
+
 function draw() {
   const { registry, state } = opts;
   const s = t();
@@ -252,6 +374,16 @@ function draw() {
   root.innerHTML = '';
 
   root.appendChild(sheetHandle());
+  root.appendChild(tabBar());
+
+  if (state.tab === 'plan') {
+    clearExploreRefs();
+    const box = el('div', 'plan-root');
+    root.appendChild(box);
+    renderPlanner(box, opts.plannerHost);
+    root.appendChild(buildFooter());
+    return;
+  }
 
   // --- search ---------------------------------------------------------------
   const searchBox = el('div', 'panel');
@@ -271,6 +403,9 @@ function draw() {
   // --- modes / legend -------------------------------------------------------
   root.appendChild(buildModes());
 
+  // --- construction ---------------------------------------------------------
+  root.appendChild(buildClosures());
+
   // --- operator -------------------------------------------------------------
   const operators = [...new Set(registry.lines.map((l) => l.operator).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'de'));
@@ -285,28 +420,6 @@ function draw() {
   opBox.appendChild(sel);
   root.appendChild(opBox);
 
-  // --- basemap --------------------------------------------------------------
-  const baseBox = el('div', 'panel');
-  baseBox.appendChild(el('h2', '', s.basemap));
-  const baseRow = el('div', 'row');
-  ([[false, s.baseLnvg], [true, s.baseOsm]] as [boolean, string][]).forEach(([osm, label]) => {
-    const b = el('button', `chip${state.osmBasemap === osm ? ' on' : ''}`, label);
-    b.onclick = () => opts.onBasemap(osm);
-    baseRow.appendChild(b);
-  });
-  baseBox.appendChild(baseRow);
-
-  // The raster basemap already is streets, so the underlay has nothing to add.
-  const streetsRow = el('label', 'toggle');
-  const streetsBox = el('input');
-  streetsBox.type = 'checkbox';
-  streetsBox.checked = state.streets;
-  streetsBox.disabled = state.osmBasemap;
-  streetsBox.onchange = () => opts.onStreets(streetsBox.checked);
-  streetsRow.append(streetsBox, el('span', 'label', s.streets));
-  baseBox.appendChild(streetsRow);
-  root.appendChild(baseBox);
-
   // --- line index -----------------------------------------------------------
   const linesBox = el('div', 'panel');
   linesBox.appendChild(el('h2', '', s.lines));
@@ -315,17 +428,62 @@ function draw() {
   linesBox.appendChild(lineList);
   root.appendChild(linesBox);
 
+  root.appendChild(buildFooter());
+}
+
+const REPO = 'https://github.com/jnslmk/openrailtransitmap';
+
+/**
+ * Which build this is: the commit the bundle was made from, linked to that
+ * commit, and the moment it was made. The site redeploys nightly off whatever
+ * `main` holds, so "the current version" is otherwise unanswerable from the
+ * page itself - and a bug report that names a build is worth several that do
+ * not.
+ *
+ * The date is shown in the reader's own time zone, with the exact stamp kept on
+ * the `title` for anyone comparing against a workflow run. A bundle built
+ * outside a git checkout carries no commit, and then the line is omitted
+ * rather than filled with a placeholder that would read as a real build.
+ */
+function buildStamp(): string {
+  if (!__BUILD_COMMIT__) return '';
+  const when = new Date(__BUILD_TIME__);
+  const time = Number.isNaN(when.getTime()) ? '' : when.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const link = `<a href="${REPO}/commit/${__BUILD_COMMIT__}"><code>${__BUILD_COMMIT__}</code></a>`;
+  return `<p class="build" title="${__BUILD_TIME__}">${t().buildStamp(link, time)}</p>`;
+}
+
+/**
+ * The credits, which belong under either tab: a route drawn in the Plan tab is
+ * as much Transitous' work as a departure board is, and the coach lines under
+ * both are FlixMobility's.
+ */
+function buildFooter(): HTMLElement {
+  const s = t();
+  const { registry } = opts;
   const footer = el('footer', 'panel attrib', `
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
-    <a href="https://github.com/jnslmk/openrailtransitmap">Source on GitHub</a>
+    <a href="${REPO}">Source on GitHub</a>
     <span class="live-attrib" hidden>${s.liveAttribution}</span>
-    <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>`);
-  root.appendChild(footer);
+    <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>
+    <span class="closure-attrib" hidden>${s.closureAttribution}</span>
+    <span class="coach-attrib" hidden>${s.coachAttribution}</span>
+    <span class="routing-attrib" hidden>${s.planAttribution}</span>
+    ${buildStamp()}`);
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
   punctAttribEl = footer.querySelector('.punct-attrib');
   punctAttribEl!.hidden = !punctualityUsed;
+  closureAttribEl = footer.querySelector('.closure-attrib');
+  closureAttribEl!.hidden = !closuresUsed;
+  coachAttribEl = footer.querySelector('.coach-attrib');
+  coachAttribEl!.hidden = !coachUsed;
+  routingAttribEl = footer.querySelector('.routing-attrib');
+  routingAttribEl!.hidden = !routingUsed;
+  return footer;
 }
 
 /**
@@ -356,6 +514,49 @@ export function setPunctualityAttributionUsed() {
   if (punctualityUsed) return;
   punctualityUsed = true;
   if (punctAttribEl) punctAttribEl.hidden = false;
+}
+
+/**
+ * DB InfraGO publishes the construction plan as information rather than as open
+ * data, so it is credited wherever it is shown - the same once-only latch the
+ * other two sources use, set the first time a closure is actually drawn.
+ */
+let closureAttribEl: HTMLElement | null = null;
+let closuresUsed = false;
+
+export function setClosureAttributionUsed() {
+  if (closuresUsed) return;
+  closuresUsed = true;
+  if (closureAttribEl) closureAttribEl.hidden = false;
+}
+
+/**
+ * The coach network comes out of the operator's own GTFS, which - like the
+ * construction plan, and unlike everything else on this map - is published
+ * without a licence attached. Same latch, earned the first time a coach line is
+ * counted in view rather than by a click, since it is drawn before anyone
+ * touches it. See pipeline/coach.ts.
+ */
+let coachAttribEl: HTMLElement | null = null;
+let coachUsed = false;
+
+export function setCoachAttributionUsed() {
+  if (coachUsed) return;
+  coachUsed = true;
+  if (coachAttribEl) coachAttribEl.hidden = false;
+}
+
+/**
+ * Transitous asks for visible attribution while its data is on screen, which
+ * for the planner means from the first itinerary it returns.
+ */
+let routingAttribEl: HTMLElement | null = null;
+let routingUsed = false;
+
+export function setRoutingAttributionUsed() {
+  if (routingUsed) return;
+  routingUsed = true;
+  if (routingAttribEl) routingAttribEl.hidden = false;
 }
 
 /**
@@ -557,6 +758,96 @@ export function setLinePunctuality(
     list.appendChild(row);
   }
   host.appendChild(list);
+}
+
+// ---------------------------------------------------------------------------
+// Closure detail panel
+// ---------------------------------------------------------------------------
+
+/**
+ * The panel for one construction closure, in the same slot as the line panel -
+ * only one of the two can be the answer to "what did I just click".
+ *
+ * It leads with the effect rather than with the works, because "Line closed" is
+ * the fact a reader is after and "Points renewal" is why. The history section
+ * only appears once the log has something to say: on a closure first seen today
+ * there is nothing to report but the fact that we started watching, and a row
+ * reading "Rescheduled 0 times" would dress that up as a finding.
+ */
+export function renderClosurePanel(
+  closure: ClosureRecord, handlers: { onClose: () => void },
+) {
+  const host = document.getElementById('detail')!;
+  host.innerHTML = '';
+  host.classList.add('open');
+
+  const s = t();
+  const head = el('div', 'detail-head');
+  const badge = el('span', `badge big hazard-badge effect-${closure.effect}`, '\u26A0');
+  head.append(badge, el('div', 'detail-title', s.closureEffect[closure.effect]));
+
+  const close = el('button', 'close', '\u00d7');
+  close.title = s.close;
+  close.onclick = handlers.onClose;
+  head.appendChild(close);
+  host.appendChild(head);
+
+  host.appendChild(el('p', 'closure-section', closure.section));
+
+  const rows: [string, string][] = [
+    [s.closureWorks, closure.works || '\u2014'],
+    [s.closureLine, closure.routes || '\u2014'],
+  ];
+  // Which track only where there is a choice. A full closure takes both by
+  // definition, and a restriction inside one station is not about a running
+  // direction at all - stating it there is noise dressed as detail.
+  if (!closure.point && closure.effect !== 'closed') {
+    rows.push([s.closureTrack, s.closureDirection[closure.direction]]);
+  }
+  rows.push([s.closureHours, closure.hours || s.closureAllDay]);
+  rows.push([s.closureFrom, formatDate(closure.begin)]);
+  rows.push([s.closureUntil, formatDate(closure.end)]);
+
+  const table = el('dl', 'detail-meta');
+  for (const [k, v] of rows) table.append(el('dt', '', k), el('dd', '', v));
+  host.appendChild(table);
+
+  host.appendChild(closureHistory(closure));
+}
+
+/**
+ * What our own log knows about this closure.
+ *
+ * There is no upstream archive to read - DB publishes the plan as it stands and
+ * nothing before it - so this is the record the nightly job has kept since it
+ * first ran, and it says so when it has nothing. The interesting case is a
+ * possession whose end date has moved: that is the fact no snapshot of the
+ * current plan can tell you, and the reason the log exists at all.
+ */
+function closureHistory(closure: ClosureRecord): HTMLElement {
+  const s = t();
+  const box = el('div', 'closure-history');
+  box.appendChild(el('h4', 'punct-sub', s.closureHistory));
+
+  if (!closure.since) {
+    box.appendChild(el('p', 'muted small', s.closureNoHistory));
+    return box;
+  }
+
+  const list = el('ul', 'closure-log');
+  list.appendChild(el('li', '', `${s.closureSince} ${formatDate(closure.since)}`));
+
+  const moved = endMoved(closure);
+  if (moved === 'later') {
+    list.appendChild(el('li', 'moved-later', s.closureMovedLater(formatDate(closure.firstEnd))));
+  } else if (moved === 'earlier') {
+    list.appendChild(el('li', '', s.closureMovedEarlier(formatDate(closure.firstEnd))));
+  }
+  if (closure.extended > 0) {
+    list.appendChild(el('li', '', s.closureExtended(closure.extended)));
+  }
+  box.appendChild(list);
+  return box;
 }
 
 /** "2026-07" as the month a rider reads, not as a key. */

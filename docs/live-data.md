@@ -135,15 +135,26 @@ before designing UI around it.
 **Physical infrastructure state** is not live data at all — it is in OSM, and our
 own pipeline can render it: `railway=construction`, `railway=proposed`,
 `railway=disused`, `railway=abandoned`. Drawing those as dashed or greyed lines
-needs only an extract change, no API. That covers "this line is being rebuilt"
-much better than a real-time feed does, and it costs nothing at runtime.
+needs only an extract change, no API.
+
+**Resolved, and not this way.** Neither of the above is what a rider means by
+"is the line shut this weekend". OSM's `railway=construction` describes the state
+of the asset — a line rebuilt over one weekend is `railway=rail` before and
+after — and a GTFS-RT alert is per *service*, so it cannot say which section is
+closed. The answer turned out to be DB InfraGO's own possession register at
+strecken.info, read at build time and drawn on the track it closes; see
+[`closures.md`](closures.md), which also records why the alerts route was
+dropped. Alerts remain worth revisiting for *unplanned* disruption, which is a
+different question and a different endpoint.
 
 ## 4. Suggested build order
 
 0. **Station → MOTIS stop id in the pipeline.** Nothing else works without it, and
    it is build-time work with no runtime cost.
 1. **Departures on station click** — one cheap call, immediate payoff.
-2. **Construction/disused lines from OSM** — pipeline-only, no runtime cost.
+2. ~~**Construction/disused lines from OSM**~~ — done differently and better:
+   construction possessions from DB InfraGO, in the pipeline, no runtime cost
+   ([`closures.md`](closures.md)).
 3. **Moving trains** — highest impact, highest care; zoom-gated and throttled,
    after checking in with Transitous.
 4. **Alerts** — once there is evidence the feeds actually carry them.
@@ -228,3 +239,19 @@ Workers, Deno Deploy) that attaches the `User-Agent` and caches responses for
 The one piece that is *not* runtime, and should be done on the server side
 regardless, is the station → stop id mapping: it belongs in the nightly pipeline,
 where a server already exists in the form of CI.
+
+**Followed through.** The seam exists and is two modules: `src/live.ts` owns the
+one `request()` that talks to Transitous, and `src/routing.ts` — the journey
+planner, which is far larger than a departure board and models a different set
+of shapes — calls that function rather than `fetch()` of its own. So the day a
+proxy is needed is still a one-line change to `BASE_URL`, with the planner
+included. The planner also honours the two things §5 asks for that a browser
+*can* do: it never calls the routing endpoint except on a deliberate act by the
+user, and it answers repeated queries from a client-side cache.
+
+Coach lines are the one place this reasoning was applied and came out the other
+way. `/api/v1/map/trips` would have served them, but only for trips running in
+the window asked for, at several megabytes a night against the endpoint
+Transitous names as resource-intensive — for data that changes weekly. The
+operator's own GTFS is complete, cheaper, better described and costs Transitous
+nothing. See [`buses-and-routing.md`](buses-and-routing.md) §10.

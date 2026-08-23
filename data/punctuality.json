@@ -37,6 +37,3174 @@
     91
   ],
   "lines": {
+    "longdistance|db intercity|ic 17": {
+      "aggregate": {
+        "onTime": 0.447,
+        "median": 7,
+        "p90": 44,
+        "n": 219,
+        "cancelRate": 0.0091
+      },
+      "hist": [
+        36,
+        17,
+        12,
+        14,
+        9,
+        9,
+        11,
+        8,
+        7,
+        4,
+        7,
+        3,
+        1,
+        1,
+        3,
+        3,
+        3,
+        5,
+        3,
+        3,
+        0,
+        21,
+        16,
+        16,
+        5,
+        0
+      ],
+      "stations": {}
+    },
+    "longdistance|db intercity|ic 26.1": {
+      "aggregate": {
+        "onTime": 0.285,
+        "median": 23,
+        "p90": 88,
+        "n": 518,
+        "cancelRate": 0.2336
+      },
+      "hist": [
+        44,
+        23,
+        13,
+        10,
+        13,
+        10,
+        9,
+        4,
+        6,
+        10,
+        8,
+        5,
+        2,
+        2,
+        7,
+        5,
+        1,
+        3,
+        2,
+        7,
+        4,
+        44,
+        47,
+        29,
+        52,
+        37
+      ],
+      "stations": {}
+    },
+    "longdistance|db intercity|ic 30": {
+      "aggregate": {
+        "onTime": 0.365,
+        "median": 10,
+        "p90": 53,
+        "n": 647,
+        "cancelRate": 0.0634
+      },
+      "hist": [
+        52,
+        56,
+        26,
+        25,
+        31,
+        31,
+        29,
+        21,
+        13,
+        13,
+        18,
+        12,
+        11,
+        10,
+        11,
+        8,
+        8,
+        7,
+        3,
+        8,
+        6,
+        62,
+        68,
+        32,
+        43,
+        2
+      ],
+      "stations": {}
+    },
+    "longdistance|db intercity|ic 32": {
+      "aggregate": {
+        "onTime": 0.32,
+        "median": 13,
+        "p90": 48,
+        "n": 1168,
+        "cancelRate": 0.0762
+      },
+      "hist": [
+        53,
+        66,
+        77,
+        55,
+        41,
+        53,
+        38,
+        27,
+        24,
+        25,
+        25,
+        24,
+        23,
+        20,
+        16,
+        27,
+        25,
+        30,
+        14,
+        17,
+        14,
+        147,
+        122,
+        66,
+        35,
+        15
+      ],
+      "stations": {}
+    },
+    "longdistance|db intercity|ic 35": {
+      "aggregate": {
+        "onTime": 0.513,
+        "median": 5,
+        "p90": 33,
+        "n": 38136,
+        "cancelRate": 0.0945
+      },
+      "hist": [
+        5073,
+        4227,
+        2786,
+        2179,
+        1853,
+        1592,
+        1370,
+        1152,
+        971,
+        886,
+        803,
+        676,
+        673,
+        598,
+        586,
+        561,
+        502,
+        462,
+        407,
+        390,
+        397,
+        2596,
+        1957,
+        990,
+        601,
+        245
+      ],
+      "stations": {
+        "Duisburg Hbf": {
+          "onTime": 0.436,
+          "median": 7,
+          "p90": 30,
+          "n": 3173
+        },
+        "Düsseldorf Hbf": {
+          "onTime": 0.476,
+          "median": 6,
+          "p90": 32,
+          "n": 3137
+        },
+        "Emden Hbf": {
+          "onTime": 0.744,
+          "median": 1,
+          "p90": 24,
+          "n": 1586
+        },
+        "Gelsenkirchen Hbf": {
+          "onTime": 0.352,
+          "median": 8,
+          "p90": 34,
+          "n": 3338
+        },
+        "Köln Hbf": {
+          "onTime": 0.828,
+          "median": 1,
+          "p90": 13,
+          "n": 1628
+        },
+        "Leer (Ostfriesl)": {
+          "onTime": 0.624,
+          "median": 2,
+          "p90": 37,
+          "n": 2092
+        },
+        "Lingen (Ems)": {
+          "onTime": 0.542,
+          "median": 4,
+          "p90": 40,
+          "n": 2260
+        },
+        "Meppen": {
+          "onTime": 0.554,
+          "median": 4,
+          "p90": 39,
+          "n": 2260
+        },
+        "Münster (Westf) Hbf": {
+          "onTime": 0.494,
+          "median": 6,
+          "p90": 35,
+          "n": 3482
+        },
+        "Norddeich": {
+          "onTime": 0.72,
+          "median": 1,
+          "p90": 27,
+          "n": 704
+        },
+        "Norddeich Mole": {
+          "onTime": 0.891,
+          "median": 0,
+          "p90": 6,
+          "n": 493
+        },
+        "Norden": {
+          "onTime": 0.642,
+          "median": 2,
+          "p90": 34,
+          "n": 898
+        },
+        "Oberhausen Hbf": {
+          "onTime": 0.399,
+          "median": 7,
+          "p90": 29,
+          "n": 3009
+        },
+        "Papenburg (Ems)": {
+          "onTime": 0.58,
+          "median": 3,
+          "p90": 38,
+          "n": 2260
+        },
+        "Recklinghausen Hbf": {
+          "onTime": 0.36,
+          "median": 8,
+          "p90": 37,
+          "n": 2264
+        },
+        "Rheine": {
+          "onTime": 0.545,
+          "median": 4,
+          "p90": 36,
+          "n": 3471
+        },
+        "Wanne-Eickel Hbf": {
+          "onTime": 0.35,
+          "median": 8,
+          "p90": 35,
+          "n": 2047
+        }
+      }
+    },
+    "longdistance|db intercity|ic 50": {
+      "aggregate": {
+        "onTime": 0.513,
+        "median": 5,
+        "p90": 38,
+        "n": 19099,
+        "cancelRate": 0.157
+      },
+      "hist": [
+        2819,
+        1975,
+        1223,
+        965,
+        703,
+        577,
+        466,
+        447,
+        378,
+        403,
+        349,
+        316,
+        299,
+        291,
+        222,
+        220,
+        203,
+        218,
+        206,
+        193,
+        189,
+        1329,
+        1058,
+        573,
+        392,
+        86
+      ],
+      "stations": {
+        "Altenbeken": {
+          "onTime": 0.287,
+          "median": 12,
+          "p90": 43,
+          "n": 727
+        },
+        "Bebra": {
+          "onTime": 0.674,
+          "median": 2,
+          "p90": 16,
+          "n": 291
+        },
+        "Bochum Hbf": {
+          "onTime": 0.283,
+          "median": 12,
+          "p90": 45,
+          "n": 593
+        },
+        "Dortmund Hbf": {
+          "onTime": 0.355,
+          "median": 10,
+          "p90": 43,
+          "n": 680
+        },
+        "Duisburg Hbf": {
+          "onTime": 0.348,
+          "median": 12,
+          "p90": 45,
+          "n": 594
+        },
+        "Düsseldorf Flughafen": {
+          "onTime": 0.298,
+          "median": 13,
+          "p90": 45,
+          "n": 580
+        },
+        "Düsseldorf Hbf": {
+          "onTime": 0.375,
+          "median": 9,
+          "p90": 42,
+          "n": 459
+        },
+        "Eisenach Hbf": {
+          "onTime": 0.437,
+          "median": 8,
+          "p90": 38,
+          "n": 1004
+        },
+        "Erfurt Hbf": {
+          "onTime": 0.663,
+          "median": 3,
+          "p90": 27,
+          "n": 1365
+        },
+        "Essen Hbf": {
+          "onTime": 0.282,
+          "median": 13,
+          "p90": 47,
+          "n": 593
+        },
+        "Gera Hbf": {
+          "onTime": 0.964,
+          "median": 0,
+          "p90": 2,
+          "n": 548
+        },
+        "Gotha": {
+          "onTime": 0.521,
+          "median": 5,
+          "p90": 35,
+          "n": 1108
+        },
+        "Hamm (Westf) Hbf": {
+          "onTime": 0.313,
+          "median": 12,
+          "p90": 44,
+          "n": 751
+        },
+        "Hermsdorf-Klosterlausnitz": {
+          "onTime": 0.732,
+          "median": 2,
+          "p90": 27,
+          "n": 1087
+        },
+        "Jena West": {
+          "onTime": 0.722,
+          "median": 1,
+          "p90": 28,
+          "n": 1090
+        },
+        "Jena-Göschwitz": {
+          "onTime": 0.737,
+          "median": 1,
+          "p90": 28,
+          "n": 1088
+        },
+        "Kassel-Wilhelmshöhe": {
+          "onTime": 0.439,
+          "median": 7,
+          "p90": 38,
+          "n": 946
+        },
+        "Köln Hbf": {
+          "onTime": 0.752,
+          "median": 1,
+          "p90": 16,
+          "n": 271
+        },
+        "Lippstadt": {
+          "onTime": 0.306,
+          "median": 11,
+          "p90": 43,
+          "n": 728
+        },
+        "Paderborn Hbf": {
+          "onTime": 0.312,
+          "median": 11,
+          "p90": 44,
+          "n": 750
+        },
+        "Soest": {
+          "onTime": 0.335,
+          "median": 10,
+          "p90": 43,
+          "n": 728
+        },
+        "Stadtroda": {
+          "onTime": 0.749,
+          "median": 1,
+          "p90": 27,
+          "n": 1088
+        },
+        "Warburg (Westf)": {
+          "onTime": 0.3,
+          "median": 11,
+          "p90": 41,
+          "n": 726
+        },
+        "Weimar": {
+          "onTime": 0.74,
+          "median": 1,
+          "p90": 24,
+          "n": 1304
+        }
+      }
+    },
+    "longdistance|db intercity|ic 55": {
+      "aggregate": {
+        "onTime": 0.601,
+        "median": 3,
+        "p90": 34,
+        "n": 10494,
+        "cancelRate": 0.1325
+      },
+      "hist": [
+        1981,
+        1565,
+        708,
+        528,
+        364,
+        326,
+        279,
+        230,
+        205,
+        164,
+        156,
+        152,
+        147,
+        127,
+        114,
+        101,
+        92,
+        83,
+        70,
+        72,
+        62,
+        559,
+        451,
+        306,
+        187,
+        75
+      ],
+      "stations": {
+        "Bad Oeynhausen": {
+          "onTime": 0.697,
+          "median": 1,
+          "p90": 25,
+          "n": 706
+        },
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.527,
+          "median": 5,
+          "p90": 32,
+          "n": 205
+        },
+        "Bielefeld Hbf": {
+          "onTime": 0.611,
+          "median": 3,
+          "p90": 33,
+          "n": 1069
+        },
+        "Bochum Hbf": {
+          "onTime": 0.432,
+          "median": 8,
+          "p90": 62,
+          "n": 277
+        },
+        "Braunschweig Hbf": {
+          "onTime": 0.491,
+          "median": 6,
+          "p90": 35,
+          "n": 314
+        },
+        "Dortmund Hbf": {
+          "onTime": 0.63,
+          "median": 2,
+          "p90": 38,
+          "n": 916
+        },
+        "Duisburg Hbf": {
+          "onTime": 0.496,
+          "median": 6,
+          "p90": 67,
+          "n": 267
+        },
+        "Düsseldorf Hbf": {
+          "onTime": 0.504,
+          "median": 5,
+          "p90": 57,
+          "n": 336
+        },
+        "Essen Hbf": {
+          "onTime": 0.44,
+          "median": 7,
+          "p90": 58,
+          "n": 356
+        },
+        "Gütersloh Hbf": {
+          "onTime": 0.688,
+          "median": 2,
+          "p90": 24,
+          "n": 863
+        },
+        "Hagen Hbf": {
+          "onTime": 0.371,
+          "median": 7,
+          "p90": 30,
+          "n": 155
+        },
+        "Hamm (Westf) Hbf": {
+          "onTime": 0.557,
+          "median": 4,
+          "p90": 35,
+          "n": 1074
+        },
+        "Hannover Hbf": {
+          "onTime": 0.637,
+          "median": 2,
+          "p90": 29,
+          "n": 754
+        },
+        "Herford": {
+          "onTime": 0.64,
+          "median": 3,
+          "p90": 26,
+          "n": 886
+        },
+        "Köln Hbf": {
+          "onTime": 0.865,
+          "median": 0,
+          "p90": 9,
+          "n": 302
+        },
+        "Minden (Westf)": {
+          "onTime": 0.607,
+          "median": 3,
+          "p90": 34,
+          "n": 825
+        },
+        "Solingen Hbf": {
+          "onTime": 0.701,
+          "median": 1,
+          "p90": 23,
+          "n": 155
+        },
+        "Wolfsburg Hbf": {
+          "onTime": 0.216,
+          "median": 11,
+          "p90": 49,
+          "n": 117
+        },
+        "Wuppertal Hbf": {
+          "onTime": 0.609,
+          "median": 3,
+          "p90": 23,
+          "n": 155
+        }
+      }
+    },
+    "longdistance|db intercity|ic 56": {
+      "aggregate": {
+        "onTime": 0.63,
+        "median": 3,
+        "p90": 23,
+        "n": 9844,
+        "cancelRate": 0.0928
+      },
+      "hist": [
+        2270,
+        1249,
+        739,
+        530,
+        432,
+        410,
+        324,
+        267,
+        247,
+        201,
+        184,
+        151,
+        127,
+        119,
+        127,
+        123,
+        120,
+        88,
+        77,
+        66,
+        73,
+        468,
+        296,
+        108,
+        115,
+        19
+      ],
+      "stations": {
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.583,
+          "median": 4,
+          "p90": 27,
+          "n": 380
+        },
+        "Berlin Ostbahnhof": {
+          "onTime": 0.699,
+          "median": 3,
+          "p90": 24,
+          "n": 123
+        },
+        "Berlin Südkreuz": {
+          "onTime": 0.856,
+          "median": 1,
+          "p90": 8,
+          "n": 102
+        },
+        "Berlin Zoologischer Garten": {
+          "onTime": 0.518,
+          "median": 4,
+          "p90": 34,
+          "n": 177
+        },
+        "Berlin-Spandau": {
+          "onTime": 0.505,
+          "median": 5,
+          "p90": 28,
+          "n": 107
+        },
+        "Berlin-Wannsee": {
+          "onTime": 0.388,
+          "median": 9,
+          "p90": 38,
+          "n": 294
+        },
+        "Brandenburg Hbf": {
+          "onTime": 0.357,
+          "median": 9,
+          "p90": 31,
+          "n": 299
+        },
+        "Braunschweig Hbf": {
+          "onTime": 0.608,
+          "median": 4,
+          "p90": 20,
+          "n": 1049
+        },
+        "Bremen Hbf": {
+          "onTime": 0.805,
+          "median": 1,
+          "p90": 13,
+          "n": 458
+        },
+        "Delmenhorst": {
+          "onTime": 0.852,
+          "median": 1,
+          "p90": 8,
+          "n": 146
+        },
+        "Halle (Saale) Hbf": {
+          "onTime": 0.621,
+          "median": 2,
+          "p90": 26,
+          "n": 764
+        },
+        "Hannover Hbf": {
+          "onTime": 0.813,
+          "median": 1,
+          "p90": 10,
+          "n": 918
+        },
+        "Helmstedt": {
+          "onTime": 0.531,
+          "median": 5,
+          "p90": 24,
+          "n": 1049
+        },
+        "Köthen": {
+          "onTime": 0.545,
+          "median": 4,
+          "p90": 27,
+          "n": 763
+        },
+        "Leipzig Hbf": {
+          "onTime": 0.944,
+          "median": 1,
+          "p90": 2,
+          "n": 234
+        },
+        "Magdeburg Hbf": {
+          "onTime": 0.475,
+          "median": 6,
+          "p90": 28,
+          "n": 1056
+        },
+        "Nienburg (Weser)": {
+          "onTime": 0.733,
+          "median": 2,
+          "p90": 18,
+          "n": 310
+        },
+        "Oldenburg (Oldb) Hbf": {
+          "onTime": 0.937,
+          "median": 1,
+          "p90": 3,
+          "n": 207
+        },
+        "Potsdam Hbf": {
+          "onTime": 0.419,
+          "median": 9,
+          "p90": 35,
+          "n": 294
+        },
+        "Verden (Aller)": {
+          "onTime": 0.86,
+          "median": 1,
+          "p90": 7,
+          "n": 186
+        }
+      }
+    },
+    "longdistance|db intercity|ic 57": {
+      "aggregate": {
+        "onTime": 0.828,
+        "median": 1,
+        "p90": 9,
+        "n": 2397,
+        "cancelRate": 0.1423
+      },
+      "hist": [
+        793,
+        438,
+        184,
+        122,
+        101,
+        64,
+        71,
+        37,
+        28,
+        21,
+        15,
+        17,
+        14,
+        11,
+        15,
+        6,
+        6,
+        9,
+        3,
+        3,
+        11,
+        22,
+        26,
+        17,
+        16,
+        6
+      ],
+      "stations": {
+        "Bad Kleinen": {
+          "onTime": 0.853,
+          "median": 1,
+          "p90": 8,
+          "n": 580
+        },
+        "Bützow": {
+          "onTime": 0.871,
+          "median": 0,
+          "p90": 6,
+          "n": 580
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.89,
+          "median": 1,
+          "p90": 6,
+          "n": 273
+        },
+        "Lübeck Hbf": {
+          "onTime": 0.728,
+          "median": 2,
+          "p90": 14,
+          "n": 567
+        },
+        "Rostock Hbf": {
+          "onTime": 0.955,
+          "median": 1,
+          "p90": 3,
+          "n": 306
+        }
+      }
+    },
+    "longdistance|db intercity|ic 61": {
+      "aggregate": {
+        "onTime": 0.709,
+        "median": 2,
+        "p90": 17,
+        "n": 34624,
+        "cancelRate": 0.0929
+      },
+      "hist": [
+        8727,
+        4931,
+        3084,
+        2219,
+        1849,
+        1447,
+        1214,
+        897,
+        764,
+        617,
+        543,
+        466,
+        341,
+        320,
+        257,
+        227,
+        214,
+        177,
+        174,
+        201,
+        193,
+        1314,
+        700,
+        284,
+        181,
+        65
+      ],
+      "stations": {
+        "Aalen Hbf": {
+          "onTime": 0.668,
+          "median": 3,
+          "p90": 15,
+          "n": 2274
+        },
+        "Ansbach": {
+          "onTime": 0.654,
+          "median": 3,
+          "p90": 17,
+          "n": 2443
+        },
+        "Bamberg": {
+          "onTime": 0.609,
+          "median": 4,
+          "p90": 25,
+          "n": 1221
+        },
+        "Crailsheim": {
+          "onTime": 0.671,
+          "median": 3,
+          "p90": 17,
+          "n": 2455
+        },
+        "Ellwangen": {
+          "onTime": 0.641,
+          "median": 4,
+          "p90": 17,
+          "n": 2274
+        },
+        "Erlangen": {
+          "onTime": 0.68,
+          "median": 2,
+          "p90": 20,
+          "n": 680
+        },
+        "Jena Paradies": {
+          "onTime": 0.777,
+          "median": 0,
+          "p90": 20,
+          "n": 682
+        },
+        "Jena-Göschwitz": {
+          "onTime": 0.764,
+          "median": 0,
+          "p90": 22,
+          "n": 682
+        },
+        "Karlsruhe Hbf": {
+          "onTime": 0.948,
+          "median": 1,
+          "p90": 3,
+          "n": 1641
+        },
+        "Kronach": {
+          "onTime": 0.686,
+          "median": 2,
+          "p90": 26,
+          "n": 681
+        },
+        "Leipzig Hbf": {
+          "onTime": 0.951,
+          "median": 0,
+          "p90": 2,
+          "n": 616
+        },
+        "Lichtenfels": {
+          "onTime": 0.7,
+          "median": 2,
+          "p90": 23,
+          "n": 681
+        },
+        "Ludwigsstadt": {
+          "onTime": 0.715,
+          "median": 1,
+          "p90": 25,
+          "n": 681
+        },
+        "Mühlacker": {
+          "onTime": 0.714,
+          "median": 2,
+          "p90": 15,
+          "n": 1961
+        },
+        "Naumburg (Saale) Hbf": {
+          "onTime": 0.755,
+          "median": 1,
+          "p90": 20,
+          "n": 682
+        },
+        "Nürnberg Hbf": {
+          "onTime": 0.762,
+          "median": 1,
+          "p90": 17,
+          "n": 2105
+        },
+        "Pforzheim Hbf": {
+          "onTime": 0.717,
+          "median": 2,
+          "p90": 18,
+          "n": 2502
+        },
+        "Rudolstadt (Thür)": {
+          "onTime": 0.739,
+          "median": 1,
+          "p90": 23,
+          "n": 682
+        },
+        "Saalfeld (Saale)": {
+          "onTime": 0.755,
+          "median": 0,
+          "p90": 23,
+          "n": 682
+        },
+        "Schorndorf": {
+          "onTime": 0.767,
+          "median": 2,
+          "p90": 13,
+          "n": 585
+        },
+        "Schwäbisch Gmünd": {
+          "onTime": 0.664,
+          "median": 4,
+          "p90": 15,
+          "n": 2274
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.669,
+          "median": 3,
+          "p90": 19,
+          "n": 3154
+        },
+        "Vaihingen (Enz)": {
+          "onTime": 0.698,
+          "median": 2,
+          "p90": 16,
+          "n": 2264
+        },
+        "Weißenfels": {
+          "onTime": 0.723,
+          "median": 2,
+          "p90": 20,
+          "n": 682
+        }
+      }
+    },
+    "longdistance|db intercity|ice 60": {
+      "aggregate": {
+        "onTime": 0.725,
+        "median": 2,
+        "p90": 14,
+        "n": 2620,
+        "cancelRate": 0.1298
+      },
+      "hist": [
+        503,
+        426,
+        274,
+        214,
+        142,
+        93,
+        106,
+        59,
+        50,
+        44,
+        44,
+        25,
+        27,
+        31,
+        26,
+        24,
+        18,
+        20,
+        15,
+        17,
+        9,
+        51,
+        38,
+        10,
+        12,
+        2
+      ],
+      "stations": {
+        "Augsburg Hbf": {
+          "onTime": 0.738,
+          "median": 2,
+          "p90": 14,
+          "n": 119
+        },
+        "Baden-Baden": {
+          "onTime": 0.696,
+          "median": 3,
+          "p90": 16,
+          "n": 245
+        },
+        "Bruchsal": {
+          "onTime": 0.725,
+          "median": 2,
+          "p90": 13,
+          "n": 389
+        },
+        "Freiburg (Breisgau) Hbf": {
+          "onTime": 0.632,
+          "median": 3,
+          "p90": 19,
+          "n": 245
+        },
+        "Günzburg": {
+          "onTime": 0.781,
+          "median": 2,
+          "p90": 16,
+          "n": 118
+        },
+        "Karlsruhe Hbf": {
+          "onTime": 0.75,
+          "median": 2,
+          "p90": 12,
+          "n": 247
+        },
+        "Karlsruhe-Durlach": {
+          "onTime": 0.813,
+          "median": 1,
+          "p90": 11,
+          "n": 268
+        },
+        "München Hbf": {
+          "onTime": 0.757,
+          "median": 3,
+          "p90": 10,
+          "n": 119
+        },
+        "München-Pasing": {
+          "onTime": 0.729,
+          "median": 3,
+          "p90": 10,
+          "n": 119
+        },
+        "Offenburg": {
+          "onTime": 0.692,
+          "median": 2,
+          "p90": 17,
+          "n": 242
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.705,
+          "median": 2,
+          "p90": 13,
+          "n": 390
+        },
+        "Ulm Hbf": {
+          "onTime": 0.745,
+          "median": 1,
+          "p90": 17,
+          "n": 119
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ic 77": {
+      "aggregate": {
+        "onTime": 0.513,
+        "median": 5,
+        "p90": 38,
+        "n": 19422,
+        "cancelRate": 0.068
+      },
+      "hist": [
+        3066,
+        1993,
+        1422,
+        1155,
+        910,
+        739,
+        586,
+        542,
+        456,
+        402,
+        401,
+        322,
+        324,
+        285,
+        283,
+        277,
+        239,
+        241,
+        204,
+        192,
+        209,
+        1466,
+        1241,
+        486,
+        430,
+        231
+      ],
+      "stations": {
+        "Bad Bentheim": {
+          "onTime": 0.616,
+          "median": 3,
+          "p90": 34,
+          "n": 2031
+        },
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.569,
+          "median": 4,
+          "p90": 39,
+          "n": 2184
+        },
+        "Berlin Ostbahnhof": {
+          "onTime": 0.813,
+          "median": 1,
+          "p90": 11,
+          "n": 1020
+        },
+        "Berlin Südkreuz": {
+          "onTime": 0.841,
+          "median": 1,
+          "p90": 9,
+          "n": 247
+        },
+        "Berlin-Spandau": {
+          "onTime": 0.473,
+          "median": 7,
+          "p90": 43,
+          "n": 2565
+        },
+        "Bünde (Westf)": {
+          "onTime": 0.465,
+          "median": 6,
+          "p90": 36,
+          "n": 2031
+        },
+        "Hannover Hbf": {
+          "onTime": 0.445,
+          "median": 7,
+          "p90": 39,
+          "n": 2894
+        },
+        "Osnabrück Hbf": {
+          "onTime": 0.438,
+          "median": 7,
+          "p90": 38,
+          "n": 3132
+        },
+        "Rheine": {
+          "onTime": 0.5,
+          "median": 5,
+          "p90": 38,
+          "n": 3220
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ic 87": {
+      "aggregate": {
+        "onTime": 0.68,
+        "median": 3,
+        "p90": 16,
+        "n": 20513,
+        "cancelRate": 0.0346
+      },
+      "hist": [
+        3592,
+        2904,
+        2126,
+        1872,
+        1642,
+        1326,
+        952,
+        754,
+        673,
+        557,
+        377,
+        268,
+        219,
+        188,
+        193,
+        162,
+        158,
+        141,
+        162,
+        121,
+        119,
+        665,
+        398,
+        129,
+        88,
+        17
+      ],
+      "stations": {
+        "Böblingen": {
+          "onTime": 0.694,
+          "median": 3,
+          "p90": 17,
+          "n": 2982
+        },
+        "Horb": {
+          "onTime": 0.549,
+          "median": 5,
+          "p90": 18,
+          "n": 3136
+        },
+        "Rottweil": {
+          "onTime": 0.566,
+          "median": 5,
+          "p90": 17,
+          "n": 3180
+        },
+        "Singen (Hohentwiel)": {
+          "onTime": 0.737,
+          "median": 2,
+          "p90": 17,
+          "n": 5430
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.882,
+          "median": 1,
+          "p90": 6,
+          "n": 2262
+        },
+        "Stuttgart-Vaihingen": {
+          "onTime": 0.913,
+          "median": 0,
+          "p90": 5,
+          "n": 338
+        },
+        "Tuttlingen": {
+          "onTime": 0.645,
+          "median": 4,
+          "p90": 16,
+          "n": 3185
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 12": {
+      "aggregate": {
+        "onTime": 0.561,
+        "median": 4,
+        "p90": 29,
+        "n": 63300,
+        "cancelRate": 0.0384
+      },
+      "hist": [
+        13683,
+        6536,
+        4485,
+        3775,
+        3061,
+        2612,
+        2295,
+        2014,
+        1722,
+        1523,
+        1335,
+        1107,
+        1048,
+        905,
+        816,
+        850,
+        711,
+        688,
+        618,
+        600,
+        606,
+        4106,
+        2627,
+        1288,
+        1146,
+        713
+      ],
+      "stations": {
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.668,
+          "median": 2,
+          "p90": 28,
+          "n": 4782
+        },
+        "Berlin Ostbahnhof": {
+          "onTime": 0.878,
+          "median": 1,
+          "p90": 7,
+          "n": 2063
+        },
+        "Berlin Zoologischer Garten": {
+          "onTime": 0.72,
+          "median": 0,
+          "p90": 33,
+          "n": 744
+        },
+        "Berlin-Spandau": {
+          "onTime": 0.653,
+          "median": 2,
+          "p90": 29,
+          "n": 4839
+        },
+        "Braunschweig Hbf": {
+          "onTime": 0.527,
+          "median": 5,
+          "p90": 28,
+          "n": 4824
+        },
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.465,
+          "median": 6,
+          "p90": 32,
+          "n": 3649
+        },
+        "Frankfurt (Main) Süd": {
+          "onTime": 0.568,
+          "median": 4,
+          "p90": 22,
+          "n": 657
+        },
+        "Freiburg (Breisgau) Hbf": {
+          "onTime": 0.57,
+          "median": 4,
+          "p90": 34,
+          "n": 3256
+        },
+        "Fulda": {
+          "onTime": 0.537,
+          "median": 5,
+          "p90": 31,
+          "n": 4378
+        },
+        "Göttingen": {
+          "onTime": 0.545,
+          "median": 4,
+          "p90": 30,
+          "n": 4934
+        },
+        "Hanau Hbf": {
+          "onTime": 0.47,
+          "median": 6,
+          "p90": 33,
+          "n": 3746
+        },
+        "Hildesheim Hbf": {
+          "onTime": 0.439,
+          "median": 7,
+          "p90": 30,
+          "n": 4824
+        },
+        "Karlsruhe Hbf": {
+          "onTime": 0.545,
+          "median": 5,
+          "p90": 30,
+          "n": 3558
+        },
+        "Kassel-Wilhelmshöhe": {
+          "onTime": 0.554,
+          "median": 4,
+          "p90": 30,
+          "n": 4835
+        },
+        "Mannheim Hbf": {
+          "onTime": 0.607,
+          "median": 3,
+          "p90": 30,
+          "n": 3718
+        },
+        "Offenburg": {
+          "onTime": 0.529,
+          "median": 5,
+          "p90": 37,
+          "n": 3284
+        },
+        "Wolfsburg Hbf": {
+          "onTime": 0.515,
+          "median": 5,
+          "p90": 29,
+          "n": 4839
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 13": {
+      "aggregate": {
+        "onTime": 0.643,
+        "median": 3,
+        "p90": 22,
+        "n": 650,
+        "cancelRate": 0.0815
+      },
+      "hist": [
+        121,
+        95,
+        56,
+        41,
+        37,
+        34,
+        30,
+        19,
+        20,
+        13,
+        11,
+        8,
+        3,
+        6,
+        4,
+        4,
+        6,
+        7,
+        2,
+        10,
+        5,
+        34,
+        25,
+        6,
+        0,
+        0
+      ],
+      "stations": {
+        "Braunschweig Hbf": {
+          "onTime": 0.709,
+          "median": 3,
+          "p90": 13,
+          "n": 118
+        },
+        "Frankfurt (Main) Süd": {
+          "onTime": 0.659,
+          "median": 2,
+          "p90": 21,
+          "n": 103
+        },
+        "Fulda": {
+          "onTime": 0.639,
+          "median": 3,
+          "p90": 28,
+          "n": 103
+        },
+        "Göttingen": {
+          "onTime": 0.592,
+          "median": 4,
+          "p90": 24,
+          "n": 104
+        },
+        "Hildesheim Hbf": {
+          "onTime": 0.67,
+          "median": 3,
+          "p90": 17,
+          "n": 118
+        },
+        "Kassel-Wilhelmshöhe": {
+          "onTime": 0.582,
+          "median": 4,
+          "p90": 27,
+          "n": 104
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 15": {
+      "aggregate": {
+        "onTime": 0.74,
+        "median": 2,
+        "p90": 19,
+        "n": 9648,
+        "cancelRate": 0.0744
+      },
+      "hist": [
+        2321,
+        2015,
+        877,
+        636,
+        429,
+        331,
+        242,
+        176,
+        147,
+        145,
+        114,
+        90,
+        76,
+        76,
+        81,
+        82,
+        61,
+        61,
+        69,
+        52,
+        46,
+        314,
+        256,
+        71,
+        111,
+        51
+      ],
+      "stations": {
+        "Anklam": {
+          "onTime": 0.809,
+          "median": 1,
+          "p90": 16,
+          "n": 668
+        },
+        "Bergen auf Rügen": {
+          "onTime": 0.811,
+          "median": 1,
+          "p90": 9,
+          "n": 417
+        },
+        "Berlin Gesundbrunnen": {
+          "onTime": 0.654,
+          "median": 3,
+          "p90": 24,
+          "n": 826
+        },
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.624,
+          "median": 3,
+          "p90": 24,
+          "n": 779
+        },
+        "Berlin Südkreuz": {
+          "onTime": 0.652,
+          "median": 3,
+          "p90": 26,
+          "n": 672
+        },
+        "Eberswalde Hbf": {
+          "onTime": 0.734,
+          "median": 2,
+          "p90": 19,
+          "n": 861
+        },
+        "Erfurt Hbf": {
+          "onTime": 0.597,
+          "median": 4,
+          "p90": 29,
+          "n": 581
+        },
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.867,
+          "median": 1,
+          "p90": 8,
+          "n": 237
+        },
+        "Greifswald": {
+          "onTime": 0.802,
+          "median": 1,
+          "p90": 13,
+          "n": 860
+        },
+        "Halle (Saale) Hbf": {
+          "onTime": 0.605,
+          "median": 3,
+          "p90": 29,
+          "n": 583
+        },
+        "Ostseebad Binz": {
+          "onTime": 0.954,
+          "median": 0,
+          "p90": 2,
+          "n": 207
+        },
+        "Pasewalk": {
+          "onTime": 0.767,
+          "median": 1,
+          "p90": 16,
+          "n": 807
+        },
+        "Prenzlau": {
+          "onTime": 0.747,
+          "median": 1,
+          "p90": 20,
+          "n": 616
+        },
+        "Stralsund Hbf": {
+          "onTime": 0.875,
+          "median": 1,
+          "p90": 7,
+          "n": 674
+        },
+        "Züssow": {
+          "onTime": 0.81,
+          "median": 1,
+          "p90": 14,
+          "n": 860
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 19": {
+      "aggregate": {
+        "onTime": 0.454,
+        "median": 7,
+        "p90": 44,
+        "n": 1187,
+        "cancelRate": 0.0312
+      },
+      "hist": [
+        204,
+        100,
+        62,
+        54,
+        49,
+        53,
+        46,
+        36,
+        34,
+        23,
+        30,
+        28,
+        19,
+        20,
+        21,
+        23,
+        13,
+        14,
+        11,
+        11,
+        9,
+        89,
+        94,
+        53,
+        42,
+        12
+      ],
+      "stations": {
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.601,
+          "median": 4,
+          "p90": 48,
+          "n": 193
+        },
+        "Berlin Ostbahnhof": {
+          "onTime": 0.841,
+          "median": 1,
+          "p90": 14,
+          "n": 141
+        },
+        "Berlin-Spandau": {
+          "onTime": 0.508,
+          "median": 5,
+          "p90": 49,
+          "n": 195
+        },
+        "Hagen Hbf": {
+          "onTime": 0.277,
+          "median": 10,
+          "p90": 48,
+          "n": 149
+        },
+        "Hannover Hbf": {
+          "onTime": 0.314,
+          "median": 10,
+          "p90": 44,
+          "n": 194
+        },
+        "Wuppertal Hbf": {
+          "onTime": 0.247,
+          "median": 12,
+          "p90": 50,
+          "n": 193
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 20": {
+      "aggregate": {
+        "onTime": 0.501,
+        "median": 5,
+        "p90": 37,
+        "n": 14083,
+        "cancelRate": 0.0334
+      },
+      "hist": [
+        2753,
+        1258,
+        911,
+        715,
+        630,
+        558,
+        502,
+        429,
+        408,
+        374,
+        370,
+        302,
+        255,
+        220,
+        212,
+        222,
+        190,
+        136,
+        164,
+        140,
+        153,
+        993,
+        802,
+        365,
+        339,
+        212
+      ],
+      "stations": {
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.327,
+          "median": 10,
+          "p90": 39,
+          "n": 1634
+        },
+        "Freiburg (Breisgau) Hbf": {
+          "onTime": 0.575,
+          "median": 4,
+          "p90": 33,
+          "n": 1371
+        },
+        "Göttingen": {
+          "onTime": 0.452,
+          "median": 7,
+          "p90": 43,
+          "n": 1666
+        },
+        "Hamburg Dammtor": {
+          "onTime": 0.734,
+          "median": 1,
+          "p90": 20,
+          "n": 441
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.762,
+          "median": 1,
+          "p90": 18,
+          "n": 812
+        },
+        "Hamburg-Harburg": {
+          "onTime": 0.652,
+          "median": 2,
+          "p90": 35,
+          "n": 810
+        },
+        "Hannover Hbf": {
+          "onTime": 0.507,
+          "median": 5,
+          "p90": 41,
+          "n": 1658
+        },
+        "Karlsruhe Hbf": {
+          "onTime": 0.474,
+          "median": 6,
+          "p90": 32,
+          "n": 1465
+        },
+        "Kassel-Wilhelmshöhe": {
+          "onTime": 0.447,
+          "median": 7,
+          "p90": 41,
+          "n": 1666
+        },
+        "Mannheim Hbf": {
+          "onTime": 0.447,
+          "median": 7,
+          "p90": 37,
+          "n": 1563
+        },
+        "Offenburg": {
+          "onTime": 0.539,
+          "median": 4,
+          "p90": 37,
+          "n": 837
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 22": {
+      "aggregate": {
+        "onTime": 0.61,
+        "median": 3,
+        "p90": 28,
+        "n": 12818,
+        "cancelRate": 0.0286
+      },
+      "hist": [
+        3257,
+        1545,
+        1035,
+        748,
+        577,
+        437,
+        421,
+        385,
+        312,
+        248,
+        247,
+        208,
+        178,
+        170,
+        188,
+        135,
+        145,
+        104,
+        101,
+        100,
+        102,
+        679,
+        535,
+        279,
+        217,
+        98
+      ],
+      "stations": {
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.421,
+          "median": 7,
+          "p90": 34,
+          "n": 1693
+        },
+        "Frankfurt am Main Flughafen Fernbahnhof": {
+          "onTime": 0.615,
+          "median": 4,
+          "p90": 17,
+          "n": 115
+        },
+        "Göttingen": {
+          "onTime": 0.537,
+          "median": 4,
+          "p90": 35,
+          "n": 1727
+        },
+        "Hamburg Dammtor": {
+          "onTime": 0.768,
+          "median": 2,
+          "p90": 16,
+          "n": 719
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.789,
+          "median": 1,
+          "p90": 15,
+          "n": 1104
+        },
+        "Hamburg-Harburg": {
+          "onTime": 0.691,
+          "median": 2,
+          "p90": 31,
+          "n": 763
+        },
+        "Hannover Hbf": {
+          "onTime": 0.594,
+          "median": 3,
+          "p90": 34,
+          "n": 1739
+        },
+        "Kassel-Wilhelmshöhe": {
+          "onTime": 0.526,
+          "median": 5,
+          "p90": 34,
+          "n": 1727
+        },
+        "Kiel Hbf": {
+          "onTime": 0.953,
+          "median": 0,
+          "p90": 2,
+          "n": 288
+        },
+        "Mannheim Hbf": {
+          "onTime": 0.535,
+          "median": 5,
+          "p90": 34,
+          "n": 1618
+        },
+        "Neumünster": {
+          "onTime": 0.792,
+          "median": 2,
+          "p90": 18,
+          "n": 491
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.865,
+          "median": 1,
+          "p90": 7,
+          "n": 777
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 25": {
+      "aggregate": {
+        "onTime": 0.573,
+        "median": 4,
+        "p90": 32,
+        "n": 30461,
+        "cancelRate": 0.0756
+      },
+      "hist": [
+        6609,
+        3518,
+        2079,
+        1595,
+        1289,
+        1044,
+        914,
+        723,
+        688,
+        587,
+        622,
+        490,
+        474,
+        412,
+        397,
+        377,
+        289,
+        304,
+        297,
+        265,
+        323,
+        1955,
+        1398,
+        634,
+        609,
+        265
+      ],
+      "stations": {
+        "Bremen Hbf": {
+          "onTime": 0.833,
+          "median": 1,
+          "p90": 10,
+          "n": 553
+        },
+        "Fulda": {
+          "onTime": 0.513,
+          "median": 5,
+          "p90": 35,
+          "n": 3697
+        },
+        "Göttingen": {
+          "onTime": 0.518,
+          "median": 5,
+          "p90": 37,
+          "n": 3740
+        },
+        "Hamburg Dammtor": {
+          "onTime": 0.696,
+          "median": 3,
+          "p90": 16,
+          "n": 738
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.679,
+          "median": 3,
+          "p90": 23,
+          "n": 833
+        },
+        "Hamburg-Harburg": {
+          "onTime": 0.547,
+          "median": 4,
+          "p90": 34,
+          "n": 2238
+        },
+        "Hannover Hbf": {
+          "onTime": 0.542,
+          "median": 4,
+          "p90": 33,
+          "n": 3487
+        },
+        "Ingolstadt Hbf": {
+          "onTime": 0.601,
+          "median": 3,
+          "p90": 32,
+          "n": 2129
+        },
+        "Kassel-Wilhelmshöhe": {
+          "onTime": 0.507,
+          "median": 5,
+          "p90": 36,
+          "n": 3744
+        },
+        "München Hbf": {
+          "onTime": 0.799,
+          "median": 1,
+          "p90": 14,
+          "n": 1873
+        },
+        "Nürnberg Hbf": {
+          "onTime": 0.619,
+          "median": 3,
+          "p90": 30,
+          "n": 3234
+        },
+        "Würzburg Hbf": {
+          "onTime": 0.531,
+          "median": 5,
+          "p90": 35,
+          "n": 3796
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 28": {
+      "aggregate": {
+        "onTime": 0.641,
+        "median": 2,
+        "p90": 29,
+        "n": 6991,
+        "cancelRate": 0.0486
+      },
+      "hist": [
+        1858,
+        929,
+        566,
+        405,
+        268,
+        237,
+        178,
+        143,
+        115,
+        121,
+        116,
+        70,
+        79,
+        77,
+        78,
+        54,
+        69,
+        65,
+        46,
+        56,
+        62,
+        424,
+        297,
+        139,
+        114,
+        85
+      ],
+      "stations": {
+        "Bamberg": {
+          "onTime": 0.663,
+          "median": 3,
+          "p90": 29,
+          "n": 829
+        },
+        "Berlin Gesundbrunnen": {
+          "onTime": 0.841,
+          "median": 1,
+          "p90": 11,
+          "n": 132
+        },
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.611,
+          "median": 2,
+          "p90": 29,
+          "n": 526
+        },
+        "Berlin Südkreuz": {
+          "onTime": 0.506,
+          "median": 5,
+          "p90": 41,
+          "n": 442
+        },
+        "Bitterfeld": {
+          "onTime": 0.592,
+          "median": 3,
+          "p90": 36,
+          "n": 522
+        },
+        "Erfurt Hbf": {
+          "onTime": 0.669,
+          "median": 1,
+          "p90": 29,
+          "n": 846
+        },
+        "Erlangen": {
+          "onTime": 0.633,
+          "median": 2,
+          "p90": 33,
+          "n": 655
+        },
+        "Hamburg Dammtor": {
+          "onTime": 0.772,
+          "median": 1,
+          "p90": 21,
+          "n": 139
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.578,
+          "median": 5,
+          "p90": 27,
+          "n": 205
+        },
+        "Hamburg-Altona": {
+          "onTime": 0.903,
+          "median": 0,
+          "p90": 4,
+          "n": 123
+        },
+        "Leipzig Hbf": {
+          "onTime": 0.661,
+          "median": 2,
+          "p90": 29,
+          "n": 824
+        },
+        "Lutherstadt Wittenberg Hbf": {
+          "onTime": 0.508,
+          "median": 5,
+          "p90": 39,
+          "n": 379
+        },
+        "München Hbf": {
+          "onTime": 0.794,
+          "median": 1,
+          "p90": 10,
+          "n": 292
+        },
+        "Nürnberg Hbf": {
+          "onTime": 0.626,
+          "median": 3,
+          "p90": 27,
+          "n": 845
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 33": {
+      "aggregate": {
+        "onTime": 0.73,
+        "median": 2,
+        "p90": 15,
+        "n": 3827,
+        "cancelRate": 0.0329
+      },
+      "hist": [
+        949,
+        668,
+        428,
+        273,
+        218,
+        165,
+        124,
+        115,
+        94,
+        65,
+        59,
+        51,
+        41,
+        35,
+        41,
+        34,
+        33,
+        15,
+        18,
+        18,
+        21,
+        95,
+        72,
+        28,
+        25,
+        16
+      ],
+      "stations": {
+        "Bergen auf Rügen": {
+          "onTime": 0.797,
+          "median": 1,
+          "p90": 9,
+          "n": 375
+        },
+        "Bützow": {
+          "onTime": 0.773,
+          "median": 1,
+          "p90": 16,
+          "n": 424
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.629,
+          "median": 3,
+          "p90": 22,
+          "n": 312
+        },
+        "Hamburg-Altona": {
+          "onTime": 0.901,
+          "median": 0,
+          "p90": 5,
+          "n": 152
+        },
+        "Ostseebad Binz": {
+          "onTime": 0.953,
+          "median": 1,
+          "p90": 4,
+          "n": 199
+        },
+        "Ribnitz-Damgarten West": {
+          "onTime": 0.772,
+          "median": 2,
+          "p90": 15,
+          "n": 376
+        },
+        "Rostock Hbf": {
+          "onTime": 0.776,
+          "median": 2,
+          "p90": 13,
+          "n": 400
+        },
+        "Schwerin Hbf": {
+          "onTime": 0.687,
+          "median": 3,
+          "p90": 19,
+          "n": 424
+        },
+        "Stralsund Hbf": {
+          "onTime": 0.694,
+          "median": 3,
+          "p90": 12,
+          "n": 376
+        },
+        "Velgast": {
+          "onTime": 0.747,
+          "median": 1,
+          "p90": 13,
+          "n": 376
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 39": {
+      "aggregate": {
+        "onTime": 0.5,
+        "median": 5,
+        "p90": 32,
+        "n": 2777,
+        "cancelRate": 0.0162
+      },
+      "hist": [
+        460,
+        222,
+        186,
+        175,
+        180,
+        143,
+        122,
+        91,
+        91,
+        91,
+        59,
+        61,
+        56,
+        41,
+        43,
+        38,
+        36,
+        44,
+        30,
+        37,
+        33,
+        212,
+        137,
+        76,
+        35,
+        33
+      ],
+      "stations": {
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.752,
+          "median": 2,
+          "p90": 11,
+          "n": 218
+        },
+        "Hanau Hbf": {
+          "onTime": 0.464,
+          "median": 7,
+          "p90": 41,
+          "n": 380
+        },
+        "Nürnberg Hbf": {
+          "onTime": 0.523,
+          "median": 5,
+          "p90": 30,
+          "n": 417
+        },
+        "Passau Hbf": {
+          "onTime": 0.455,
+          "median": 6,
+          "p90": 34,
+          "n": 432
+        },
+        "Plattling": {
+          "onTime": 0.453,
+          "median": 6,
+          "p90": 32,
+          "n": 432
+        },
+        "Regensburg Hbf": {
+          "onTime": 0.403,
+          "median": 7,
+          "p90": 33,
+          "n": 440
+        },
+        "Würzburg Hbf": {
+          "onTime": 0.527,
+          "median": 5,
+          "p90": 37,
+          "n": 381
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 43": {
+      "aggregate": {
+        "onTime": 0.705,
+        "median": 3,
+        "p90": 15,
+        "n": 1610,
+        "cancelRate": 0.0273
+      },
+      "hist": [
+        375,
+        222,
+        169,
+        143,
+        104,
+        91,
+        62,
+        60,
+        48,
+        22,
+        29,
+        14,
+        25,
+        22,
+        19,
+        22,
+        10,
+        9,
+        10,
+        14,
+        9,
+        39,
+        26,
+        17,
+        4,
+        1
+      ],
+      "stations": {
+        "Baden-Baden": {
+          "onTime": 0.687,
+          "median": 2,
+          "p90": 15,
+          "n": 239
+        },
+        "Frankfurt am Main Flughafen Fernbahnhof": {
+          "onTime": 0.749,
+          "median": 2,
+          "p90": 18,
+          "n": 253
+        },
+        "Freiburg (Breisgau) Hbf": {
+          "onTime": 0.741,
+          "median": 3,
+          "p90": 12,
+          "n": 335
+        },
+        "Karlsruhe Hbf": {
+          "onTime": 0.578,
+          "median": 4,
+          "p90": 16,
+          "n": 339
+        },
+        "Mannheim Hbf": {
+          "onTime": 0.762,
+          "median": 1,
+          "p90": 14,
+          "n": 339
+        },
+        "Offenburg": {
+          "onTime": 0.755,
+          "median": 2,
+          "p90": 14,
+          "n": 105
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 49": {
+      "aggregate": {
+        "onTime": 0.588,
+        "median": 4,
+        "p90": 28,
+        "n": 99176,
+        "cancelRate": 0.0499
+      },
+      "hist": [
+        20218,
+        12678,
+        7655,
+        5926,
+        4901,
+        4016,
+        3332,
+        2876,
+        2548,
+        2135,
+        1966,
+        1738,
+        1522,
+        1422,
+        1275,
+        1180,
+        1042,
+        1010,
+        1005,
+        834,
+        822,
+        5661,
+        4400,
+        1939,
+        1445,
+        685
+      ],
+      "stations": {
+        "Aachen Hbf": {
+          "onTime": 0.459,
+          "median": 6,
+          "p90": 28,
+          "n": 786
+        },
+        "Aschaffenburg Hbf": {
+          "onTime": 0.433,
+          "median": 7,
+          "p90": 39,
+          "n": 5315
+        },
+        "Augsburg Hbf": {
+          "onTime": 0.557,
+          "median": 4,
+          "p90": 43,
+          "n": 205
+        },
+        "Bochum Hbf": {
+          "onTime": 0.522,
+          "median": 4,
+          "p90": 47,
+          "n": 1210
+        },
+        "Dortmund Hbf": {
+          "onTime": 0.895,
+          "median": 1,
+          "p90": 6,
+          "n": 690
+        },
+        "Duisburg Hbf": {
+          "onTime": 0.468,
+          "median": 6,
+          "p90": 34,
+          "n": 6248
+        },
+        "Düsseldorf Hbf": {
+          "onTime": 0.47,
+          "median": 6,
+          "p90": 32,
+          "n": 6773
+        },
+        "Essen Hbf": {
+          "onTime": 0.673,
+          "median": 2,
+          "p90": 27,
+          "n": 3207
+        },
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.618,
+          "median": 3,
+          "p90": 26,
+          "n": 9336
+        },
+        "Frankfurt am Main Flughafen Fernbahnhof": {
+          "onTime": 0.643,
+          "median": 3,
+          "p90": 26,
+          "n": 12486
+        },
+        "Gelsenkirchen Hbf": {
+          "onTime": 0.432,
+          "median": 9,
+          "p90": 53,
+          "n": 146
+        },
+        "Hanau Hbf": {
+          "onTime": 0.581,
+          "median": 5,
+          "p90": 22,
+          "n": 398
+        },
+        "Ingolstadt Hbf": {
+          "onTime": 0.533,
+          "median": 5,
+          "p90": 39,
+          "n": 994
+        },
+        "Köln Hbf": {
+          "onTime": 0.656,
+          "median": 2,
+          "p90": 19,
+          "n": 5305
+        },
+        "Köln Messe/Deutz": {
+          "onTime": 0.562,
+          "median": 4,
+          "p90": 33,
+          "n": 5557
+        },
+        "Köln/Bonn Flughafen": {
+          "onTime": 0.723,
+          "median": 2,
+          "p90": 17,
+          "n": 700
+        },
+        "Limburg Süd": {
+          "onTime": 0.731,
+          "median": 2,
+          "p90": 17,
+          "n": 6193
+        },
+        "Mainz Hbf": {
+          "onTime": 0.687,
+          "median": 2,
+          "p90": 15,
+          "n": 362
+        },
+        "Mannheim Hbf": {
+          "onTime": 0.52,
+          "median": 5,
+          "p90": 28,
+          "n": 394
+        },
+        "Mönchengladbach Hbf": {
+          "onTime": 0.551,
+          "median": 5,
+          "p90": 24,
+          "n": 446
+        },
+        "Montabaur": {
+          "onTime": 0.708,
+          "median": 2,
+          "p90": 17,
+          "n": 6214
+        },
+        "München Hbf": {
+          "onTime": 0.806,
+          "median": 1,
+          "p90": 14,
+          "n": 2186
+        },
+        "Nürnberg Hbf": {
+          "onTime": 0.532,
+          "median": 5,
+          "p90": 38,
+          "n": 5098
+        },
+        "Oberhausen Hbf": {
+          "onTime": 0.179,
+          "median": 14,
+          "p90": 41,
+          "n": 1333
+        },
+        "Siegburg/Bonn": {
+          "onTime": 0.607,
+          "median": 3,
+          "p90": 27,
+          "n": 11076
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.62,
+          "median": 3,
+          "p90": 29,
+          "n": 189
+        },
+        "Ulm Hbf": {
+          "onTime": 0.602,
+          "median": 3,
+          "p90": 41,
+          "n": 114
+        },
+        "Wiesbaden Hbf": {
+          "onTime": 0.763,
+          "median": 2,
+          "p90": 14,
+          "n": 517
+        },
+        "Würzburg Hbf": {
+          "onTime": 0.466,
+          "median": 7,
+          "p90": 40,
+          "n": 5332
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 50": {
+      "aggregate": {
+        "onTime": 0.695,
+        "median": 2,
+        "p90": 17,
+        "n": 8012,
+        "cancelRate": 0.0388
+      },
+      "hist": [
+        2340,
+        1274,
+        617,
+        459,
+        343,
+        316,
+        252,
+        211,
+        192,
+        168,
+        138,
+        119,
+        113,
+        85,
+        81,
+        79,
+        76,
+        73,
+        65,
+        74,
+        38,
+        289,
+        155,
+        77,
+        42,
+        25
+      ],
+      "stations": {
+        "Bad Hersfeld": {
+          "onTime": 0.61,
+          "median": 3,
+          "p90": 21,
+          "n": 463
+        },
+        "Eisenach Hbf": {
+          "onTime": 0.674,
+          "median": 1,
+          "p90": 23,
+          "n": 481
+        },
+        "Erfurt Hbf": {
+          "onTime": 0.783,
+          "median": 0,
+          "p90": 16,
+          "n": 1397
+        },
+        "Frankfurt (Main) Hbf": {
+          "onTime": 0.565,
+          "median": 4,
+          "p90": 21,
+          "n": 564
+        },
+        "Frankfurt (Main) Süd": {
+          "onTime": 0.649,
+          "median": 3,
+          "p90": 14,
+          "n": 767
+        },
+        "Frankfurt am Main Flughafen Fernbahnhof": {
+          "onTime": 0.761,
+          "median": 1,
+          "p90": 15,
+          "n": 395
+        },
+        "Fulda": {
+          "onTime": 0.562,
+          "median": 5,
+          "p90": 20,
+          "n": 1413
+        },
+        "Gotha": {
+          "onTime": 0.686,
+          "median": 2,
+          "p90": 19,
+          "n": 479
+        },
+        "Leipzig Hbf": {
+          "onTime": 0.929,
+          "median": 1,
+          "p90": 3,
+          "n": 801
+        },
+        "Mainz Hbf": {
+          "onTime": 0.753,
+          "median": 1,
+          "p90": 16,
+          "n": 328
+        },
+        "Wiesbaden Hbf": {
+          "onTime": 0.941,
+          "median": 1,
+          "p90": 3,
+          "n": 131
+        },
+        "Würzburg Hbf": {
+          "onTime": 0.686,
+          "median": 3,
+          "p90": 26,
+          "n": 145
+        }
+      }
+    },
+    "longdistance|db intercityexpress|ice 78": {
+      "aggregate": {
+        "onTime": 0.373,
+        "median": 11,
+        "p90": 47,
+        "n": 477,
+        "cancelRate": 0.0377
+      },
+      "hist": [
+        53,
+        40,
+        24,
+        21,
+        14,
+        19,
+        14,
+        15,
+        9,
+        11,
+        4,
+        10,
+        10,
+        8,
+        15,
+        13,
+        10,
+        9,
+        5,
+        8,
+        2,
+        28,
+        70,
+        27,
+        9,
+        11
+      ],
+      "stations": {}
+    },
+    "longdistance|db intercityexpress|rj 27": {
+      "aggregate": {
+        "onTime": 0.593,
+        "median": 4,
+        "p90": 32,
+        "n": 3244,
+        "cancelRate": 0.0422
+      },
+      "hist": [
+        681,
+        402,
+        259,
+        192,
+        147,
+        160,
+        120,
+        97,
+        69,
+        72,
+        60,
+        55,
+        62,
+        38,
+        42,
+        52,
+        28,
+        28,
+        15,
+        22,
+        32,
+        154,
+        192,
+        80,
+        34,
+        14
+      ],
+      "stations": {
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.72,
+          "median": 2,
+          "p90": 25,
+          "n": 360
+        },
+        "Berlin Südkreuz": {
+          "onTime": 0.665,
+          "median": 3,
+          "p90": 36,
+          "n": 170
+        },
+        "Berlin-Spandau": {
+          "onTime": 0.647,
+          "median": 2,
+          "p90": 29,
+          "n": 450
+        },
+        "Erfurt Hbf": {
+          "onTime": 0.471,
+          "median": 8,
+          "p90": 48,
+          "n": 141
+        },
+        "Hamburg Dammtor": {
+          "onTime": 0.417,
+          "median": 11,
+          "p90": 43,
+          "n": 103
+        },
+        "Hamburg Hbf": {
+          "onTime": 0.605,
+          "median": 4,
+          "p90": 25,
+          "n": 445
+        },
+        "Hamburg-Altona": {
+          "onTime": 0.893,
+          "median": 1,
+          "p90": 6,
+          "n": 262
+        },
+        "Hamburg-Harburg": {
+          "onTime": 0.578,
+          "median": 4,
+          "p90": 35,
+          "n": 195
+        },
+        "Leipzig Hbf": {
+          "onTime": 0.413,
+          "median": 7,
+          "p90": 41,
+          "n": 141
+        },
+        "Nürnberg Hbf": {
+          "onTime": 0.403,
+          "median": 8,
+          "p90": 52,
+          "n": 131
+        },
+        "Stendal Hbf": {
+          "onTime": 0.589,
+          "median": 5,
+          "p90": 21,
+          "n": 258
+        },
+        "Uelzen": {
+          "onTime": 0.472,
+          "median": 6,
+          "p90": 27,
+          "n": 490
+        }
+      }
+    },
+    "longdistance|ec;ic|ec 135": {
+      "aggregate": {
+        "onTime": 0.495,
+        "median": 6,
+        "p90": 28,
+        "n": 310,
+        "cancelRate": 0.0161
+      },
+      "hist": [
+        35,
+        45,
+        26,
+        14,
+        15,
+        16,
+        20,
+        9,
+        9,
+        8,
+        11,
+        8,
+        5,
+        6,
+        8,
+        2,
+        4,
+        5,
+        5,
+        5,
+        2,
+        22,
+        10,
+        8,
+        5,
+        2
+      ],
+      "stations": {
+        "Hoyerswerda": {
+          "onTime": 0.41,
+          "median": 6,
+          "p90": 28,
+          "n": 124
+        },
+        "Ruhland": {
+          "onTime": 0.451,
+          "median": 6,
+          "p90": 30,
+          "n": 124
+        }
+      }
+    },
+    "longdistance|eurocity|ec 378": {
+      "aggregate": {
+        "onTime": 0.21,
+        "median": 27,
+        "p90": 88,
+        "n": 588,
+        "cancelRate": 0.0425
+      },
+      "hist": [
+        16,
+        39,
+        28,
+        16,
+        13,
+        6,
+        10,
+        4,
+        5,
+        6,
+        1,
+        4,
+        4,
+        8,
+        9,
+        5,
+        11,
+        10,
+        9,
+        12,
+        7,
+        87,
+        83,
+        63,
+        55,
+        52
+      ],
+      "stations": {}
+    },
+    "longdistance|flixtrain|flx 10": {
+      "aggregate": {
+        "onTime": 0.53,
+        "median": 5,
+        "p90": 52,
+        "n": 2881,
+        "cancelRate": 0.0736
+      },
+      "hist": [
+        489,
+        348,
+        180,
+        156,
+        136,
+        106,
+        97,
+        102,
+        71,
+        66,
+        52,
+        37,
+        42,
+        29,
+        25,
+        33,
+        30,
+        37,
+        17,
+        22,
+        22,
+        140,
+        132,
+        76,
+        124,
+        100
+      ],
+      "stations": {
+        "Berlin Hauptbahnhof": {
+          "onTime": 0.552,
+          "median": 4,
+          "p90": 44,
+          "n": 213
+        },
+        "Berlin Südkreuz": {
+          "onTime": 0.492,
+          "median": 6,
+          "p90": 65,
+          "n": 282
+        },
+        "Darmstadt Hbf": {
+          "onTime": 0.553,
+          "median": 4,
+          "p90": 49,
+          "n": 340
+        },
+        "Erfurt Hbf": {
+          "onTime": 0.472,
+          "median": 6,
+          "p90": 55,
+          "n": 364
+        },
+        "Frankfurt (Main) Süd": {
+          "onTime": 0.396,
+          "median": 7,
+          "p90": 59,
+          "n": 364
+        },
+        "Fulda": {
+          "onTime": 0.499,
+          "median": 6,
+          "p90": 51,
+          "n": 361
+        },
+        "Halle (Saale) Hbf": {
+          "onTime": 0.478,
+          "median": 6,
+          "p90": 56,
+          "n": 364
+        },
+        "Heidelberg Hbf": {
+          "onTime": 0.619,
+          "median": 2,
+          "p90": 51,
+          "n": 364
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.85,
+          "median": 1,
+          "p90": 17,
+          "n": 182
+        }
+      }
+    },
+    "longdistance|tgv inoui;db intercityexpress|ice 83": {
+      "aggregate": {
+        "onTime": 0.454,
+        "median": 7,
+        "p90": 40,
+        "n": 814,
+        "cancelRate": 0.0037
+      },
+      "hist": [
+        37,
+        125,
+        76,
+        59,
+        35,
+        36,
+        25,
+        21,
+        21,
+        15,
+        12,
+        12,
+        17,
+        15,
+        8,
+        12,
+        6,
+        17,
+        14,
+        9,
+        14,
+        102,
+        68,
+        20,
+        22,
+        13
+      ],
+      "stations": {
+        "Augsburg Hbf": {
+          "onTime": 0.464,
+          "median": 7,
+          "p90": 40,
+          "n": 181
+        },
+        "Karlsruhe Hbf": {
+          "onTime": 0.35,
+          "median": 15,
+          "p90": 42,
+          "n": 181
+        },
+        "Stuttgart Hbf": {
+          "onTime": 0.297,
+          "median": 13,
+          "p90": 43,
+          "n": 119
+        },
+        "Ulm Hbf": {
+          "onTime": 0.42,
+          "median": 8,
+          "p90": 42,
+          "n": 181
+        }
+      }
+    },
     "regional||hsb": {
       "aggregate": {
         "onTime": 0.994,
