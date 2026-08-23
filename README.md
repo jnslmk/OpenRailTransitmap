@@ -266,6 +266,13 @@ npm run publish:data            # committed data -> public/
 npm run dev                     # http://localhost:5173
 ```
 
+The dev server draws the current zoom in the bottom-left corner of the map, to
+two decimals — the map is a stack of zoom thresholds (`STOP_TIERS` in
+[`shared/lnvg.ts`](shared/lnvg.ts), the dot-to-bar changeover and the closure
+tiers in [`src/style.ts`](src/style.ts)) and several of them are fractional, so
+tuning one means seeing which side of it the view is on. A built site shows the
+same readout when it is opened with `?debug`.
+
 Punctuality is refreshed separately, because its upstream files change monthly
 rather than nightly and a pass costs ~0.9 GB of range requests:
 
