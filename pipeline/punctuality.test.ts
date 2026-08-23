@@ -15,8 +15,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  normaliseRef, rowRef, buildIndex, buildLongDistanceIndex, departureDelayMin, Aggregator,
-  ON_TIME_THRESHOLD_MIN, BUCKET_EDGES, bucketOf, quantile,
+  normaliseRef,
+  rowRef,
+  buildIndex,
+  buildLongDistanceIndex,
+  departureDelayMin,
+  Aggregator,
+  ON_TIME_THRESHOLD_MIN,
+  BUCKET_EDGES,
+  bucketOf,
+  quantile,
 } from './punctuality.ts';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +83,12 @@ const REFS: Record<string, string> = {
   'regional|vrb|re1': 'RE1',
   'tram|vrb|1': '1',
 };
-const index = () => buildIndex(STATIONS, (id) => MODES[id], (id) => REFS[id]);
+const index = () =>
+  buildIndex(
+    STATIONS,
+    (id) => MODES[id],
+    (id) => REFS[id],
+  );
 
 test('the station name is what separates two lines sharing a ref', () => {
   const ix = index();
@@ -132,13 +145,29 @@ test('memoises without changing the answer', () => {
 // same three-station remainder - a genuine, not a fabricated, ambiguity.
 const LD_STATIONS = {
   'longdistance|db intercity|ic 87': [
-    'Böblingen', 'Horb', 'Rottweil', 'Singen (Hohentwiel)', 'Stuttgart Hauptbahnhof', 'Tuttlingen',
+    'Böblingen',
+    'Horb',
+    'Rottweil',
+    'Singen (Hohentwiel)',
+    'Stuttgart Hauptbahnhof',
+    'Tuttlingen',
   ],
   'longdistance|db intercityexpress|ice 49': [
-    'Hamburg Hauptbahnhof', 'Berlin Hauptbahnhof', 'Leipzig Hauptbahnhof', 'München Hauptbahnhof',
+    'Hamburg Hauptbahnhof',
+    'Berlin Hauptbahnhof',
+    'Leipzig Hauptbahnhof',
+    'München Hauptbahnhof',
   ],
-  'longdistance|db intercity;eurocity;öbb|ec 80': ['München Hauptbahnhof', 'München Ost', 'Rosenheim'],
-  'longdistance|db intercity;eurocity;öbb|ec 81': ['München Hauptbahnhof', 'München Ost', 'Rosenheim'],
+  'longdistance|db intercity;eurocity;öbb|ec 80': [
+    'München Hauptbahnhof',
+    'München Ost',
+    'Rosenheim',
+  ],
+  'longdistance|db intercity;eurocity;öbb|ec 81': [
+    'München Hauptbahnhof',
+    'München Ost',
+    'Rosenheim',
+  ],
   'suburban|s-bahn nowhere|s9': ['Foo Hauptbahnhof', 'Bar Hauptbahnhof'],
 };
 const LD_MODES: Record<string, string> = {
@@ -153,12 +182,19 @@ const ldIndex = () => buildLongDistanceIndex(LD_STATIONS, (id) => LD_MODES[id]);
 test('attributes a ride to the one line whose stations cover every stop it made', () => {
   const ix = ldIndex();
   assert.equal(
-    ix.match(['Böblingen', 'Horb', 'Rottweil', 'Singen (Hohentwiel)', 'Stuttgart Hauptbahnhof', 'Tuttlingen']),
+    ix.match([
+      'Böblingen',
+      'Horb',
+      'Rottweil',
+      'Singen (Hohentwiel)',
+      'Stuttgart Hauptbahnhof',
+      'Tuttlingen',
+    ]),
     'longdistance|db intercity|ic 87',
   );
 });
 
-test('a partial ride - fewer stops than the line has - still attributes, in the feed\'s own spelling', () => {
+test("a partial ride - fewer stops than the line has - still attributes, in the feed's own spelling", () => {
   const ix = ldIndex();
   // A train that this month only ever ran Hamburg - Berlin - Leipzig, never
   // reaching ICE 49's fourth stop, and named with the feed's "Hbf" rather
@@ -197,7 +233,7 @@ test('a single-station ride cannot discriminate between lines, so it is not attr
   assert.equal(ix.stats.tooSmall, 1);
 });
 
-test('a ride touching no long-distance line\'s stations matches nothing', () => {
+test("a ride touching no long-distance line's stations matches nothing", () => {
   const ix = ldIndex();
   assert.equal(ix.match(['Nowhereville', 'Somewhere Else']), null);
   assert.equal(ix.stats.unmatched, 1);
@@ -258,7 +294,7 @@ test('buckets a delay by the minute where the mass is, coarsely in the tail', ()
 
 /** A histogram with `count` departures in the bucket for `min` minutes late. */
 function hist(...pairs: [min: number, count: number][]): number[] {
-  const h = new Array(BUCKET_EDGES.length).fill(0);
+  const h = new Array<number>(BUCKET_EDGES.length).fill(0);
   for (const [min, count] of pairs) h[bucketOf(min)] += count;
   return h;
 }
@@ -329,7 +365,10 @@ test('a cancellation counts against the cancel rate, not against punctuality', (
   assert.equal(aggregate.cancelRate, 0.2);
   assert.equal(aggregate.n, 250);
   // A cancelled departure has no delay, so it is not in the histogram either.
-  assert.equal(h.reduce((a, b) => a + b, 0), 200);
+  assert.equal(
+    h.reduce((a, b) => a + b, 0),
+    200,
+  );
 });
 
 test('breaks the line down by station, worst station included', () => {

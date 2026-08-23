@@ -150,7 +150,18 @@ const LONGDISTANCE_MODE = 'longdistance';
  * path already runs at.
  */
 const LONGDISTANCE_TRAIN_TYPES = new Set([
-  'ICE', 'IC', 'EC', 'ECE', 'EN', 'RJ', 'RJX', 'NJ', 'FLX', 'TGV', 'IR', 'D',
+  'ICE',
+  'IC',
+  'EC',
+  'ECE',
+  'EN',
+  'RJ',
+  'RJX',
+  'NJ',
+  'FLX',
+  'TGV',
+  'IR',
+  'D',
 ]);
 
 /**
@@ -172,7 +183,10 @@ const MAX_PLAUSIBLE_DELAY_MIN = 24 * 60;
  * has its own spelling again.
  */
 export function normaliseRef(raw: string): string {
-  return raw.replace(/\s*\([^()]*\)\s*$/, '').replace(/\s+/g, '').toLowerCase();
+  return raw
+    .replace(/\s*\([^()]*\)\s*$/, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }
 
 /**
@@ -277,14 +291,23 @@ export function buildIndex(
     let count = 0;
     if (normalised) {
       for (const c of candidates) {
-        if (c.exact.has(normalised)) { matched = c.id; count++; }
+        if (c.exact.has(normalised)) {
+          matched = c.id;
+          count++;
+        }
       }
       if (count === 1) return matched;
-      if (count > 1) { stats.ambiguous++; return null; }
+      if (count > 1) {
+        stats.ambiguous++;
+        return null;
+      }
     }
 
     for (const c of candidates) {
-      if (c.raw.some((n) => namesMatch(n, stationName))) { matched = c.id; count++; }
+      if (c.raw.some((n) => namesMatch(n, stationName))) {
+        matched = c.id;
+        count++;
+      }
     }
     if (count === 1) return matched;
     if (count > 1) stats.ambiguous++;
@@ -300,7 +323,8 @@ export function buildIndex(
         hit = resolve(ref, stationName);
         memo.set(key, hit);
       }
-      if (hit) stats.hits++; else stats.misses++;
+      if (hit) stats.hits++;
+      else stats.misses++;
       return hit;
     },
   };
@@ -413,8 +437,11 @@ export function buildLongDistanceIndex(
     let hit = servesMemo.get(stationName);
     if (hit) return hit;
     const normalised = normaliseName(stationName);
-    hit = candidates.map((c) =>
-      (normalised !== '' && c.exact.has(normalised)) || c.raw.some((n) => namesMatch(n, stationName)));
+    hit = candidates.map(
+      (c) =>
+        (normalised !== '' && c.exact.has(normalised)) ||
+        c.raw.some((n) => namesMatch(n, stationName)),
+    );
     servesMemo.set(stationName, hit);
     return hit;
   }
@@ -423,15 +450,27 @@ export function buildLongDistanceIndex(
     stats,
     match(stationNames) {
       const stations = [...new Set(stationNames)];
-      if (stations.length < MIN_RIDE_STATIONS) { stats.tooSmall++; return null; }
+      if (stations.length < MIN_RIDE_STATIONS) {
+        stats.tooSmall++;
+        return null;
+      }
 
       let winner = -1;
       let winners = 0;
       for (let i = 0; i < candidates.length; i++) {
-        if (stations.every((s) => servesVector(s)[i])) { winner = i; winners++; }
+        if (stations.every((s) => servesVector(s)[i])) {
+          winner = i;
+          winners++;
+        }
       }
-      if (winners === 0) { stats.unmatched++; return null; }
-      if (winners > 1) { stats.ambiguous++; return null; }
+      if (winners === 0) {
+        stats.unmatched++;
+        return null;
+      }
+      if (winners > 1) {
+        stats.ambiguous++;
+        return null;
+      }
       stats.attributed++;
       return candidates[winner].id;
     },
@@ -469,7 +508,11 @@ export function buildLongDistanceIndex(
  */
 export const BUCKET_EDGES = [
   ...Array.from({ length: 21 }, (_, i) => i), // 0..20, one bucket per minute
-  21, 31, 46, 61, 91,                         // 21-30, 31-45, 46-60, 61-90, 91+
+  21,
+  31,
+  46,
+  61,
+  91, // 21-30, 31-45, 46-60, 61-90, 91+
 ];
 
 /** The bucket a whole-minute delay falls in. */
@@ -521,7 +564,9 @@ interface Counters {
 }
 
 const zero = (): Counters => ({
-  n: 0, cancelled: 0, hist: new Array(BUCKET_EDGES.length).fill(0),
+  n: 0,
+  cancelled: 0,
+  hist: new Array<number>(BUCKET_EDGES.length).fill(0),
 });
 
 /** What a rider is actually asking: the ordinary trip, and the bad one. */
@@ -565,12 +610,21 @@ export class Aggregator {
 
   add(lineId: string, station: string, delayMin: number, cancelled: boolean) {
     let line = this.lines.get(lineId);
-    if (!line) { line = zero(); this.lines.set(lineId, line); }
+    if (!line) {
+      line = zero();
+      this.lines.set(lineId, line);
+    }
 
     let perStation = this.stations.get(lineId);
-    if (!perStation) { perStation = new Map(); this.stations.set(lineId, perStation); }
+    if (!perStation) {
+      perStation = new Map();
+      this.stations.set(lineId, perStation);
+    }
     let atStation = perStation.get(station);
-    if (!atStation) { atStation = zero(); perStation.set(station, atStation); }
+    if (!atStation) {
+      atStation = zero();
+      perStation.set(station, atStation);
+    }
 
     const bucket = cancelled ? -1 : bucketOf(delayMin);
     for (const c of [line, atStation]) {
@@ -655,8 +709,9 @@ export class Aggregator {
 
       const stations: Record<string, StationScore> = {};
       const perStation = this.stations.get(id)!;
-      const reportable = [...perStation.entries()]
-        .filter(([, c]) => c.n - c.cancelled > 0 && Aggregator.hasRealtime(c));
+      const reportable = [...perStation.entries()].filter(
+        ([, c]) => c.n - c.cancelled > 0 && Aggregator.hasRealtime(c),
+      );
       const floor = Math.max(
         Aggregator.MIN_STATION_SAMPLES,
         medianOf(reportable.map(([, c]) => c.n)) * Aggregator.MIN_STATION_SHARE,
@@ -774,7 +829,13 @@ function resetIn(res: Response): number | null {
 async function politeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const token = process.env.HF_TOKEN;
   const authed: RequestInit | undefined = token
-    ? { ...init, headers: new Headers({ ...headersToObject(init?.headers), authorization: `Bearer ${token}` }) }
+    ? {
+        ...init,
+        headers: new Headers({
+          ...headersToObject(init?.headers),
+          authorization: `Bearer ${token}`,
+        }),
+      }
     : init;
 
   let blindWait = 1000;
@@ -800,7 +861,10 @@ async function politeFetch(input: RequestInfo | URL, init?: RequestInit): Promis
       rateGateUntil = Math.max(rateGateUntil, Date.now() + (reset + 1) * 1000);
     }
     if (!RETRY_STATUS.has(res.status) || attempt >= MAX_ATTEMPTS) return res;
-    if (reset === null) { await sleep(blindWait); blindWait *= 2; }
+    if (reset === null) {
+      await sleep(blindWait);
+      blindWait *= 2;
+    }
   }
 }
 
@@ -969,7 +1033,10 @@ async function main() {
   if (!existsSync(LINE_STATIONS_PATH)) {
     throw new Error(`${LINE_STATIONS_PATH} is missing - run \`npm run build:data\` first`);
   }
-  const lineStations = JSON.parse(readFileSync(LINE_STATIONS_PATH, 'utf8')) as Record<string, string[]>;
+  const lineStations = JSON.parse(readFileSync(LINE_STATIONS_PATH, 'utf8')) as Record<
+    string,
+    string[]
+  >;
   const registry = JSON.parse(readFileSync(REGISTRY_PATH, 'utf8')) as {
     lines: { id: string; ref: string; mode: string }[];
   };
@@ -989,21 +1056,23 @@ async function main() {
   for (const month of months) {
     const started = Date.now();
     const used = await readMonth(month, index, ldIndex, agg);
-    console.log(`==> ${month}: ${used} departures matched in ${((Date.now() - started) / 1000).toFixed(0)}s`);
+    console.log(
+      `==> ${month}: ${used} departures matched in ${((Date.now() - started) / 1000).toFixed(0)}s`,
+    );
   }
 
   const s = index.stats;
   const total = s.hits + s.misses;
   console.log(
     `==> join: ${s.hits}/${total} rows attributed (${Math.round((100 * s.hits) / (total || 1))}%), ` +
-    `${s.ambiguous} distinct (ref, station) pairs left ambiguous`,
+      `${s.ambiguous} distinct (ref, station) pairs left ambiguous`,
   );
 
   const ld = ldIndex.stats;
   const ldTotal = ld.attributed + ld.ambiguous + ld.unmatched + ld.tooSmall;
   console.log(
     `==> long-distance: ${ld.attributed}/${ldTotal} rides attributed, ` +
-    `${ld.ambiguous} tied between lines, ${ld.unmatched} matched no line, ${ld.tooSmall} too small to tell`,
+      `${ld.ambiguous} tied between lines, ${ld.unmatched} matched no line, ${ld.tooSmall} too small to tell`,
   );
 
   const lines = agg.result();
@@ -1018,12 +1087,19 @@ async function main() {
   });
 
   const scored = Object.keys(lines).length;
-  const scoreable = registry.lines.filter((l) => SCORED_MODES.has(l.mode) || l.mode === LONGDISTANCE_MODE).length;
-  console.log(`==> ${scored}/${scoreable} regional, suburban and long-distance lines scored -> ${OUT_PATH}`);
+  const scoreable = registry.lines.filter(
+    (l) => SCORED_MODES.has(l.mode) || l.mode === LONGDISTANCE_MODE,
+  ).length;
+  console.log(
+    `==> ${scored}/${scoreable} regional, suburban and long-distance lines scored -> ${OUT_PATH}`,
+  );
 }
 
 // Only when run directly; importing this from a test must not start a 1.5 GB
 // download.
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(err); process.exit(1); });
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

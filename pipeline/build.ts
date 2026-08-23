@@ -20,23 +20,37 @@ import { parse as parseYaml } from 'yaml';
 import { writeFeatures } from './lib/write.ts';
 import { resolveStopIds } from './stop-ids.ts';
 import {
-  MODE_SPECS, STOP_TIER_BY_RANK, fallbackColour, normaliseColour, stopRank, type Mode,
+  MODE_SPECS,
+  STOP_TIER_BY_RANK,
+  fallbackColour,
+  normaliseColour,
+  stopRank,
+  type Mode,
 } from '../shared/lnvg.ts';
+import { chainWays, collapseParallelTracks, endpointKey, type Coord } from './lib/track.ts';
 import {
-  chainWays, collapseParallelTracks, endpointKey, type Coord,
-} from './lib/track.ts';
-import {
-  slotOffset, taperLengthM, fitTaperLength, taperSteps, taperMinzoom, buildTaper, trimEnd,
-  chainLengthM, onOccupiedSlot, type TaperStep,
+  slotOffset,
+  taperLengthM,
+  fitTaperLength,
+  taperSteps,
+  taperMinzoom,
+  buildTaper,
+  trimEnd,
+  chainLengthM,
+  onOccupiedSlot,
+  type TaperStep,
 } from './lib/taper.ts';
 import { coorientChains } from './lib/orient.ts';
 import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
+import { buildRailGraph, nearestNode, routeBetween, metres, type RailWay } from './lib/railpath.ts';
 import {
-  buildRailGraph, nearestNode, routeBetween, metres, type RailWay,
-} from './lib/railpath.ts';
-import {
-  readLog, replayLog, windowsOn, SNAPSHOT_PATH, EFFECT_RANK,
-  type Closure, type LoggedClosure,
+  readLog,
+  replayLog,
+  windowsOn,
+  SNAPSHOT_PATH,
+  EFFECT_RANK,
+  type Closure,
+  type LoggedClosure,
 } from './closures.ts';
 import { readSnapshot as readCoachSnapshot } from './coach.ts';
 
@@ -51,7 +65,9 @@ const DATA = 'data';
 
 /** OPL escapes non-literal characters as %<hex>% - e.g. `%20%` is a space. */
 function unescapeOpl(s: string): string {
-  return s.replace(/%([0-9a-fA-F]+)%/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+  return s.replace(/%([0-9a-fA-F]+)%/g, (_: string, hex: string) =>
+    String.fromCodePoint(parseInt(hex, 16)),
+  );
 }
 
 interface Relation {
@@ -88,7 +104,10 @@ async function parseRelations(path: string): Promise<Relation[]> {
     for (const field of line.split(' ')) {
       if (!field) continue;
       const kind = field[0];
-      if (!id) { id = field.slice(1); continue; }
+      if (!id) {
+        id = field.slice(1);
+        continue;
+      }
       if (kind === 'T') tags = parseTags(field.slice(1));
       else if (kind === 'M') {
         for (const member of field.slice(1).split(',')) {
@@ -170,7 +189,10 @@ function lineKey(tags: Record<string, string>, mode: Mode): string {
 const PASSENGER_REF = /^(ICE|IC|EC|ECE|RE|RB|S|U|STR|FLX|NJ|EN|RJ|TGV)\s?\d/i;
 
 function pickRef(raw: string): string {
-  const tokens = raw.split(';').map((t) => t.trim()).filter(Boolean);
+  const tokens = raw
+    .split(';')
+    .map((t) => t.trim())
+    .filter(Boolean);
   if (tokens.length <= 1) return raw.trim();
   return tokens.find((t) => PASSENGER_REF.test(t)) ?? tokens[0];
 }
@@ -180,7 +202,10 @@ function cleanName(tags: Record<string, string>): string {
   const name = tags.name ?? '';
   const colon = name.indexOf(':');
   const base = colon > 0 && colon <= 6 ? name.slice(colon + 1) : name;
-  return base.replace(/\s*=>\s*/g, ' – ').replace(/\s+/g, ' ').trim();
+  return base
+    .replace(/\s*=>\s*/g, ' – ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +226,21 @@ const CLOSURE_SNAP_M = 2000;
 interface ClosureSnapshot {
   day: string;
   closures: Closure[];
+}
+
+interface RegionsConfig {
+  active: string;
+  regions: Record<
+    string,
+    { name: string; url: string; bbox: number[]; center: Coord; zoom: number }
+  >;
+}
+
+/** One record of osmium's geojsonseq output - a RS-delimited GeoJSON Feature. */
+interface OsmFeature {
+  id?: string;
+  geometry?: { type: string; coordinates: unknown } | null;
+  properties?: Record<string, string> | null;
 }
 
 /** The clock window in effect on `day`, as `03:00-04:00`, or '' for all day. */
@@ -235,23 +275,28 @@ async function writeClosures(railWays: RailWay[]): Promise<void> {
     return;
   }
 
-  const snapshot: ClosureSnapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+  const snapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8')) as ClosureSnapshot;
   let history = new Map<string, LoggedClosure>();
   try {
     history = replayLog(readLog());
   } catch (err) {
     // A malformed log is a data problem to fix, not a reason to lose the layer.
-    console.log(`==> closure log unreadable, continuing without history: ${(err as Error).message}`);
+    console.log(
+      `==> closure log unreadable, continuing without history: ${(err as Error).message}`,
+    );
   }
 
   const graph = buildRailGraph(railWays);
   const out: unknown[] = [];
-  let points = 0, routed = 0, unmatched = 0;
+  let points = 0,
+    routed = 0,
+    unmatched = 0;
 
   // Worst first, so that where several restrictions share a section the one a
   // rider cares about is the feature drawn on top.
-  const ordered = [...snapshot.closures]
-    .sort((a, b) => EFFECT_RANK[a.effect] - EFFECT_RANK[b.effect]);
+  const ordered = [...snapshot.closures].sort(
+    (a, b) => EFFECT_RANK[a.effect] - EFFECT_RANK[b.effect],
+  );
 
   for (const c of ordered) {
     const from: Coord = [c.from.lon, c.from.lat];
@@ -263,14 +308,21 @@ async function writeClosures(railWays: RailWay[]): Promise<void> {
       // A point still has to be *on* the network we drew. Without that check a
       // regional build - which reads the whole country's feed against one
       // state's extract - scatters markers across track it has never loaded.
-      if (nearestNode(graph, from, CLOSURE_SNAP_M) === null) { unmatched++; continue; }
+      if (nearestNode(graph, from, CLOSURE_SNAP_M) === null) {
+        unmatched++;
+        continue;
+      }
       geometry = { type: 'Point', coordinates: from };
       points++;
     } else {
       const path = routeBetween(graph, from, to, {
-        routes: c.routes, snapM: CLOSURE_SNAP_M,
+        routes: c.routes,
+        snapM: CLOSURE_SNAP_M,
       });
-      if (!path) { unmatched++; continue; }
+      if (!path) {
+        unmatched++;
+        continue;
+      }
       geometry = { type: 'LineString', coordinates: path.coords };
       routed++;
     }
@@ -307,8 +359,9 @@ async function writeClosures(railWays: RailWay[]): Promise<void> {
   await writeFeatures(`${OUT}/closures.geojsonl`, out);
   console.log(
     `==> ${out.length} closure features for ${snapshot.day}: ` +
-    `${routed} on the network, ${points} at a single operating point, ` +
-    `${unmatched} dropped as unmatchable`);
+      `${routed} on the network, ${points} at a single operating point, ` +
+      `${unmatched} dropped as unmatchable`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +377,11 @@ async function writeClosures(railWays: RailWay[]): Promise<void> {
  * through junction throats and leaving the line in pieces for little further gain.
  */
 const TRACK_PAIR_M: Record<Mode, number> = {
-  tram: 15, subway: 20, suburban: 20, regional: 20, longdistance: 20,
+  tram: 15,
+  subway: 20,
+  suburban: 20,
+  regional: 20,
+  longdistance: 20,
   // Coach carries no way ids at all - its geometry is a GTFS shape, not a
   // stitched set of OSM ways - so there is no second track to collapse.
   coach: 0,
@@ -334,7 +391,7 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   mkdirSync(DATA, { recursive: true });
 
-  const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8'));
+  const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8')) as RegionsConfig;
   // REGION overrides the committed default, so a one-off national run needs no
   // config change. CI sets it only via the workflow_dispatch input.
   const active: string = process.env.REGION || cfg.active;
@@ -342,10 +399,12 @@ async function main() {
   if (!region) throw new Error(`unknown region '${active}'`);
   console.log(`==> region: ${active} (${region.name})`);
 
-  const overrides: Record<string, { colour?: string; name?: string }> =
-    existsSync(`${DATA}/overrides.yaml`)
-      ? (parseYaml(readFileSync(`${DATA}/overrides.yaml`, 'utf8'))?.lines ?? {})
-      : {};
+  const overridesFile = existsSync(`${DATA}/overrides.yaml`)
+    ? (parseYaml(readFileSync(`${DATA}/overrides.yaml`, 'utf8')) as {
+        lines?: Record<string, { colour?: string; name?: string }>;
+      })
+    : undefined;
+  const overrides: Record<string, { colour?: string; name?: string }> = overridesFile?.lines ?? {};
 
   // --- relations -> lines ---------------------------------------------------
   const relations = await parseRelations(`${EXTRACT}/routes.opl`);
@@ -354,9 +413,15 @@ async function main() {
   const lines = new Map<string, Line>();
   let skipped = 0;
   for (const rel of relations) {
-    if (rel.tags.type !== 'route') { skipped++; continue; }
+    if (rel.tags.type !== 'route') {
+      skipped++;
+      continue;
+    }
     const mode = classify(rel.tags);
-    if (!mode || rel.wayIds.length === 0) { skipped++; continue; }
+    if (!mode || rel.wayIds.length === 0) {
+      skipped++;
+      continue;
+    }
 
     const key = lineKey(rel.tags, mode);
     let line = lines.get(key);
@@ -385,7 +450,10 @@ async function main() {
     // First usable colour wins; OSM colour is used verbatim per project decision.
     if (line.colourSource !== 'osm') {
       const c = normaliseColour(rel.tags.colour ?? rel.tags.color);
-      if (c) { line.colour = c; line.colourSource = 'osm'; }
+      if (c) {
+        line.colour = c;
+        line.colourSource = 'osm';
+      }
     }
   }
 
@@ -416,12 +484,17 @@ async function main() {
         relations: [],
       });
     }
-    console.log(`==> ${coach.lines.length} coach lines from ${coach.publishers.join(', ') || 'no feed'}`);
+    console.log(
+      `==> ${coach.lines.length} coach lines from ${coach.publishers.join(', ') || 'no feed'}`,
+    );
   }
 
   for (const line of lines.values()) {
     const ov = overrides[line.id];
-    if (ov?.colour) { line.colour = ov.colour; line.colourSource = 'override'; }
+    if (ov?.colour) {
+      line.colour = ov.colour;
+      line.colourSource = 'override';
+    }
     if (ov?.name) line.name = ov.name;
     if (!line.colour) line.colour = fallbackColour(`${line.network}|${line.ref}`, line.mode);
     // De-duplicate ways contributed by opposite-direction variants.
@@ -442,9 +515,10 @@ async function main() {
       crlfDelay: Infinity,
     });
     for await (const raw of rl) {
-      const text = raw.replace(/^\x1e/, '').trim(); // geojsonseq record separator
+      // geojsonseq record separator
+      const text = (raw.startsWith('\x1e') ? raw.slice(1) : raw).trim();
       if (!text) continue;
-      const f = JSON.parse(text);
+      const f = JSON.parse(text) as OsmFeature;
       if (f.geometry?.type === 'LineString' && typeof f.id === 'string' && f.id[0] === 'w') {
         const id = f.id.slice(1);
         const coords = f.geometry.coordinates as Coord[];
@@ -471,11 +545,14 @@ async function main() {
     for (const w of line.wayIds) useCount.set(w, (useCount.get(w) ?? 0) + 1);
   }
   const everyWay = [...useCount.keys()];
-  const canonical = new Set(collapseParallelTracks(
-    everyWay, geom, Math.max(...Object.values(TRACK_PAIR_M)),
-    { linesOn: (w) => useCount.get(w) ?? 0 },
-  ));
-  console.log(`==> ${everyWay.length - canonical.size} of ${everyWay.length} ways are a second track`);
+  const canonical = new Set(
+    collapseParallelTracks(everyWay, geom, Math.max(...Object.values(TRACK_PAIR_M)), {
+      linesOn: (w) => useCount.get(w) ?? 0,
+    }),
+  );
+  console.log(
+    `==> ${everyWay.length - canonical.size} of ${everyWay.length} ways are a second track`,
+  );
 
   let dropped = 0;
   for (const line of lines.values()) {
@@ -493,7 +570,8 @@ async function main() {
     for (const w of line.wayIds) {
       if (!geom.has(w)) continue;
       const list = wayLines.get(w);
-      if (list) list.push(line.id); else wayLines.set(w, [line.id]);
+      if (list) list.push(line.id);
+      else wayLines.set(w, [line.id]);
     }
   }
 
@@ -502,7 +580,8 @@ async function main() {
   // corridor-wide ranking below, so a line's rank there agrees with where it
   // would have sorted locally.
   function lineCompare(a: string, b: string): number {
-    const la = lines.get(a)!, lb = lines.get(b)!;
+    const la = lines.get(a)!,
+      lb = lines.get(b)!;
     const d = MODE_SPECS[lb.mode].order - MODE_SPECS[la.mode].order;
     return d !== 0 ? d : la.ref.localeCompare(lb.ref, 'de', { numeric: true });
   }
@@ -526,7 +605,10 @@ async function main() {
   // they have to be measured on this exact geometry (see lib/stopmarks.ts).
   // Note these chains stay untrimmed - taper trimming is applied per line when
   // the feature is built, so what the marks measure is the full band.
-  interface SegInfo { lineIds: string[]; chains: Coord[][] }
+  interface SegInfo {
+    lineIds: string[];
+    chains: Coord[][];
+  }
   const segInfos: SegInfo[] = [];
   let maxBundle = 0;
   for (const { lineIds, wayIds } of segments.values()) {
@@ -551,7 +633,8 @@ async function main() {
   // See pipeline/lib/orient.ts.
   {
     const flat = segInfos.flatMap((seg, segIdx) =>
-      seg.chains.map((chain, chainIdx) => ({ segIdx, chainIdx, chain })));
+      seg.chains.map((chain, chainIdx) => ({ segIdx, chainIdx, chain })),
+    );
     const flips = coorientChains(flat.map((f) => f.chain));
     let reversed = 0;
     flips.forEach((flip, i) => {
@@ -560,7 +643,9 @@ async function main() {
       segInfos[segIdx].chains[chainIdx] = [...segInfos[segIdx].chains[chainIdx]].reverse();
       reversed++;
     });
-    console.log(`==> ${reversed} of ${flat.length} chains turned round to keep one slot on one side`);
+    console.log(
+      `==> ${reversed} of ${flat.length} chains turned round to keep one slot on one side`,
+    );
   }
 
   // --- per-segment slots ------------------------------------------------------
@@ -586,9 +671,9 @@ async function main() {
   // itself to the chains it has rather than giving up on the short ones: the
   // change a rider sees is a line easing across into its new band, which is
   // legible, rather than a gap that is not.
-  const segSlots: Map<string, number>[] = segInfos.map((seg) => new Map(
-    seg.lineIds.map((id, idx) => [id, slotOffset(idx, seg.lineIds.length)]),
-  ));
+  const segSlots: Map<string, number>[] = segInfos.map(
+    (seg) => new Map(seg.lineIds.map((id, idx) => [id, slotOffset(idx, seg.lineIds.length)])),
+  );
   const slotFor = (segIdx: number, lineId: string) => segSlots[segIdx].get(lineId)!;
 
   {
@@ -613,20 +698,24 @@ async function main() {
     segInfos.forEach((seg, segIdx) => {
       for (const id of seg.lineIds) {
         let set = slotsPerLine.get(id);
-        if (!set) { set = new Set<number>(); slotsPerLine.set(id, set); }
+        if (!set) {
+          set = new Set<number>();
+          slotsPerLine.set(id, set);
+        }
         set.add(slotFor(segIdx, id));
       }
     });
     const moving = [...slotsPerLine.values()].filter((set) => set.size > 1).length;
-    const avgSlots = [...slotsPerLine.values()].reduce((a, set) => a + set.size, 0)
-      / Math.max(slotsPerLine.size, 1);
+    const avgSlots =
+      [...slotsPerLine.values()].reduce((a, set) => a + set.size, 0) /
+      Math.max(slotsPerLine.size, 1);
     console.log(
-      `==> widest slot span vs membership: ${gapMax} `
-      + '(0 = every bundle draws exactly as wide as the lines on it)',
+      `==> widest slot span vs membership: ${gapMax} ` +
+        '(0 = every bundle draws exactly as wide as the lines on it)',
     );
     console.log(
-      `==> ${moving} of ${slotsPerLine.size} lines change slot somewhere, `
-      + `${avgSlots.toFixed(2)} distinct slots each on average`,
+      `==> ${moving} of ${slotsPerLine.size} lines change slot somewhere, ` +
+        `${avgSlots.toFixed(2)} distinct slots each on average`,
     );
   }
 
@@ -644,7 +733,11 @@ async function main() {
   // See pipeline/lib/taper.ts for why that ramp has to be a staircase of
   // short constant-offset sub-features rather than baked-in diagonal
   // geometry.
-  interface EndRef { segIdx: number; chainIdx: number; atStart: boolean }
+  interface EndRef {
+    segIdx: number;
+    chainIdx: number;
+    atStart: boolean;
+  }
   const byEnd = new Map<string, EndRef[]>();
   segInfos.forEach((seg, segIdx) => {
     seg.chains.forEach((chain, chainIdx) => {
@@ -652,28 +745,43 @@ async function main() {
         const key = endpointKey(atStart ? chain[0] : chain[chain.length - 1]);
         const ref = { segIdx, chainIdx, atStart };
         const list = byEnd.get(key);
-        if (list) list.push(ref); else byEnd.set(key, [ref]);
+        if (list) list.push(ref);
+        else byEnd.set(key, [ref]);
       }
     });
   });
 
-  const trimKey = (segIdx: number, chainIdx: number, lineId: string) => `${segIdx}:${chainIdx}:${lineId}`;
+  const trimKey = (segIdx: number, chainIdx: number, lineId: string) =>
+    `${segIdx}:${chainIdx}:${lineId}`;
 
   interface Candidate {
-    lineId: string; bundle: number; steps: TaperStep[]; minzoom: number;
+    lineId: string;
+    bundle: number;
+    steps: TaperStep[];
+    minzoom: number;
     /** The ramp's two ends, canonicalised - what "occupied slot" is judged against. */
-    up: number; down: number;
-    aIdx: number; aChainIdx: number; aFromStart: boolean; aHalf: number;
-    bIdx: number; bChainIdx: number; bFromStart: boolean; bHalf: number;
+    up: number;
+    down: number;
+    aIdx: number;
+    aChainIdx: number;
+    aFromStart: boolean;
+    aHalf: number;
+    bIdx: number;
+    bChainIdx: number;
+    bFromStart: boolean;
+    bHalf: number;
   }
   const candidates: Candidate[] = [];
-  let skippedAmbiguous = 0, skippedShort = 0, shortened = 0;
+  let skippedAmbiguous = 0,
+    skippedShort = 0,
+    shortened = 0;
 
   for (const refs of byEnd.values()) {
     const bySeg = new Map<number, EndRef[]>();
     for (const r of refs) {
       const list = bySeg.get(r.segIdx);
-      if (list) list.push(r); else bySeg.set(r.segIdx, [r]);
+      if (list) list.push(r);
+      else bySeg.set(r.segIdx, [r]);
     }
     if (bySeg.size < 2) continue; // only one segment touches here
 
@@ -699,12 +807,15 @@ async function main() {
       }
 
       const [idxA, idxB] = relevant;
-      const segA = segInfos[idxA], segB = segInfos[idxB];
-      const [refA] = bySeg.get(idxA)!, [refB] = bySeg.get(idxB)!;
+      const segA = segInfos[idxA],
+        segB = segInfos[idxB];
+      const [refA] = bySeg.get(idxA)!,
+        [refB] = bySeg.get(idxB)!;
 
       const line = lines.get(lineId)!;
       const nA = segA.lineIds.length;
-      const slotA = slotFor(idxA, lineId), slotB = slotFor(idxB, lineId);
+      const slotA = slotFor(idxA, lineId),
+        slotB = slotFor(idxB, lineId);
 
       // buildTaper wants a chain ending at the junction and one starting
       // there. Co-orienting above settles which way each chain runs but not
@@ -740,19 +851,35 @@ async function main() {
       const delta = down.slot - up.slot;
       const wantM = taperLengthM(line.mode, delta);
       const L = fitTaperLength(chainLengthM(up.chain), chainLengthM(down.chain), wantM);
-      if (L === 0) { skippedShort++; continue; }
+      if (L === 0) {
+        skippedShort++;
+        continue;
+      }
       if (L < wantM) shortened++;
       const steps = buildTaper(up.chain, down.chain, up.slot, down.slot, L, taperSteps(delta));
-      if (!steps) { skippedShort++; continue; }
+      if (!steps) {
+        skippedShort++;
+        continue;
+      }
 
       candidates.push({
-        lineId, bundle: nA, steps, minzoom: taperMinzoom(L),
-        up: up.slot, down: down.slot,
+        lineId,
+        bundle: nA,
+        steps,
+        minzoom: taperMinzoom(L),
+        up: up.slot,
+        down: down.slot,
         // Trims apply to each side's own chain in its own, never-reversed
         // orientation, so they are recorded against that chain's actual end
         // rather than the up/down role it was given above.
-        aIdx: idxA, aChainIdx: refA.chainIdx, aFromStart: refA.atStart, aHalf: L / 2,
-        bIdx: idxB, bChainIdx: refB.chainIdx, bFromStart: refB.atStart, bHalf: L / 2,
+        aIdx: idxA,
+        aChainIdx: refA.chainIdx,
+        aFromStart: refA.atStart,
+        aHalf: L / 2,
+        bIdx: idxB,
+        bChainIdx: refB.chainIdx,
+        bFromStart: refB.atStart,
+        bHalf: L / 2,
       });
     }
   }
@@ -777,7 +904,9 @@ async function main() {
   const trimStart = new Map<string, number>();
   const trimEndM = new Map<string, number>();
   const staircases: { lineId: string; bundle: number; minzoom: number; step: TaperStep }[] = [];
-  let tapered = 0, skippedCollision = 0, occupiedLanding = 0;
+  let tapered = 0,
+    skippedCollision = 0,
+    occupiedLanding = 0;
   for (const c of candidates) {
     if (collides(c.aIdx, c.aChainIdx, c.lineId) || collides(c.bIdx, c.bChainIdx, c.lineId)) {
       skippedCollision++;
@@ -801,8 +930,8 @@ async function main() {
     tapered++;
   }
   console.log(
-    `==> ${tapered} slot tapers (${skippedAmbiguous} skipped: ambiguous junction, `
-    + `${skippedShort} skipped: chain too short, ${skippedCollision} skipped: trims collided)`,
+    `==> ${tapered} slot tapers (${skippedAmbiguous} skipped: ambiguous junction, ` +
+      `${skippedShort} skipped: chain too short, ${skippedCollision} skipped: trims collided)`,
   );
   // How often the chains could not afford the ramp the move asked for. Not a
   // fault - a shortened ramp is still a ramp, and still beats the step it
@@ -812,7 +941,9 @@ async function main() {
   // stay 0: fitTaperLength hands each end at most 0.4 of its chain, so the
   // two ends of one chain cannot together ask for more than it has.
   console.log(`==> ${shortened} tapers ramped shorter than asked, to fit the chain they had`);
-  console.log(`==> ${occupiedLanding} taper steps land exactly on an occupied slot (see taper.ts:buildTaper)`);
+  console.log(
+    `==> ${occupiedLanding} taper steps land exactly on an occupied slot (see taper.ts:buildTaper)`,
+  );
 
   // --- emit route features --------------------------------------------------
   const features: unknown[] = [];
@@ -831,9 +962,10 @@ async function main() {
       });
       features.push({
         type: 'Feature',
-        geometry: parts.length === 1
-          ? { type: 'LineString', coordinates: parts[0] }
-          : { type: 'MultiLineString', coordinates: parts },
+        geometry:
+          parts.length === 1
+            ? { type: 'LineString', coordinates: parts[0] }
+            : { type: 'MultiLineString', coordinates: parts },
         properties: {
           line: line.id,
           ref: line.ref,
@@ -893,9 +1025,10 @@ async function main() {
       const line = lines.get(cl.id)!;
       features.push({
         type: 'Feature',
-        geometry: cl.parts.length === 1
-          ? { type: 'LineString', coordinates: cl.parts[0] }
-          : { type: 'MultiLineString', coordinates: cl.parts },
+        geometry:
+          cl.parts.length === 1
+            ? { type: 'LineString', coordinates: cl.parts[0] }
+            : { type: 'MultiLineString', coordinates: cl.parts },
         properties: {
           line: line.id,
           ref: line.ref,
@@ -929,13 +1062,13 @@ async function main() {
     input: createReadStream(`${EXTRACT}/stations.geojsonseq`),
     crlfDelay: Infinity,
   })) {
-    const text = raw.replace(/^\x1e/, '').trim();
+    const text = (raw.startsWith('\x1e') ? raw.slice(1) : raw).trim();
     if (!text) continue;
-    const f = JSON.parse(text);
+    const f = JSON.parse(text) as OsmFeature;
     if (f.geometry?.type !== 'Point' || !f.properties?.name) continue;
     const st: Station = {
       id: String(f.id),
-      geometry: f.geometry,
+      geometry: { type: 'Point', coordinates: f.geometry.coordinates as Coord },
       props: f.properties,
       served: new Set<string>(),
     };
@@ -957,7 +1090,8 @@ async function main() {
     const [lon, lat] = st.geometry.coordinates;
     const k = cellKey(lon, lat);
     const cell = grid.get(k);
-    if (cell) cell.push(st); else grid.set(k, [st]);
+    if (cell) cell.push(st);
+    else grid.set(k, [st]);
   }
 
   /** Equirectangular approximation - accurate enough at a 300 m radius. */
@@ -970,14 +1104,18 @@ async function main() {
 
   function nearestStation(c: Coord, radiusM = SNAP_M): Station | null {
     const [lon, lat] = c;
-    const ci = Math.floor(lon / CELL), cj = Math.floor(lat / CELL);
+    const ci = Math.floor(lon / CELL),
+      cj = Math.floor(lat / CELL);
     let best: Station | null = null;
     let bestD = radiusM;
     for (let i = ci - 1; i <= ci + 1; i++) {
       for (let j = cj - 1; j <= cj + 1; j++) {
         for (const st of grid.get(`${i}:${j}`) ?? []) {
           const d = metres(c, st.geometry.coordinates);
-          if (d < bestD) { bestD = d; best = st; }
+          if (d < bestD) {
+            bestD = d;
+            best = st;
+          }
         }
       }
     }
@@ -990,15 +1128,17 @@ async function main() {
     input: createReadStream(`${EXTRACT}/stops.geojsonseq`),
     crlfDelay: Infinity,
   })) {
-    const text = raw.replace(/^\x1e/, '').trim();
+    const text = (raw.startsWith('\x1e') ? raw.slice(1) : raw).trim();
     if (!text) continue;
-    const f = JSON.parse(text);
+    const f = JSON.parse(text) as OsmFeature;
     if (f.geometry?.type === 'Point' && typeof f.id === 'string' && f.id[0] === 'n') {
       stopCoords.set(f.id.slice(1), f.geometry.coordinates as Coord);
     }
   }
 
-  let direct = 0, snapped = 0, unmatched = 0;
+  let direct = 0,
+    snapped = 0,
+    unmatched = 0;
   for (const line of lines.values()) {
     // Coach stop ids are the feed's, not OSM node ids; they are matched below,
     // after stop-id resolution, and would only ever count as unmatched here.
@@ -1006,12 +1146,22 @@ async function main() {
     for (const stopId of line.stopIds) {
       // Some relations reference the station node itself - use it directly.
       const exact = stationByNode.get(stopId);
-      if (exact) { exact.served.add(line.id); direct++; continue; }
+      if (exact) {
+        exact.served.add(line.id);
+        direct++;
+        continue;
+      }
 
       const c = stopCoords.get(stopId);
-      if (!c) { unmatched++; continue; }
+      if (!c) {
+        unmatched++;
+        continue;
+      }
       const st = nearestStation(c);
-      if (st) { st.served.add(line.id); snapped++; } else unmatched++;
+      if (st) {
+        st.served.add(line.id);
+        snapped++;
+      } else unmatched++;
     }
   }
   console.log(`==> stop members: ${direct} direct, ${snapped} snapped, ${unmatched} unmatched`);
@@ -1048,7 +1198,8 @@ async function main() {
     for (const cl of coach.lines) {
       for (const st of cl.stops) {
         const set = callers.get(st.id);
-        if (set) set.add(cl.id); else callers.set(st.id, new Set([cl.id]));
+        if (set) set.add(cl.id);
+        else callers.set(st.id, new Set([cl.id]));
       }
     }
 
@@ -1165,13 +1316,15 @@ async function main() {
     // still gets a mark, a one-band one on its own node. That is the dot every
     // stop used to be, so a data problem costs the mark's precision and never
     // the mark. `pill` on the station says which of the two happened.
-    const list = marks.get(String(f.properties.id)) ?? [{
-      coord: (f.geometry as { coordinates: Coord }).coordinates,
-      bearing: 0,
-      mid: 0,
-      span: 1,
-      lines: String(f.properties.lines).split(',').filter(Boolean),
-    }];
+    const list = marks.get(String(f.properties.id)) ?? [
+      {
+        coord: (f.geometry as { coordinates: Coord }).coordinates,
+        bearing: 0,
+        mid: 0,
+        span: 1,
+        lines: String(f.properties.lines).split(',').filter(Boolean),
+      },
+    ];
 
     // One name per station, on the widest of its bars - a junction has a mark
     // per corridor and would otherwise be labelled once per corridor too.
@@ -1201,11 +1354,13 @@ async function main() {
   });
 
   const orphans = servedCount - stationFeatures.filter((f) => f.properties.pill).length;
-  const ranks = [...byRank].sort((a, b) => a[0] - b[0])
-    .map(([r, n]) => `rank ${r}: ${n}`).join(', ');
+  const ranks = [...byRank]
+    .sort((a, b) => a[0] - b[0])
+    .map(([r, n]) => `rank ${r}: ${n}`)
+    .join(', ');
   console.log(
-    `==> ${markFeatures.length} station marks (${ranks}`
-    + `${orphans ? `; ${orphans} off their corridor, marked on the node` : ''})`,
+    `==> ${markFeatures.length} station marks (${ranks}` +
+      `${orphans ? `; ${orphans} off their corridor, marked on the node` : ''})`,
   );
 
   // The station list of every line, keyed by line id: the join key the
@@ -1257,13 +1412,17 @@ async function main() {
 
   writeFileSync(
     `${DATA}/lines.json`,
-    JSON.stringify({
-      region: active,
-      regionName: region.name,
-      counts: { lines: registry.length, stations: stationFeatures.length, byMode },
-      colourCoverage: { osmTagged: tagged, total: fromOsm.length },
-      lines: registry,
-    }, null, 2) + '\n',
+    JSON.stringify(
+      {
+        region: active,
+        regionName: region.name,
+        counts: { lines: registry.length, stations: stationFeatures.length, byMode },
+        colourCoverage: { osmTagged: tagged, total: fromOsm.length },
+        lines: registry,
+      },
+      null,
+      2,
+    ) + '\n',
   );
 
   // One line per line id: the file is ~1 MB, and a rebuild that moves a single
@@ -1275,8 +1434,11 @@ async function main() {
   writeFileSync(`${DATA}/line-stations.json`, `{\n${stationLists}\n}\n`);
 
   console.log('==> by mode:', byMode);
-  const pct = fromOsm.length ? Math.round(100 * tagged / fromOsm.length) : 0;
+  const pct = fromOsm.length ? Math.round((100 * tagged) / fromOsm.length) : 0;
   console.log(`==> OSM colour coverage: ${tagged}/${fromOsm.length} (${pct}%)`);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
