@@ -17,7 +17,7 @@ import {
   renderChrome, renderLinePanel, renderClosurePanel, setStatus, compareLines,
   syncSheetHandle, setVisibleModes, unpinModes, setLiveAttributionUsed,
   setVisibleLines, setLinePunctuality, setPunctualityAttributionUsed,
-  setVisibleClosures, setClosureDay, setClosureAttributionUsed,
+  setVisibleClosures, setVisibleOperators, setClosureDay, setClosureAttributionUsed,
   setCoachAttributionUsed, setRoutingAttributionUsed,
 } from './ui.ts';
 import { setPlannerPlace, restorePlannerResult, type PlannerHost } from './planner.ts';
@@ -26,6 +26,7 @@ import { ChromeToggleControl, labelControls } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
 import { parseClosure } from './closures.ts';
+import { operatorExpression, operatorKey, operatorShown } from './operators.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -309,22 +310,19 @@ async function main() {
       }
     }
     // Operator is a data-driven filter rather than a layer toggle.
+    const byOperator = operatorExpression(state.operators);
     const modeFilter: unknown[] = ['in', ['get', 'mode'], ['literal', [...state.modes]]];
-    const filter: unknown[] = state.operator
-      ? ['all', modeFilter, ['==', ['get', 'operator'], state.operator]]
-      : modeFilter;
-    map.setFilter('route-badges', filter as never);
+    map.setFilter(
+      'route-badges',
+      (byOperator ? ['all', modeFilter, byOperator] : modeFilter) as never,
+    );
 
-    if (state.operator) {
-      for (const mode of MODES) {
-        map.setFilter(`route-${mode}`, [
-          'all', ['==', ['get', 'mode'], mode], ['==', ['get', 'operator'], state.operator],
-        ] as never);
-      }
-    } else {
-      for (const mode of MODES) {
-        map.setFilter(`route-${mode}`, ['==', ['get', 'mode'], mode] as never);
-      }
+    for (const mode of MODES) {
+      const isMode: unknown[] = ['==', ['get', 'mode'], mode];
+      // The highlight layer under it is deliberately left on the mode alone:
+      // it is what the operator panel counts, and a list of operators that
+      // dropped the ones it had filtered out could not switch them back on.
+      map.setFilter(`route-${mode}`, (byOperator ? ['all', isMode, byOperator] : isMode) as never);
     }
 
     // Stations follow the mode filter too. Without this the stop dots and their
@@ -355,7 +353,7 @@ async function main() {
 
     const c = map.getCenter();
     const key = `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}/` +
-      `${[...state.modes].sort().join(',')}/${state.operator ?? ''}/${state.closures}`;
+      `${[...state.modes].sort().join(',')}/${operatorKey(state.operators)}/${state.closures}`;
     if (key === legendKey) return;
     legendKey = key;
 
@@ -375,6 +373,38 @@ async function main() {
     setVisibleModes(new Map([...lines].map(([mode, set]) => [mode, set.size])));
     setVisibleLines(ids);
     if (lines.get('coach')?.size) markCoachUsed();
+
+    countOperators();
+  }
+
+  /**
+   * Operators in view, counted the same way and for the same reason as the
+   * modes: the panel answers "who runs what I am looking at", and a national
+   * list of three hundred companies cannot.
+   *
+   * Counted off the highlight layers rather than the route layers, because
+   * those carry the mode filter but not the operator one. An operator the
+   * reader has switched off therefore keeps its row and its honest count, so
+   * the click can be undone - the route layers would have nothing left of it
+   * to find, which is exactly the state a reader needs a way out of. The
+   * highlight layers paint at zero opacity unless a line is selected; that
+   * hides them from the eye, not from a query.
+   */
+  function countOperators() {
+    const layers = MODES.map((m) => `route-${m}-highlight`).filter((id) => map.getLayer(id));
+    if (!layers.length) return;
+
+    const ops = new Map<string, Set<string>>();
+    for (const f of map.queryRenderedFeatures({ layers })) {
+      const operator = String(f.properties.operator ?? '');
+      // A line whose operator the data does not name has nothing to list it
+      // under; it is drawn, and stays drawn, under whatever the filter allows.
+      if (!operator) continue;
+      const set = ops.get(operator) ?? new Set<string>();
+      set.add(String(f.properties.line));
+      ops.set(operator, set);
+    }
+    setVisibleOperators(new Map([...ops].map(([operator, set]) => [operator, set.size])));
   }
 
   /**
@@ -848,7 +878,18 @@ async function main() {
       }
       applyFilters();
     },
-    onOperator: (op) => { state.operator = op; applyFilters(); },
+    onOperators: (filter) => {
+      state.operators = filter;
+      // The same reasoning as a mode being switched off: everything but the
+      // selected line paints dimmed, so a selection whose operator has just
+      // been filtered away would leave the map greyed out around nothing.
+      const line = state.selected ? byId.get(state.selected) : null;
+      if (line && !operatorShown(filter, line.operator)) {
+        state.selected = null;
+        applySelection();
+      }
+      applyFilters();
+    },
     onToggleClosures: (on) => { state.closures = on; applyClosures(); },
     onToggleSheet: () => setChrome(state.chrome === 'peek' ? 'full' : 'peek'),
     onSelect: (id) => {

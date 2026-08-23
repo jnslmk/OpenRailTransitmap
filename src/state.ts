@@ -4,7 +4,8 @@
  *   #10.45/51.16/6.2        map position (lon/lat/zoom)
  *   ?line=regional|gvh|re1  selected line
  *   ?modes=longdistance,regional
- *   ?op=DB%20Regio          operator filter
+ *   ?op=DB Regio~erixx      only these operators (empty: none of them)
+ *   ?opoff=DB Regio         every operator except these
  *   ?closures=0             construction overlay off
  *   ?ui=map|peek            sidebar hidden / collapsed to its handle
  *   ?tab=plan               the journey planner rather than the line index
@@ -16,6 +17,7 @@
  */
 
 import { MODES, type Mode } from '../shared/lnvg.ts';
+import { readOperators, writeOperators, type OperatorFilter } from './operators.ts';
 import { MODE_GROUPS, type Place } from './routing.ts';
 import { BIKE_STEPS, defaultPlannerState, type PlannerState } from './planner.ts';
 
@@ -34,7 +36,7 @@ export interface ViewState {
   zoom: number;
   selected: string | null;
   modes: Set<Mode>;
-  operator: string | null;
+  operators: OperatorFilter;
   closures: boolean;
   chrome: ChromeMode;
   tab: Tab;
@@ -132,7 +134,7 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     zoom,
     selected: q.get('line'),
     modes: modes.size ? modes : new Set<Mode>(MODES),
-    operator: q.get('op'),
+    operators: readOperators(q),
     closures: q.get('closures') !== '0',
     chrome: q.get('ui') === 'map' ? 'hidden' : q.get('ui') === 'peek' ? 'peek' : 'full',
     tab: q.get('tab') === 'plan' ? 'plan' : 'explore',
@@ -145,7 +147,7 @@ export function writeState(s: ViewState) {
   const q = new URLSearchParams();
   if (s.selected) q.set('line', s.selected);
   if (s.modes.size !== MODES.length) q.set('modes', [...s.modes].join(','));
-  if (s.operator) q.set('op', s.operator);
+  writeOperators(q, s.operators);
   if (!s.closures) q.set('closures', '0');
   if (s.chrome === 'hidden') q.set('ui', 'map');
   if (s.chrome === 'peek') q.set('ui', 'peek');

@@ -87,6 +87,16 @@ GitHub Pages and rebuilt nightly.
   can come back. A row you have just ticked is held open until you move the map,
   even where that mode runs nowhere near the view — a toggle that deleted the
   row it was made on could not be undone.
+- **Who runs it, one operator at a time.** The operator filter is a master
+  switch over a list of checkboxes rather than a drop-down that could only ever
+  hold one name: all on to begin with, all off in a click, and any mixture in
+  between. Like the legend it is scoped to the view — the couple of dozen
+  companies whose lines are on the screen, not the three hundred that run
+  something somewhere in the country — with the number of lines each has in
+  view beside it. An operator you switch off keeps its row *and* its count, so
+  the click can be undone and the number tells you what undoing it would put
+  back. The choice is part of the URL: `?op=` for just these operators,
+  `?opoff=` for everything but.
 - **Full-screen map.** A button on the map hides the whole sidebar so the map
   fills the window — the difference between usable and unusable on a phone — and
   a second one goes to browser fullscreen. On narrow screens the sidebar is a
