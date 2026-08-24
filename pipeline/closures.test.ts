@@ -19,6 +19,7 @@ import {
   normalise, replayLog, diffAgainstLog, windowsOn,
   type Closure, type ClosureEvent, type PlannedClosure, type RawRestriction,
 } from './closures.ts';
+import { MAX_MOVES, packEndMoves, parseEndMoves } from '../shared/closures.ts';
 
 // EPSG:3857 coordinates of two operating points either side of the Cornberg
 // tunnel, taken from a real reading of the feed.
@@ -218,4 +219,62 @@ test('a withdrawn closure is not withdrawn twice, and its return is recorded', (
 
 test('replaying an empty log yields no state', () => {
   assert.equal(replayLog([]).size, 0);
+});
+
+test('every move of the end date is kept, in the order it happened', () => {
+  // A count cannot say whether a possession was pushed back by a week or by a
+  // season, and that is the question a reader has when the panel tells them the
+  // plan has changed. So the moves are kept, not tallied.
+  let log: ClosureEvent[] = diffAgainstLog(new Map(), [closure()], '2026-08-22', WINDOW);
+  for (const [day, end] of [
+    ['2026-09-02', '2027-03-14T04:00:00'], ['2026-10-20', '2027-06-01T04:00:00'],
+  ] as const) {
+    log = [...log, ...diffAgainstLog(replayLog(log), [closure({ end })], day, WINDOW)];
+  }
+
+  const state = replayLog(log).get('ABC.1')!;
+  assert.equal(state.revisions, 2);
+  assert.deepEqual(state.endMoves, [
+    { logged: '2026-09-02', was: '2026-12-12', now: '2027-03-14' },
+    { logged: '2026-10-20', was: '2027-03-14', now: '2027-06-01' },
+  ]);
+});
+
+test('a revision that only reworded the works is not a move of the end date', () => {
+  // `revisions` counts any change to the plan; `endMoves` is about the dates
+  // alone. Conflating them would have the panel report a retyped work category
+  // as a possession running longer.
+  const log = diffAgainstLog(new Map(), [closure()], '2026-08-22', WINDOW);
+  const reworded = diffAgainstLog(
+    replayLog(log), [closure({ works: 'Bridge works' })], '2026-08-23', WINDOW);
+
+  const state = replayLog([...log, ...reworded]).get('ABC.1')!;
+  assert.equal(state.revisions, 1);
+  assert.deepEqual(state.endMoves, []);
+});
+
+test('the packed move history survives the round trip the tiles put it through', () => {
+  // The format is the contract between the build that writes the property and
+  // the panel that reads it; it lives in shared/closures.ts so that the two
+  // halves cannot drift, and this is the assertion that says so.
+  const moves = [
+    { logged: '2026-09-02', was: '2026-12-12', now: '2027-03-14' },
+    { logged: '2026-10-20', was: '2027-03-14', now: '2027-06-01' },
+  ];
+  assert.deepEqual(parseEndMoves(packEndMoves(moves)), moves);
+});
+
+test('only the last few moves travel, so one restriction cannot bloat the layer', () => {
+  const many = Array.from({ length: MAX_MOVES + 3 }, (_, i) => ({
+    logged: '2026-09-02', was: '2026-12-12', now: `2027-01-${String(i + 1).padStart(2, '0')}`,
+  }));
+  const kept = parseEndMoves(packEndMoves(many));
+  assert.equal(kept.length, MAX_MOVES);
+  assert.equal(kept.at(-1)!.now, many.at(-1)!.now, 'the newest moves are the ones kept');
+});
+
+test('a restriction never revised has an empty move history, not a missing one', () => {
+  const state = replayLog(
+    diffAgainstLog(new Map(), [closure()], '2026-08-22', WINDOW)).get('ABC.1')!;
+  assert.deepEqual(state.endMoves, []);
 });

@@ -3,7 +3,8 @@
 What is shut on the German rail network today, drawn on the track it shuts, and
 an archive of how the plan for it changed.
 
-Measured 22 August 2026 unless stated otherwise.
+Measured 22 August 2026 unless stated otherwise; the source survey and the
+BauInfoPortal figures were re-checked 24 August 2026.
 
 ## Picking a source
 
@@ -307,6 +308,174 @@ app draws no overlay and shows no construction credit.
   unlike a line: a possession is a fact about one day, and a link to
   "restriction 48EE0.3" would resolve to nothing by the time anyone opened it.
 
+## Two axes on one stripe
+
+The overlay carries two facts a reader acts on differently, and for a while it
+drew neither: what the restriction does to traffic, and how long it lasts. A line
+shut for a weekend and a line shut until December looked the same, and so did a
+full closure and a line down to one track.
+
+They are separated onto axes that do not interfere.
+
+**What it does is the shape of the mark.** A full closure takes the whole
+corridor — the dark casing with the yellow dashed over all of it. A single-track
+restriction takes one side of it: the hazard is drawn at 0.42 of the width,
+offset by 0.27 of it, so half the corridor stays dark. That is a picture of the
+restriction rather than a code for it, and what the eye reads at a glance —
+"half as much yellow" — survives down to the zoom where the stripe is a pixel
+wide. The marker for work inside a single station has no side to take, so it
+inverts instead: a filled dot for a closure, a yellow ring round a dark centre
+for single-track.
+
+The offset side is **fixed, not the track DB names**. The feed does say which
+track is out — `richtung`, by kilometrage — but the drawn geometry is a shortest
+path through OSM ways and its direction is not the kilometrage direction.
+Offsetting by `richtung` would claim the mark is on the correct side of the
+formation, which nothing here can support.
+
+**How long it runs is the weight.** Three bands, cut where the feed's own
+distribution has joints:
+
+| Band | Length | Share of the log | Drawn on 22 Aug 2026 |
+|---|---|---|---|
+| `days` | 1–3 days | 75% | 874 |
+| `weeks` | 4–31 days | 16% | 813 |
+| `months` | 32 days and up | 9% | 887 |
+
+The two right-hand columns are why the band is worth drawing. Per *restriction*
+the plan is overwhelmingly short work, but a possession is on the map once for
+every day it is in force, so a day's overlay splits almost evenly across the
+three. The long ones are a third of what is drawn, not a curiosity.
+
+`BAND_WEIGHT` is 0.7 / 1 / 1.45, and the tier weights are chosen against it so
+the two axes never trade places: the widest a minor restriction gets — months,
+at 0.48 × 1.45 — is still thinner than the thinnest closure, days at 1 × 0.7.
+Without that a four-month diversion would outweigh a weekend closure and the
+stripe's thickness would mean two things at once. `src/style.test.ts` holds the
+ranges apart.
+
+### What was tried instead
+
+- **Dash rhythm for duration** — short stitches for a weekend, near-solid for a
+  four-month possession — reads well at z12 and not at all at z6, where the
+  stripe is 1.2 px and every pattern is the same grey. It cannot be data-driven
+  either: `line-dasharray` takes a zoom expression and nothing else, so three
+  bands would mean three more layers per family. Weight is one expression and
+  works at both ends of the range.
+- **A colour ramp** by remaining time. Colour on this map means a line of some
+  kind, and hazard yellow is the one exception that earns its place by meaning
+  "not a service". Spending it on a second variable would cost the first.
+- **Progress along the geometry**, filling the stripe from one end as the
+  possession runs down. It is the obvious idea and it is wrong: the line is
+  space, not time, and a half-filled stripe reads as "the western half has
+  reopened". How much is left is a fact about the whole feature, so it belongs
+  where the whole feature is described.
+
+## How much is left
+
+The panel leads with the length and what remains of it — "4 months", "3 months
+left" — over a bar of the possession as currently planned. Elapsed is dark, what
+is left is the hazard yellow, and the whole thing is measured against **the day
+the tiles describe**, not the reader's clock. The overlay is a build-time
+reading; a bar on browser time could report a possession finished while the map
+is still drawing it as in force, and one clock for the whole overlay is worth
+more than a few hours of freshness on a scale whose unit is days.
+
+Under a week there is no bar. Seven days is three fat blocks that say less than
+the two dates either side of them, so a short possession gets the dates.
+
+Nothing new is fetched for any of this: `begin`, `end` and the tiles' own `day`
+are already on the feature. `days` and `band` are computed in the build only
+because the *style* needs the band — a MapLibre filter can match a string but
+cannot subtract two dates — and the day count rides along so the panel does not
+redo the arithmetic.
+
+## Being extended, more than once
+
+`revisions` was already in the tiles, and the panel said "Rescheduled 2 times
+since". That is the least interesting form of the fact: it cannot say whether
+the possession moved by a week or by a season, nor whether the moves are getting
+bigger — which is what tells a reader how much to believe the date now on the
+panel.
+
+So the moves themselves are carried. `replayLog` keeps every `revised` event
+that touched `end` as `{ t, was, now }`, the build packs the last six into one
+tile property — `2026-09-02:2026-10-02>2026-11-15;…`, because a vector tile holds
+strings — and the panel renders them as a list:
+
+```
+End date moved
+  1. 2 Oct 2026 → 15 Nov 2026, 44 days later
+  2. 15 Nov 2026 → 12 Dec 2026, 27 days later
+71 days longer than first planned
+```
+
+Three details are deliberate.
+
+The dates in a row are the **dates that moved**, not the day the move was made.
+Nothing upstream publishes when DB changed its mind — the log only knows when it
+noticed — so the day we noticed is a tooltip, never the headline.
+
+The total is measured from the **first end date ever recorded**, not summed from
+the moves. The two differ as soon as a possession has been pushed back and then
+pulled forward again, and "how much longer" means the distance from where it
+started.
+
+And the same fact is drawn on the bar: the stretch past the end date the
+possession was first given is hatched, with a tick where it used to finish. One
+that keeps being extended shows it in the shape of the bar before any of the
+text is read.
+
+Six moves is a cap, and the panel says so when it hits it. Every feature carries
+every property it has, and an unbounded history would grow the layer worst for
+exactly the possessions that already carry the most.
+
+On a fresh checkout **none of this shows**: the seeded log is 13,849 `planned`
+events and no revisions at all, because the archive starts when the job does.
+The panel says so rather than presenting an empty history as a finding.
+
+## Linking to DB's own account of the work
+
+Worth writing down what is actually available, because the obvious answer does
+not exist.
+
+**There is no per-restriction page to link to.** strecken.info is a single-route
+app — its bundle declares `/`, `/admin/*` and a catch-all, holds no
+`URLSearchParams` outside its error reporter, and puts no state in the URL — so a
+possession cannot be addressed there at all. Its own UI has no share control; the
+clipboard code in it copies table cells. And the feed carries nothing to link
+*with*: over a day's reading the records have exactly fourteen keys, and none of
+them is a description, a project name, a reference or a URL.
+
+What DB does publish is the **BauInfoPortal**
+([bauprojekte.deutschebahn.com](https://bauprojekte.deutschebahn.com)), DB
+InfraGO's own construction-project site: 296 projects, each with a page, a
+timeline and photographs. Its search is a plain query string, `/suche?q=`, and
+`robots.txt` is `Allow: /`. So the panel offers a **search for the operating
+point the restriction names**, next to the register the record itself came from.
+
+It is labelled as a search, and the caveat is printed under it, because DB's
+search matches the prose on project pages: "Cornberg" returns the Cornberger
+Tunnel, and "Uelzen" returns a project in the Elbe valley that merely mentions
+it. A lead a reader can judge is worth more than a citation this map cannot make.
+
+### The matching that was not done
+
+The portal's project list is fetchable in one call and 166 of the projects carry
+a route polyline, so restrictions could be matched to projects geometrically at
+build time. Measured against a day's feed — both ends within 400 m, projects
+wider than 150 km dropped as national programmes — that matches 45% of
+month-long possessions and 28% of one-day ones.
+
+It was not built, for the reason those two numbers are so close. A project
+polyline is a corridor tens of kilometres long, so proximity establishes that a
+restriction lies *on a stretch DB has a project for*, which is not the claim
+*this possession is that project*: a single night's rail grinding matches the
+Württemberg-Allgäu-Bahn as readily as a five-month rebuild does. The honest
+label for such a link would be "a project on this stretch" — which is what the
+search already gives, without a 7 MB scrape in the build, a second source to
+credit, and a spatial claim the map cannot check.
+
 ## Known limits
 
 - **The overlay is a build-time reading, not live.** It describes the day the
@@ -319,4 +488,16 @@ app draws no overlay and shows no construction credit.
   kilometrage.** Where a line number is untagged in OSM for the whole section
   and two parallel routes exist, the shorter one is chosen and can be the wrong
   one.
-- **The archive starts when the job did.** There is no way to backfill it.
+- **The archive starts when the job did.** There is no way to backfill it, so
+  the length bands work from day one and the extension history does not: it has
+  nothing to show until the log has watched a plan move.
+- **The band is the outer envelope, not time actually spent shut.** A possession
+  that runs three weekend nights over four months is `months`, because that is
+  how long the line is under a restriction — but it is not shut for 122 days.
+  The panel's `Today` row carries the shift pattern; the stripe cannot.
+- **Which side of the formation the single-track mark sits on is arbitrary.**
+  The feed names the track by kilometrage and the drawn geometry does not run in
+  that direction, so the mark says *one of two*, never *which one*.
+- **The official link is a search, not a citation.** DB publishes project pages,
+  not possessions, and its search matches their prose — so it will sometimes
+  return works that merely mention the place.

@@ -228,3 +228,79 @@ test('the ranking sorts the stops it is meant to', () => {
   assert.equal(stopRank(['tram'], 6, false), 3, 'a busy tram stop is still a tram stop');
   assert.equal(stopRank(['tram', 'subway'], 2, false), 1, 'unless the U-Bahn calls too');
 });
+
+// ---------------------------------------------------------------------------
+// Construction closures
+// ---------------------------------------------------------------------------
+
+test('every closure family has its own set of layers', () => {
+  for (const tier of ['closed', 'single', 'minor']) {
+    for (const part of ['casing', 'hazard', 'point']) {
+      assert.ok(style.layers.some((l) => l.id === `closures-${tier}-${part}`),
+        `closures-${tier}-${part} is missing`);
+    }
+  }
+});
+
+test('a longer possession is drawn heavier than a short one, at every zoom', () => {
+  // The whole point of the band: a weekend closure and a four-month one used to
+  // draw at one width, and a reader had to open both to tell them apart.
+  const width = evaluate(layer('closures-closed-casing').paint!['line-width']);
+  const radius = evaluate(layer('closures-closed-point').paint!['circle-radius']);
+  for (const zoom of [5, 6, 8, 11, 14, 16]) {
+    const days = width(zoom, { band: 'days' }) as number;
+    const weeks = width(zoom, { band: 'weeks' }) as number;
+    const months = width(zoom, { band: 'months' }) as number;
+    assert.ok(days < weeks && weeks < months,
+      `z${zoom}: ${days} / ${weeks} / ${months} do not increase with the band`);
+    assert.ok((radius(zoom, { band: 'days' }) as number)
+      < (radius(zoom, { band: 'months' }) as number), `z${zoom}: markers do not`);
+  }
+});
+
+test('a tile with no band drawn before the property existed still gets a width', () => {
+  // `match` with a fallback rather than a lookup, so an old tile - or one built
+  // by a checkout that predates the band - draws at the middle weight instead
+  // of vanishing.
+  const width = evaluate(layer('closures-closed-casing').paint!['line-width']);
+  assert.equal(width(11, {}), width(11, { band: 'weeks' }));
+  assert.equal(width(11, { band: 'nonsense' }), width(11, { band: 'weeks' }));
+});
+
+test('a single-track hazard covers one side of its corridor and stays inside it', () => {
+  const casing = evaluate(layer('closures-single-casing').paint!['line-width']);
+  const hazard = evaluate(layer('closures-single-hazard').paint!['line-width']);
+  const offset = evaluate(layer('closures-single-hazard').paint!['line-offset']);
+  for (const zoom of [6, 11, 14]) {
+    for (const band of ['days', 'weeks', 'months']) {
+      const full = casing(zoom, { band }) as number;
+      const strip = hazard(zoom, { band }) as number;
+      const off = offset(zoom, { band }) as number;
+      assert.ok(strip < full / 2,
+        `z${zoom} ${band}: hazard ${strip} covers half or more of ${full}`);
+      assert.ok(off > 0 && off + strip / 2 < full / 2,
+        `z${zoom} ${band}: hazard at ${off}±${strip / 2} leaves the ${full} casing`);
+    }
+  }
+});
+
+test('a full closure takes the whole corridor, and takes no offset to do it', () => {
+  const casing = evaluate(layer('closures-closed-casing').paint!['line-width']);
+  const hazard = evaluate(layer('closures-closed-hazard').paint!['line-width']);
+  assert.equal(hazard(11, { band: 'weeks' }), casing(11, { band: 'weeks' }));
+  assert.equal(layer('closures-closed-hazard').paint!['line-offset'], undefined);
+});
+
+test('the two axes stay apart: no minor restriction outweighs a closure', () => {
+  // Width carries the length of the possession; which family it belongs to is
+  // carried by the mark. That only works while the ranges do not overlap - a
+  // four-month diversion drawn heavier than a weekend closure would make the
+  // same thickness mean two different things.
+  const closure = evaluate(layer('closures-closed-casing').paint!['line-width']);
+  const minor = evaluate(layer('closures-minor-casing').paint!['line-width']);
+  for (const zoom of [10, 11, 14, 16]) {
+    assert.ok((minor(zoom, { band: 'months' }) as number)
+      < (closure(zoom, { band: 'days' }) as number),
+      `z${zoom}: the widest minor restriction is not thinner than the thinnest closure`);
+  }
+});

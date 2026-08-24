@@ -19,6 +19,7 @@ import {
   BUNDLE_PITCH_PX, LNVG, MODES, MODE_SPECS, PT_TO_PX, STOP_TIERS, type Mode,
 } from '../shared/lnvg.ts';
 import { PILL_IMAGE_PREFIX, PILL_PITCH, PILL_THICKNESS, pillLength } from './stopmarks.ts';
+import type { ClosureBand } from '../shared/closures.ts';
 
 export const FONT_REGULAR = ['Fira Sans Regular'];
 export const FONT_MEDIUM = ['Fira Sans Medium'];
@@ -576,17 +577,25 @@ function stationLayers(): LayerSpecification[] {
 // ---------------------------------------------------------------------------
 
 /**
- * A full closure or a line down to one track is the thing the layer exists for
- * and shows from the zoom the regional network appears at. The rest - a
- * timetable deviation, a few minutes of extra running time, an unspecified
- * restriction - is real but minor, and the 1,900 of them in an ordinary day's
- * feed, drawn across Germany at national zoom, would bury the network they
- * annotate. They wait until the view
- * is close enough for them to be about somewhere.
+ * The three families the overlay draws, each with its own mark.
+ *
+ * A full closure and a line down to one track used to share a tier and drew
+ * identically, which flattened the one distinction a reader actually acts on:
+ * no trains at all, versus trains at a fraction of the capacity. They are split
+ * here and told apart by how much of the corridor the hazard covers - the whole
+ * width for a closure, one side of it for single-track, which is what the
+ * restriction literally is.
+ *
+ * The rest - a timetable deviation, a few minutes of extra running time, an
+ * unspecified restriction - is real but minor, and the 1,900 of them in an
+ * ordinary day's feed, drawn across Germany at national zoom, would bury the
+ * network they annotate. They wait until the view is close enough for them to
+ * be about somewhere.
  */
 export const CLOSURE_TIERS = {
-  major: { effects: ['closed', 'single-track'], minzoom: 6, weight: 1 },
-  minor: { effects: ['diverted', 'slower', 'other'], minzoom: 10, weight: 0.62 },
+  closed: { effects: ['closed'], minzoom: 6, weight: 1, half: false },
+  single: { effects: ['single-track'], minzoom: 6, weight: 1, half: true },
+  minor: { effects: ['diverted', 'slower', 'other'], minzoom: 10, weight: 0.48, half: false },
 } as const;
 
 /**
@@ -609,9 +618,59 @@ const CLOSURE_WIDTH_STOPS: [number, number][] = [
   [5, 1.2], [8, 2.4], [11, 5.0], [14, 8.0],
 ];
 
-const closureWidth = (weight: number): ExpressionSpecification =>
+/**
+ * How long the possession runs, as weight.
+ *
+ * This is the axis the overlay was missing. A weekend possession and a
+ * four-month one are different facts about a line, and drawing them at one
+ * width said they were the same thing. Weight is the encoding that survives the
+ * zoom range the layer spans: at z6 the stripe is barely a pixel and a texture
+ * or a colour ramp is unreadable, but "thicker than its neighbours" still
+ * reads, and it reads as exactly what it means - more of the timetable, for
+ * longer. On a reading of 22 August 2026 the day's feed split 874 / 813 / 887
+ * across the three bands, so none of them is a rare case being made loud.
+ *
+ * The band is a tile property rather than something computed here because a
+ * MapLibre expression cannot subtract two dates.
+ *
+ * The three weights are chosen against the tier weights so the two axes stay
+ * readable together: the widest a minor restriction gets - months, at 0.48 x
+ * 1.45 - is still narrower than the thinnest a closure gets, days at 1 x 0.7.
+ * Without that, a four-month diversion would outweigh a weekend closure and the
+ * stripe's thickness would mean two things at once. `style.test.ts` holds the
+ * ranges apart.
+ */
+const BAND_WEIGHT: Record<ClosureBand, number> = {
+  days: 0.7, weeks: 1, months: 1.45,
+};
+
+/**
+ * The band factor at one zoom stop.
+ *
+ * It has to be built into each stop rather than multiplied over the finished
+ * curve: MapLibre only accepts `zoom` as the input of a *top-level* `step` or
+ * `interpolate`, so wrapping the interpolation in anything - even a multiply by
+ * a constant - makes the whole expression invalid. A stop's *output* may depend
+ * on the feature, which is the seam this uses.
+ */
+const bandStop = (px: number): ExpressionSpecification => [
+  'match', ['get', 'band'],
+  'days', px * BAND_WEIGHT.days,
+  'months', px * BAND_WEIGHT.months,
+  px * BAND_WEIGHT.weeks,
+];
+
+/**
+ * The width curve at `scale` times its nominal weight, banded by duration.
+ *
+ * One function for the casing, the hazard and the offset that places a
+ * half-width hazard, so all three stay locked to the same curve: an offset that
+ * did not grow with the band would slide the stripe off the corridor it is
+ * meant to sit inside as soon as the corridor got wider.
+ */
+const closureWidth = (scale: number): ExpressionSpecification =>
   ['interpolate', ['linear'], ['zoom'],
-    ...CLOSURE_WIDTH_STOPS.flatMap(([z, px]) => [z, px * weight]),
+    ...CLOSURE_WIDTH_STOPS.flatMap(([z, px]) => [z, bandStop(px * scale)]),
   ] as ExpressionSpecification;
 
 export type ClosureTier = keyof typeof CLOSURE_TIERS;
@@ -626,12 +685,27 @@ export const CLOSURE_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
 export const CLOSURE_HIT_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
   .flatMap((tier) => [`closures-${tier}-hazard`, `closures-${tier}-point`]);
 
+/**
+ * The share of the corridor a single-track restriction's hazard covers, and how
+ * far off centre it sits to do it.
+ *
+ * Half the width offset by a quarter of it would paint exactly one of two
+ * tracks; the hazard is drawn a little narrower than that so a sliver of the
+ * dark casing survives on both sides at the thin end of the zoom range, where a
+ * flush edge would alias into a stripe that looks full width.
+ */
+const HALF_HAZARD = 0.42;
+const HALF_OFFSET = 0.27;
+
 const HAZARD_DARK = '#2b2b2b';
 
 function closureLayers(): LayerSpecification[] {
   return (Object.keys(CLOSURE_TIERS) as ClosureTier[]).flatMap((tier) => {
-    const { effects, minzoom, weight } = CLOSURE_TIERS[tier];
+    const { effects, minzoom, weight, half } = CLOSURE_TIERS[tier];
     const width = closureWidth(weight);
+    // The hazard on a single-track restriction covers one side of the corridor
+    // the casing draws; on the other two families it covers all of it.
+    const hazardWidth = closureWidth(half ? weight * HALF_HAZARD : weight);
     const ofTier: ExpressionSpecification =
       ['in', ['get', 'effect'], ['literal', [...effects]]];
     // A circle layer draws one circle per *vertex*, so without this the marker
@@ -659,6 +733,11 @@ function closureLayers(): LayerSpecification[] {
         // instead of turning into a solid line at one end of the range. A dash
         // longer than it is wide survives the thin end of that range, where a
         // square one aliases into a dotted grey.
+        //
+        // Where the tier is a single-track restriction this rides on one side
+        // of the casing rather than down the middle of it, so half the corridor
+        // stays dark: the mark says which part of the line is out, not merely
+        // that some of it is.
         id: `closures-${tier}-hazard`,
         type: 'line',
         source: 'rail',
@@ -668,13 +747,16 @@ function closureLayers(): LayerSpecification[] {
         layout: { 'line-cap': 'butt', 'line-join': 'round' },
         paint: {
           'line-color': LNVG.yellow,
-          'line-width': width,
+          'line-width': hazardWidth,
           'line-dasharray': [1.6, 1.2],
+          ...(half ? { 'line-offset': closureWidth(weight * HALF_OFFSET) } : {}),
         },
       },
       {
         // 43% of a day's restrictions are inside one station and have no
-        // extent to draw, so they get a mark rather than being left off.
+        // extent to draw, so they get a mark rather than being left off. The
+        // single-track marker is the same mark hollowed out - a ring with the
+        // corridor showing through - because a circle has no side to take.
         id: `closures-${tier}-point`,
         type: 'circle',
         source: 'rail',
@@ -683,10 +765,11 @@ function closureLayers(): LayerSpecification[] {
         filter: points,
         paint: {
           'circle-radius': [
-            'interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3.4, 14, 5.4,
+            'interpolate', ['linear'], ['zoom'],
+            6, bandStop(1.6), 11, bandStop(3.4), 14, bandStop(5.4),
           ] as ExpressionSpecification,
-          'circle-color': LNVG.yellow,
-          'circle-stroke-color': HAZARD_DARK,
+          'circle-color': half ? HAZARD_DARK : LNVG.yellow,
+          'circle-stroke-color': half ? LNVG.yellow : HAZARD_DARK,
           'circle-stroke-width': [
             'interpolate', ['linear'], ['zoom'], 6, 0.8, 14, 2,
           ] as ExpressionSpecification,

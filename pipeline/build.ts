@@ -39,6 +39,7 @@ import {
   type Closure, type LoggedClosure,
 } from './closures.ts';
 import { readSnapshot as readCoachSnapshot } from './coach.ts';
+import { bandOf, packEndMoves, spanDays } from '../shared/closures.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
 const EXTRACT = `${WORK}/extract`;
@@ -276,6 +277,8 @@ async function writeClosures(railWays: RailWay[]): Promise<void> {
     }
 
     const logged = history.get(c.id);
+    const begin = c.begin.slice(0, 10);
+    const end = c.end.slice(0, 10);
     out.push({
       type: 'Feature',
       geometry,
@@ -294,12 +297,20 @@ async function writeClosures(railWays: RailWay[]): Promise<void> {
         section: isPoint ? c.from.name : `${c.from.name} \u2013 ${c.to.name}`,
         // Dates only: the panel reads them, and the feed's midnight-to-four
         // timestamps say less about the possession than its hours do.
-        begin: c.begin.slice(0, 10),
-        end: c.end.slice(0, 10),
+        begin,
+        end,
+        // The band is computed here rather than in the app because the *style*
+        // needs it: a MapLibre filter can compare strings and numbers but
+        // cannot subtract two dates, so a possession's length has to arrive as
+        // something a layer can match on. The day count rides along for the
+        // panel, which would otherwise redo the same arithmetic.
+        days: spanDays(begin, end),
+        band: bandOf(spanDays(begin, end)),
         hours: hoursOn(c, snapshot.day),
         since: logged?.since ?? '',
         firstEnd: logged ? logged.firstEnd.slice(0, 10) : '',
         extended: logged?.revisions ?? 0,
+        moves: packEndMoves(logged?.endMoves ?? []),
       },
     });
   }

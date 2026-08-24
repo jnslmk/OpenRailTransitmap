@@ -204,8 +204,39 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
   background: repeating-linear-gradient(
     90deg, #fed060 0 3px, #2b2b2b 3px 6px);
 }
-.hazard.major { height: 6px; }
+.hazard.closed { height: 6px; }
 .hazard.minor { height: 3px; }
+
+/* One track only, drawn the way the map draws it: the dashes cover one side of
+   the corridor and the other side stays dark, so the swatch says which half of
+   the line is out rather than only that something is. */
+.hazard.single {
+  height: 6px;
+  background:
+    repeating-linear-gradient(90deg, #fed060 0 3px, #2b2b2b 3px 6px)
+      bottom / 100% 45% no-repeat,
+    #2b2b2b;
+}
+
+/* The length key. Three stripes at the weights src/style.ts gives the three
+   bands, in the same order the map grows them. */
+.hazard-bands {
+  width: 22px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.hazard-bands i {
+  display: block;
+  border-radius: 1px;
+  background: repeating-linear-gradient(
+    90deg, #fed060 0 3px, #2b2b2b 3px 6px);
+}
+.hazard-bands i:nth-child(1) { height: 2px; }
+.hazard-bands i:nth-child(2) { height: 3px; }
+.hazard-bands i:nth-child(3) { height: 5px; }
 
 /* --- operators ------------------------------------------------------------ */
 
@@ -380,6 +411,85 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
   font-size: 13px;
   font-weight: 500;
 }
+
+/* --- how long, and how much is left ---------------------------------------
+
+   The bar is the possession as currently planned, left to right. Elapsed is
+   dark, what is left is the map's hazard yellow, and the stretch past the end
+   date it was *first* recorded with is hatched - so a possession that has been
+   pushed back shows it in the shape of the bar, before any of the text below
+   is read. Measured against the day the tiles describe, which is stated in the
+   sidebar; on the reader's own clock the bar could contradict the overlay. */
+.closure-span { margin: 10px 0 4px; }
+.span-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.span-length { font-weight: 500; }
+.span-left { color: var(--muted); }
+/* A months-long possession is the one this block exists for, so its headline
+   carries the weight the map gives the stripe. */
+.closure-span.band-months .span-length { font-size: 14px; }
+
+.span-bar {
+  position: relative;
+  height: 8px;
+  margin: 6px 0 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #fed060;
+}
+.span-gone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #2b2b2b;
+}
+/* Beyond where it was first meant to finish. Hatched rather than another flat
+   colour: it is the same possession, running longer, not a different thing. */
+.span-added {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  background: repeating-linear-gradient(
+    -45deg, hsl(4 75% 42%) 0 2px, transparent 2px 5px);
+}
+.span-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: hsl(4 75% 42%);
+}
+.span-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.closure-move-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.closure-move-list .moved-later { color: hsl(4 75% 42%); }
+.closure-moves p { margin: 4px 0 0; }
+
+.closure-links { margin-top: 12px; }
+.closure-link-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.closure-links p { margin: 4px 0 0; }
 
 .closure-history { margin-top: 12px; }
 .closure-log {

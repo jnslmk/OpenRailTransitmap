@@ -39,9 +39,10 @@
 
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { toWgs84 } from './lib/mercator.ts';
-import type { ClosureDirection, ClosureEffect } from '../shared/closures.ts';
+import type { ClosureDirection, ClosureEffect, EndMove } from '../shared/closures.ts';
 
 export { EFFECT_RANK } from '../shared/closures.ts';
+export type { EndMove } from '../shared/closures.ts';
 export type { ClosureDirection, ClosureEffect } from '../shared/closures.ts';
 
 const WORK = process.env.WORK_DIR ?? '.work';
@@ -507,6 +508,16 @@ export interface LoggedClosure {
   firstEnd: string;
   /** How many times the plan has been revised since. */
   revisions: number;
+  /**
+   * Every move of the end date, oldest first.
+   *
+   * Separate from `revisions` because they answer different questions: the
+   * count includes a revision that only reworded the works, while this is the
+   * one thing a reader actually wants a history for - a possession that keeps
+   * being pushed back. Kept as a list rather than a total so the panel can say
+   * when each move happened rather than only that they happened.
+   */
+  endMoves: EndMove[];
   withdrawn: boolean;
 }
 
@@ -521,11 +532,21 @@ export function replayLog(events: ClosureEvent[]): Map<string, LoggedClosure> {
         since: t,
         firstEnd: closure.end,
         revisions: 0,
+        endMoves: [],
         withdrawn: false,
       });
     } else if (ev.e === 'revised') {
       const entry = state.get(ev.id);
       if (!entry) continue; // A revision with no `planned` before it: skip.
+      // The end date moving is the event the archive exists for, so it is
+      // recorded in its own right rather than left to be inferred from a
+      // counter. A revision that only reworded the works still counts as a
+      // revision and adds nothing here, which is the honest split.
+      if (typeof ev.was.end === 'string' && typeof ev.now.end === 'string') {
+        entry.endMoves.push({
+          logged: ev.t, was: ev.was.end.slice(0, 10), now: ev.now.end.slice(0, 10),
+        });
+      }
       entry.current = { ...entry.current, ...ev.now };
       entry.revisions++;
       // A withdrawn closure that comes back is live again, and its return is

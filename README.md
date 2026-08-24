@@ -59,16 +59,26 @@ GitHub Pages and rebuilt nightly.
   possession register, drawn as a hazard stripe along the track they actually
   close — routed onto the real alignment rather than chorded between the two
   operating points DB names, which for the longest of them is 125 km of straight
-  line across open country. Full closures and single-track working show from
-  zoom 6, lesser restrictions from zoom 10, and clicking one gives the works,
-  the hours it applies today and the dates it runs between. Off with one
-  checkbox (`?closures=0`). See [`docs/closures.md`](docs/closures.md).
+  line across open country. A full closure takes the whole hazard stripe and a
+  single-track restriction takes one side of it, leaving the other half dark —
+  the mark says which part of the line is out, not merely that something is.
+  Full closures and single-track working show from zoom 6, lesser restrictions
+  from zoom 10. Off with one checkbox (`?closures=0`). See
+  [`docs/closures.md`](docs/closures.md).
+- **How long it runs, at a glance.** A possession that shuts a line for a
+  weekend and one that shuts it until December are not the same fact, and the
+  overlay used to draw them identically. The stripe now carries its length as
+  weight — days, weeks, months — so the long programmes stand out from the
+  weekend noise at national zoom, and the panel says how much of one is left:
+  "4 months · 3 months left", over a bar measured against the day the tiles
+  describe.
 - **A closure history, because nobody else keeps one.** strecken.info serves the
   plan as it stands and nothing before it, so the archive is ours:
   `data/closure-log.jsonl` is appended to daily and records a possession
   entering the plan, its dates moving, and its withdrawal. The panel reads it
-  back — "was to finish 12 Dec" is a fact no snapshot of the current plan can
-  tell you.
+  back move by move — "2 Oct → 15 Nov, 44 days later", twice, "71 days longer
+  than first planned" — and the stretch past the end date it was *first* given
+  is hatched onto the bar. No snapshot of the current plan can tell you that.
 - **A journey planner with a bike in it.** A second sidebar tab: enter where you
   are and where you are going, and get itineraries over rail, bus, coach and
   ferry — with one control that is the point of the whole thing, *how far will

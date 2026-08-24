@@ -47,6 +47,22 @@ export interface Strings {
   closureNoHistory: string;
   closureAsOf: (day: string) => string;
   closureAttribution: string;
+  closureLegendSingle: string;
+  closureLegendBands: string;
+  closureSpan: (days: number) => string;
+  closureLeft: (days: number) => string;
+  closureEndsToday: string;
+  closureThrough: (gone: number, total: number) => string;
+  closureFirstEndTick: (date: string) => string;
+  closureMoves: string;
+  closureMoveLater: (was: string, now: string, days: number) => string;
+  closureMoveEarlier: (was: string, now: string, days: number) => string;
+  closureNetLater: (days: number) => string;
+  closureMovesTruncated: string;
+  closureOfficial: string;
+  closureProjectSearch: string;
+  closureProjectNote: string;
+  closureRegister: string;
   coachAttribution: string;
   buildStamp: (commit: string, when: string) => string;
 
@@ -168,7 +184,7 @@ const STRINGS: Strings = {
     'with-km': 'One direction',
     'against-km': 'One direction',
   },
-  closureLegendMajor: 'Closed or single-track',
+  closureLegendMajor: 'Line closed',
   closureLegendMinor: 'Other restriction (zoom 10+)',
   closureWorks: 'Works',
   closureLine: 'Line',
@@ -189,6 +205,31 @@ const STRINGS: Strings = {
   closureAsOf: (day) => `Construction as planned on ${day}`,
   closureAttribution:
     'Construction: <a href="https://strecken-info.de">DB InfraGO strecken.info</a>',
+  closureLegendSingle: 'One track only (zoom 6+)',
+  closureLegendBands: 'Thicker the longer it runs: days, weeks, months',
+  closureSpan: (days) => (days < 14
+    ? `${days} day${days === 1 ? '' : 's'}`
+    : days < 70 ? `${Math.round(days / 7)} weeks` : `${Math.round(days / 30.4)} months`),
+  closureLeft: (days) => (days < 14
+    ? `${days} day${days === 1 ? '' : 's'} left`
+    : days < 70 ? `${Math.round(days / 7)} weeks left` : `${Math.round(days / 30.4)} months left`),
+  closureEndsToday: 'Last day',
+  closureThrough: (gone, total) => `Day ${gone} of ${total}`,
+  closureFirstEndTick: (date) => `Was to finish here, ${date}`,
+  closureMoves: 'End date moved',
+  // The date is the day *we noticed*, which is the only one the log can honestly
+  // give: DB publishes the plan as it stands, never when it was changed.
+  closureMoveLater: (was, now, days) => `${was} → ${now}, ${days} day${days === 1 ? '' : 's'} later`,
+  closureMoveEarlier: (was, now, days) => `${was} → ${now}, ${days} day${days === 1 ? '' : 's'} earlier`,
+  closureNetLater: (days) => `${days} day${days === 1 ? '' : 's'} longer than first planned`,
+  closureMovesTruncated: 'Earlier changes not kept',
+  closureOfficial: 'Official information',
+  closureProjectSearch: 'Search DB construction projects',
+  // Said rather than implied. DB publishes project pages, not possessions, and
+  // its search matches the prose on them - so this is a lead, not a citation.
+  closureProjectNote: 'Searches DB InfraGO\u2019s project portal for this place. '
+    + 'There is no official page for an individual possession.',
+  closureRegister: 'DB InfraGO strecken.info',
   coachAttribution:
     'Coach: <a href="https://global.flixbus.com">FlixMobility Tech GmbH</a>',
   // `commit` arrives as a link to the commit on GitHub, so this one is markup

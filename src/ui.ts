@@ -8,7 +8,10 @@ import {
 } from './punctuality.ts';
 import type { Tab, ViewState } from './state.ts';
 import { renderPlanner, type PlannerHost } from './planner.ts';
-import { endMoved, formatDate, type ClosureRecord } from './closures.ts';
+import {
+  endMoved, formatDate, progressOn, projectSearchUrl, type ClosureRecord,
+} from './closures.ts';
+import { MAX_MOVES, spanDays } from '../shared/closures.ts';
 import {
   allOperators, drawsEveryOperator, drawsNoOperator, noOperators, operatorShown,
   withOperator, type OperatorFilter,
@@ -300,10 +303,15 @@ function buildClosures(): HTMLElement {
   row.append(cb, el('span', 'label', s.showClosures), closureCountEl);
   box.appendChild(row);
 
+  // Four rows rather than two: the effect and the length are separate axes on
+  // the map now, and a key that only explained one of them would leave the
+  // other looking like a rendering accident.
   const legend = el('div', 'legend');
   legend.innerHTML = `
-    <div class="legend-row"><span class="hazard major"></span>${s.closureLegendMajor}</div>
-    <div class="legend-row"><span class="hazard minor"></span>${s.closureLegendMinor}</div>`;
+    <div class="legend-row"><span class="hazard closed"></span>${s.closureLegendMajor}</div>
+    <div class="legend-row"><span class="hazard single"></span>${s.closureLegendSingle}</div>
+    <div class="legend-row"><span class="hazard minor"></span>${s.closureLegendMinor}</div>
+    <div class="legend-row"><span class="hazard-bands"><i></i><i></i><i></i></span>${s.closureLegendBands}</div>`;
   box.appendChild(legend);
 
   // Said once, in the sidebar, rather than on every panel: the overlay is the
@@ -928,6 +936,7 @@ export function renderClosurePanel(
   host.appendChild(head);
 
   host.appendChild(el('p', 'closure-section', closure.section));
+  host.appendChild(closureSpan(closure));
 
   const rows: [string, string][] = [
     [s.closureWorks, closure.works || '\u2014'],
@@ -940,14 +949,113 @@ export function renderClosurePanel(
     rows.push([s.closureTrack, s.closureDirection[closure.direction]]);
   }
   rows.push([s.closureHours, closure.hours || s.closureAllDay]);
-  rows.push([s.closureFrom, formatDate(closure.begin)]);
-  rows.push([s.closureUntil, formatDate(closure.end)]);
 
   const table = el('dl', 'detail-meta');
   for (const [k, v] of rows) table.append(el('dt', '', k), el('dd', '', v));
   host.appendChild(table);
 
   host.appendChild(closureHistory(closure));
+  host.appendChild(closureLinks(closure));
+}
+
+/**
+ * How long the possession runs, and how much of it is left.
+ *
+ * The block that answers the question the overlay could not: a weekend
+ * possession and a four-month one draw as the same kind of thing on a map, and
+ * the only way to tell which one you had clicked was to subtract two dates
+ * yourself. The bar is measured against the day the tiles describe rather than
+ * the reader's clock, for the same reason the sidebar states that day at all -
+ * one clock for the whole overlay, so the bar can never say "finished" about
+ * something the map is still drawing.
+ *
+ * A bar is only drawn once there is enough of it to read. Under a week it is
+ * three fat blocks that say less than the dates either side of it, so those
+ * dates are all a short possession gets.
+ */
+const BAR_MIN_DAYS = 7;
+
+function closureSpan(closure: ClosureRecord): HTMLElement {
+  const s = t();
+  const box = el('div', `closure-span band-${closure.band}`);
+  const progress = progressOn(closure, closureDay);
+
+  const head = el('div', 'span-head');
+  head.appendChild(el('span', 'span-length', s.closureSpan(closure.days)));
+  if (progress) {
+    head.appendChild(el('span', 'span-left',
+      progress.left ? s.closureLeft(progress.left) : s.closureEndsToday));
+  }
+  box.appendChild(head);
+
+  if (progress && progress.total >= BAR_MIN_DAYS) {
+    const bar = el('div', 'span-bar');
+    const pct = (v: number) => `${(Math.min(1, Math.max(0, v)) * 100).toFixed(1)}%`;
+
+    // The stretch first, so the elapsed fill and the tick paint over it: it is
+    // background about the plan, not a third thing competing for the eye.
+    if (progress.firstEndThrough !== null) {
+      const added = el('div', 'span-added');
+      added.style.left = pct(progress.firstEndThrough);
+      added.title = s.closureFirstEndTick(formatDate(closure.firstEnd));
+      bar.appendChild(added);
+      const tick = el('div', 'span-tick');
+      tick.style.left = pct(progress.firstEndThrough);
+      bar.appendChild(tick);
+    }
+    const gone = el('div', 'span-gone');
+    gone.style.width = pct(progress.through);
+    bar.appendChild(gone);
+
+    bar.setAttribute('role', 'img');
+    bar.setAttribute('aria-label', s.closureThrough(progress.gone, progress.total));
+    box.appendChild(bar);
+  }
+
+  // The two dates read as the ends of the bar above them and carry no visible
+  // labels for it; a reader who cannot see the bar gets the labels instead.
+  const ends = el('div', 'span-ends');
+  const from = el('span', '', formatDate(closure.begin));
+  from.setAttribute('aria-label', `${s.closureFrom} ${formatDate(closure.begin)}`);
+  const until = el('span', '', formatDate(closure.end));
+  until.setAttribute('aria-label', `${s.closureUntil} ${formatDate(closure.end)}`);
+  ends.append(from, until);
+  box.appendChild(ends);
+  return box;
+}
+
+/**
+ * Where to read DB's own account of the work.
+ *
+ * Two links and a caveat, because a per-possession link does not exist: DB
+ * InfraGO's own map puts nothing in its URL, and the feed carries no reference
+ * beyond the fields already on this panel. The search is offered as a search -
+ * it matches the prose on project pages, so it will sometimes turn up works
+ * that merely mention the place - and the register is credited as the source
+ * this record came from rather than as a page about it.
+ */
+function closureLinks(closure: ClosureRecord): HTMLElement {
+  const s = t();
+  const box = el('div', 'closure-links');
+  box.appendChild(el('h4', 'punct-sub', s.closureOfficial));
+
+  const list = el('ul', 'closure-link-list');
+  const link = (href: string, text: string) => {
+    const a = el('a', '', text);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    const li = el('li');
+    li.appendChild(a);
+    return li;
+  };
+  list.append(
+    link(projectSearchUrl(closure), s.closureProjectSearch),
+    link('https://strecken-info.de', s.closureRegister),
+  );
+  box.appendChild(list);
+  box.appendChild(el('p', 'muted small', s.closureProjectNote));
+  return box;
 }
 
 /**
@@ -972,18 +1080,70 @@ function closureHistory(closure: ClosureRecord): HTMLElement {
   const list = el('ul', 'closure-log');
   list.appendChild(el('li', '', `${s.closureSince} ${formatDate(closure.since)}`));
 
+  // Where the moves themselves are on the tile these two would only restate,
+  // less precisely, what the list below says - so they are the fallback for a
+  // tile built before the moves were carried, not a summary of them.
   const moved = endMoved(closure);
-  if (moved === 'later') {
-    list.appendChild(el('li', 'moved-later', s.closureMovedLater(formatDate(closure.firstEnd))));
-  } else if (moved === 'earlier') {
-    list.appendChild(el('li', '', s.closureMovedEarlier(formatDate(closure.firstEnd))));
-  }
-  if (closure.extended > 0) {
-    list.appendChild(el('li', '', s.closureExtended(closure.extended)));
+  if (!closure.moves.length) {
+    if (moved === 'later') {
+      list.appendChild(el('li', 'moved-later', s.closureMovedLater(formatDate(closure.firstEnd))));
+    } else if (moved === 'earlier') {
+      list.appendChild(el('li', '', s.closureMovedEarlier(formatDate(closure.firstEnd))));
+    }
+    if (closure.extended > 0) {
+      list.appendChild(el('li', '', s.closureExtended(closure.extended)));
+    }
   }
   box.appendChild(list);
+  box.appendChild(closureMoves(closure));
   return box;
 }
+
+/**
+ * Each time the end date moved, in the order it moved.
+ *
+ * "Rescheduled 3 times" is a count, and a count of a possession being pushed
+ * back is the least interesting form of the fact: it cannot say whether that
+ * was three weeks or three months, nor whether the moves are getting bigger -
+ * which is what tells a reader whether to believe the date now on the panel.
+ * Each move is a row, and the net is stated once at the end so the headline is
+ * not something the reader has to add up.
+ *
+ * The dates are the days our log noticed, not the days DB decided: nothing
+ * upstream publishes the second, and labelling one as the other would invent a
+ * record. That is why the row leads with the dates that moved rather than with
+ * when it happened.
+ */
+function closureMoves(closure: ClosureRecord): HTMLElement {
+  const s = t();
+  const box = el('div', 'closure-moves');
+  if (!closure.moves.length) return box;
+
+  box.appendChild(el('h4', 'punct-sub', s.closureMoves));
+  const list = el('ol', 'closure-move-list');
+  for (const m of closure.moves) {
+    const later = m.delta > 0;
+    const row = el('li', later ? 'moved-later' : '',
+      later
+        ? s.closureMoveLater(formatDate(m.was), formatDate(m.now), m.delta)
+        : s.closureMoveEarlier(formatDate(m.was), formatDate(m.now), -m.delta));
+    row.title = formatDate(m.logged);
+    list.appendChild(row);
+  }
+  box.appendChild(list);
+
+  // The net against the *first* end we ever recorded, not the sum of the moves:
+  // the two differ once a possession has been pushed back and then pulled
+  // forward again, and the one a reader means by "how much longer" is the
+  // distance from where it started.
+  const net = spanDays(closure.firstEnd, closure.end) - 1;
+  if (net > 0) box.appendChild(el('p', 'muted small', s.closureNetLater(net)));
+  if (closure.moves.length >= MAX_MOVES) {
+    box.appendChild(el('p', 'muted small', s.closureMovesTruncated));
+  }
+  return box;
+}
+
 
 /** "2026-07" as the month a rider reads, not as a key. */
 function formatMonth(ym: string): string {
