@@ -68,7 +68,11 @@ export interface CoorientOptions {
  * Scaled to metres before normalising, so a direction at 52 degrees north is
  * not stretched by the 1.6:1 the raw degrees would give it.
  */
-export function endDirection(chain: Coord[], atStart: boolean, spanM = DIRECTION_SPAN_M): [number, number] {
+export function endDirection(
+  chain: Coord[],
+  atStart: boolean,
+  spanM = DIRECTION_SPAN_M,
+): [number, number] {
   const near = atStart ? chain[0] : chain[chain.length - 1];
   let far = atStart ? chain[1] : chain[chain.length - 2];
   let acc = 0;
@@ -101,7 +105,8 @@ function chainLength(chain: Coord[]): number {
  * runs too close to due north-south for east to decide.
  */
 function runsCanonically(chain: Coord[]): boolean {
-  const a = chain[0], b = chain[chain.length - 1];
+  const a = chain[0],
+    b = chain[chain.length - 1];
   const east = (b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180);
   const north = b[1] - a[1];
   if (Math.abs(east) > Math.abs(north)) return east >= 0;
@@ -117,7 +122,10 @@ function parityUnion(n: number) {
   const find = (i: number): [number, number] => {
     let root = i;
     let p = 0;
-    while (parent[root] !== root) { p ^= parity[root]; root = parent[root]; }
+    while (parent[root] !== root) {
+      p ^= parity[root];
+      root = parent[root];
+    }
     // Second walk compresses the path, rewriting each parity against the root.
     let node = i;
     let acc = p;
@@ -142,8 +150,10 @@ function parityUnion(n: number) {
     const [rb, pb] = find(b);
     if (ra === rb) return (pa ^ pb) === want;
     const rel = pa ^ pb ^ want;
-    if (rank[ra] < rank[rb]) { parent[ra] = rb; parity[ra] = rel; }
-    else {
+    if (rank[ra] < rank[rb]) {
+      parent[ra] = rb;
+      parity[ra] = rel;
+    } else {
       parent[rb] = ra;
       parity[rb] = rel;
       if (rank[ra] === rank[rb]) rank[ra]++;
@@ -161,26 +171,27 @@ function parityUnion(n: number) {
  * Returns one flag per input chain, `true` meaning "reverse this one". A chain
  * with fewer than two points is never reversed and never constrains anything.
  */
-export function coorientChains(
-  chains: readonly Coord[][],
-  opts: CoorientOptions = {},
-): boolean[] {
+export function coorientChains(chains: readonly Coord[][], opts: CoorientOptions = {}): boolean[] {
   const { minAlign = MIN_ALIGN, directionSpanM = DIRECTION_SPAN_M } = opts;
   const n = chains.length;
   const flips = new Array<boolean>(n).fill(false);
   if (n === 0) return flips;
 
-  interface End { chain: number; dir: [number, number] }
+  interface End {
+    chain: number;
+    dir: [number, number];
+  }
   const byPoint = new Map<string, End[]>();
   for (let i = 0; i < n; i++) {
     const chain = chains[i];
     if (chain.length < 2) continue;
     for (const atStart of [true, false]) {
-      const dir = endDirection(chain as Coord[], atStart, directionSpanM);
+      const dir = endDirection(chain, atStart, directionSpanM);
       if (dir[0] === 0 && dir[1] === 0) continue;
       const key = endpointKey(atStart ? chain[0] : chain[chain.length - 1]);
       const list = byPoint.get(key);
-      if (list) list.push({ chain: i, dir }); else byPoint.set(key, [{ chain: i, dir }]);
+      if (list) list.push({ chain: i, dir });
+      else byPoint.set(key, [{ chain: i, dir }]);
     }
   }
 
@@ -226,10 +237,10 @@ export function coorientChains(
   for (let i = 0; i < n; i++) {
     if (chains[i].length < 2) continue;
     const [root, parity] = uf.find(i);
-    const len = chainLength(chains[i] as Coord[]);
+    const len = chainLength(chains[i]);
     // How this chain would run if the component were left alone (base flip
     // false): reversed exactly when its parity against the root says so.
-    const canonicalIfKept = runsCanonically(chains[i] as Coord[]) !== (parity === 1);
+    const canonicalIfKept = runsCanonically(chains[i]) !== (parity === 1);
     totalM.set(root, (totalM.get(root) ?? 0) + len);
     if (canonicalIfKept) canonicalM.set(root, (canonicalM.get(root) ?? 0) + len);
   }

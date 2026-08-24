@@ -40,9 +40,9 @@ GitHub Pages and rebuilt nightly.
   at national scale, so they are ranked once in the pipeline — long-distance
   calls and the larger Hauptbahnhöfe, then interchanges, then ordinary halts,
   then tram stops — and each rank appears at the zoom there is room for it,
-  names one step behind marks. The ranking is written into the tiles as a
-  per-feature minzoom, so a low-zoom tile carries the 400 stops it draws rather
-  than the 20,830 it does not.
+  names one step behind marks. The ranking is written into the tiles by tiling
+  each rank in a pass of its own, so a low-zoom tile carries the 400 stops it
+  draws rather than the 20,830 it does not.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
   stop** for every line calling there.
 - **Punctuality on the line panel.** How often the line actually departs on
@@ -109,7 +109,13 @@ GitHub Pages and rebuilt nightly.
   view beside it. An operator you switch off keeps its row *and* its count, so
   the click can be undone and the number tells you what undoing it would put
   back. The choice is part of the URL: `?op=` for just these operators,
-  `?opoff=` for everything but.
+  `?opoff=` for everything but. Most rows carry the company's own mark beside
+  the name — 227 of the 293 operators in the data, covering 93% of the lines —
+  matched to Wikidata and drawn from public-domain files on Wikimedia Commons.
+  The matching is a committed manifest rather than a build-time guess, so which
+  company each operator was taken to be arrives as a reviewable diff and is
+  corrected by hand in `data/logo-overrides.yaml`; see
+  [`pipeline/logos.ts`](pipeline/logos.ts).
 - **Full-screen map.** A button on the map hides the whole sidebar so the map
   fills the window — the difference between usable and unusable on a phone — and
   a second one goes to browser fullscreen. On narrow screens the sidebar is a
@@ -131,6 +137,7 @@ pipeline/
   extract.sh               osmium -> route relations, ways, stations
   closures.ts              DB InfraGO possessions + the history log
   coach.ts                 long-distance coach from the operators' GTFS
+  logos.ts                 operator marks from Wikidata / Wikimedia Commons
   lib/railpath.ts          route a closure onto the track it closes
   lib/orient.ts            agree which way a corridor's chains run
   lib/stopmarks.ts         lay a stop's mark across the bands that call there
@@ -204,6 +211,22 @@ ramp is exactly the sideways jump the taper exists to remove.
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.
 
+Because the offset is applied at draw time, the tiles have to be cut with room
+for it. MapLibre clips each tile's lines to the tile's own square and only then
+moves them sideways, so a band whose slot carries it over the edge is cut there
+and the next tile — which does not hold that geometry — draws nothing in its
+place: on a corridor crossing an edge at a shallow angle, the line vanishes from
+the crossing until the track itself is clear of the edge by the whole offset,
+several hundred metres of it, ending in a round cap in open country. So `build.ts`
+measures the widest slot it emitted and writes the `--buffer` that covers it —
+one buffer unit is 2 px of a tile drawn at its own zoom — and `tiles.sh` cuts
+the tiles to that. Germany's busiest corridor carries 23 lines, whose outermost
+band reaches 78 px, so the national build cuts at 40 against the default 5; a
+Niedersachsen build fans less and pays less. `pipeline/tiles.test.ts` holds the
+two ends of that arithmetic together. It is the one real cost of drawing the
+bundle at render time rather than baking it in: on a Braunschweig-area extract
+the archive grew by a fifth.
+
 ### Station matching
 
 PTv2 relations reference `public_transport=stop_position` nodes rather than the
@@ -240,8 +263,9 @@ are plain dots on the same anchors, and the bars fade in over the changeover.
 
 ### Which stops show at which zoom
 
-Ranked in `shared/lnvg.ts` and written into the tiles as a per-feature minzoom,
-so a rank is not merely hidden below its zoom, it is not carried there:
+Ranked in `shared/lnvg.ts` and written into the tiles a rank at a time — each
+gets a tiling pass of its own, gated at its own minimum zoom — so a rank is not
+merely hidden below its zoom, it is not carried there:
 
 | rank | what it is | mark | name |
 | --- | --- | --- | --- |
@@ -283,11 +307,17 @@ npx tsx pipeline/closures.ts    # today's construction closures (optional)
 npx tsx pipeline/coach.ts       # long-distance coach network (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
 npx tsx pipeline/fonts.ts       # glyphs (cached after the first run)
+npx tsx pipeline/logos.ts       # operator marks named by the manifest (optional)
 bash pipeline/tiles.sh          # PMTiles
 npm run publish:data            # committed data -> public/
 
 npm run dev                     # http://localhost:5173
 ```
+
+`npm run lint` (ESLint) and `npm run format` (Prettier) check and fix the
+TypeScript; CI runs both, plus `format:check`, on every push and PR.
+[`prek`](https://github.com/j178/prek) runs the same two on staged files before
+each commit - `prek install` wires it into `.git/hooks` once per checkout.
 
 The dev server draws the current zoom in the bottom-left corner of the map, to
 two decimals — the map is a stack of zoom thresholds (`STOP_TIERS` in
@@ -302,6 +332,17 @@ rather than nightly and a pass costs ~0.9 GB of range requests:
 ```bash
 npm run build:punctuality       # ~15 min; commit the data/punctuality.json it writes
 PUNCTUALITY_MONTHS=1 npm run build:punctuality   # one month, for development
+```
+
+The operator marks are matched separately, and by hand, because matching a
+free-text OSM `operator` tag to a company is a guess that deserves a reviewer:
+the resolver rewrites `data/operator-logos.json`, and the diff says which
+company each operator was taken to be. Run it when the operator set has moved,
+and correct what it got wrong in `data/logo-overrides.yaml`:
+
+```bash
+npm run resolve:logos           # ~4 min of paced Wikidata calls; commit the manifest
+npm run build:logos             # download what the manifest names into public/logos/
 ```
 
 The closure log is refreshed on its own daily schedule rather than with the map,

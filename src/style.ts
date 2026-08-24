@@ -12,11 +12,24 @@
  */
 
 import type {
-  StyleSpecification, LayerSpecification, ExpressionSpecification,
+  StyleSpecification,
+  LayerSpecification,
+  ExpressionSpecification,
   SymbolLayerSpecification,
 } from 'maplibre-gl';
 import {
-  BUNDLE_PITCH_PX, LNVG, MODES, MODE_SPECS, PT_TO_PX, STOP_TIERS, type Mode,
+  BUNDLE_PITCH_PX,
+  BUNDLE_SPREAD_STOPS,
+  HIGHLIGHT_FACTOR,
+  LINE_WEIGHT_STOPS,
+  LNVG,
+  MODES,
+  MODE_SPECS,
+  PT_TO_PX,
+  STOP_TIERS,
+  factorAt,
+  spreadAt,
+  type Mode,
 } from '../shared/lnvg.ts';
 import { PILL_IMAGE_PREFIX, PILL_PITCH, PILL_THICKNESS, pillLength } from './stopmarks.ts';
 import type { ClosureBand } from '../shared/closures.ts';
@@ -26,41 +39,20 @@ export const FONT_MEDIUM = ['Fira Sans Medium'];
 export const FONT_BOLD = ['Fira Sans Bold'];
 
 /**
- * How line weights grow with zoom.
+ * Line width in px for a reference weight given in points.
  *
  * MapLibre requires `zoom` to be the input of a *top-level* interpolate, so the
  * scaling factor is baked into each stop's output rather than multiplied around
- * the interpolate.
+ * the interpolate. Both curves live in shared/lnvg.ts, because the tile build
+ * sizes its buffer off them - see `bandReachPx`.
  */
-const ZOOM_STOPS: [number, number][] = [
-  [5, 0.45],
-  [8, 0.7],
-  [11, 1.0],
-  [14, 1.6],
-];
-
-/** Line width in px for a reference weight given in points. */
 const scaled = (pt: number, multiplier = 1): ExpressionSpecification =>
-  ['interpolate', ['linear'], ['zoom'],
-    ...ZOOM_STOPS.flatMap(([z, f]) => [z, pt * PT_TO_PX * f * multiplier]),
+  [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    ...LINE_WEIGHT_STOPS.flatMap(([z, f]) => [z, pt * PT_TO_PX * f * multiplier]),
   ] as ExpressionSpecification;
-
-/**
- * Bundle spread, which deliberately does *not* follow the width curve.
- *
- * Germany's busiest corridors carry 20+ lines. At national zoom a proportional
- * spread turns those into wide coloured blobs that read as noise, so the offset
- * collapses to zero below z6: bundles stack on the true alignment and the map
- * shows one trunk per corridor, which is what the reference poster does at that
- * scale. The bands fan out again as soon as there is room for them.
- */
-const OFFSET_STOPS: [number, number][] = [
-  [5, 0],
-  [6, 0.08],
-  [8, 0.4],
-  [11, 1.0],
-  [14, 1.6],
-];
 
 /**
  * Perpendicular displacement for one band of a bundle. `offset` is a centred
@@ -72,8 +64,10 @@ const OFFSET_STOPS: [number, number][] = [
  * constrained to the top level.
  */
 const bandOffset: ExpressionSpecification = [
-  'interpolate', ['linear'], ['zoom'],
-  ...OFFSET_STOPS.flatMap(([z, f]) => [z, ['*', ['get', 'offset'], BUNDLE_PITCH_PX * f]]),
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  ...BUNDLE_SPREAD_STOPS.flatMap(([z, f]) => [z, ['*', ['get', 'offset'], BUNDLE_PITCH_PX * f]]),
 ] as ExpressionSpecification;
 
 /**
@@ -83,7 +77,9 @@ const bandOffset: ExpressionSpecification = [
  * `selected === null` means nothing is selected and everything paints normally.
  */
 export function selectionOpacity(
-  selected: string | null, base = 1, dimmed = 0.1,
+  selected: string | null,
+  base = 1,
+  dimmed = 0.1,
 ): number | ExpressionSpecification {
   if (!selected) return base;
   return ['case', ['==', ['get', 'line'], selected], base, dimmed];
@@ -117,7 +113,7 @@ function routeLayers(): LayerSpecification[] {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': LNVG.white,
-          'line-width': scaled(spec.weightPt, 2.1),
+          'line-width': scaled(spec.weightPt, HIGHLIGHT_FACTOR),
           'line-offset': bandOffset,
           'line-opacity': highlightOpacity(null),
         },
@@ -183,9 +179,10 @@ function badgeLayer(): LayerSpecification {
  * were only ever about that mode and leaves the rest of the station standing.
  */
 export function servedByModes(modes: Mode[]): ExpressionSpecification {
-  return ['any', ...modes.map((m) =>
-    ['>=', ['index-of', `${m}|`, ['to-string', ['get', 'lines']]], 0],
-  )] as ExpressionSpecification;
+  return [
+    'any',
+    ...modes.map((m) => ['>=', ['index-of', `${m}|`, ['to-string', ['get', 'lines']]], 0]),
+  ] as ExpressionSpecification;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,24 +231,10 @@ const PILL_FULL = 11;
 const PILL_EARLY: Record<number, [number, number]> = { 0: [6.4, 7] };
 
 /** The zooms a tier's bars fade in over: first visible, then dots wholly gone. */
-const pillZooms = (rank: number): [number, number] =>
-  PILL_EARLY[rank] ?? [PILL_IN, PILL_FULL];
+const pillZooms = (rank: number): [number, number] => PILL_EARLY[rank] ?? [PILL_IN, PILL_FULL];
 
 /** Zoom at which the true position of the station itself is finally drawn. */
 const TRUE_POSITION_ZOOM = 16;
-
-/** A zoom-keyed factor table, read the way MapLibre reads an `interpolate`. */
-function factorAt(stops: readonly [number, number][], zoom: number): number {
-  if (zoom <= stops[0][0]) return stops[0][1];
-  for (let i = 1; i < stops.length; i++) {
-    const [z0, f0] = stops[i - 1], [z1, f1] = stops[i];
-    if (zoom <= z1) return f0 + ((f1 - f0) * (zoom - z0)) / (z1 - z0);
-  }
-  return stops[stops.length - 1][1];
-}
-
-/** The bundle spread factor at a zoom, read off the same table the bands use. */
-const spreadAt = (zoom: number): number => factorAt(OFFSET_STOPS, zoom);
 
 /**
  * The size a bar is *drawn* at: the bundle spread, floored.
@@ -276,12 +259,11 @@ const PILL_MIN_SIZE = 0.5;
  * true spread crosses it, so that above the crossing the curve *is* the spread
  * again and a bar goes back to covering exactly the bands it names.
  */
-const PILL_SIZE_STOPS: [number, number][] = OFFSET_STOPS.flatMap(([z, f], i) => {
-  const prev = OFFSET_STOPS[i - 1];
+const PILL_SIZE_STOPS: [number, number][] = BUNDLE_SPREAD_STOPS.flatMap(([z, f], i) => {
+  const prev = BUNDLE_SPREAD_STOPS[i - 1];
   const crossing: [number, number][] =
     prev && prev[1] < PILL_MIN_SIZE && f > PILL_MIN_SIZE
-      ? [[prev[0] + ((z - prev[0]) * (PILL_MIN_SIZE - prev[1])) / (f - prev[1]),
-          PILL_MIN_SIZE]]
+      ? [[prev[0] + ((z - prev[0]) * (PILL_MIN_SIZE - prev[1])) / (f - prev[1]), PILL_MIN_SIZE]]
       : [];
   return [...crossing, [z, Math.max(PILL_MIN_SIZE, f)] as [number, number]];
 });
@@ -299,7 +281,10 @@ const fadeOut = (rank: number): ExpressionSpecification => {
 
 /** `icon-size`: the factor the bundle spread uses, once it is big enough. */
 const spreadFactor: ExpressionSpecification = [
-  'interpolate', ['linear'], ['zoom'], ...PILL_SIZE_STOPS.flatMap(([z, f]) => [z, f]),
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  ...PILL_SIZE_STOPS.flatMap(([z, f]) => [z, f]),
 ] as ExpressionSpecification;
 
 /**
@@ -314,9 +299,12 @@ const spreadFactor: ExpressionSpecification = [
  */
 const HALF_BANDS = 48;
 const centreTable = (ratio: number) => [
-  'match', ['round', ['*', ['get', 'mid'], 2]],
-  ...Array.from({ length: 2 * HALF_BANDS + 1 }, (_, i) => i - HALF_BANDS)
-    .flatMap((half) => [half, ['literal', [(half / 2) * PILL_PITCH * ratio, 0]]]),
+  'match',
+  ['round', ['*', ['get', 'mid'], 2]],
+  ...Array.from({ length: 2 * HALF_BANDS + 1 }, (_, i) => i - HALF_BANDS).flatMap((half) => [
+    half,
+    ['literal', [(half / 2) * PILL_PITCH * ratio, 0]],
+  ]),
   ['literal', [0, 0]],
 ];
 
@@ -343,15 +331,19 @@ const centreTable = (ratio: number) => [
 const CENTRE_STEPS = [7, 8];
 const bucketRatio = (z: number) => spreadAt(z) / sizeAt(z);
 const barCentre = [
-  'step', ['zoom'],
+  'step',
+  ['zoom'],
   centreTable(bucketRatio(CENTRE_STEPS[0])),
   ...CENTRE_STEPS.flatMap((z) => [z, centreTable(bucketRatio(z + 1))]),
 ] as unknown as ExpressionSpecification;
 
 /** Everything that puts a bar on its bands, shared by the two layers that do. */
 const barLayout: SymbolLayerSpecification['layout'] = {
-  'icon-image': ['concat', PILL_IMAGE_PREFIX,
-    ['to-string', ['round', ['get', 'span']]]] as ExpressionSpecification,
+  'icon-image': [
+    'concat',
+    PILL_IMAGE_PREFIX,
+    ['to-string', ['round', ['get', 'span']]],
+  ] as ExpressionSpecification,
   'icon-size': spreadFactor,
   'icon-offset': barCentre,
   'icon-rotate': ['get', 'bearing'] as ExpressionSpecification,
@@ -363,7 +355,9 @@ const barLayout: SymbolLayerSpecification['layout'] = {
   'icon-ignore-placement': false,
   // Interchanges and Hauptbahnhöfe win what collisions there are.
   'symbol-sort-key': [
-    '-', 0, ['+', ['get', 'lineCount'], ['*', 10, ['get', 'major']]],
+    '-',
+    0,
+    ['+', ['get', 'lineCount'], ['*', 10, ['get', 'major']]],
   ] as ExpressionSpecification,
 };
 
@@ -378,8 +372,7 @@ const barLayout: SymbolLayerSpecification['layout'] = {
  * exactly. Below the changeover the mark is a dot and none of this applies.
  */
 const LABEL_EM = 12;
-const radialEm = (span: number, size: number) =>
-  (pillLength(span) * size) / 2 / LABEL_EM + 0.45;
+const radialEm = (span: number, size: number) => (pillLength(span) * size) / 2 / LABEL_EM + 0.45;
 
 /**
  * ...and it steps rather than interpolates with zoom, because a symbol's layout
@@ -388,24 +381,31 @@ const radialEm = (span: number, size: number) =>
  * nothing jumps; an interpolate would quantise into a jump of its own.
  */
 const byLength = (size: number): ExpressionSpecification =>
-  ['interpolate', ['linear'], ['number', ['get', 'span']],
-    1, radialEm(1, size), 64, radialEm(64, size)] as ExpressionSpecification;
+  [
+    'interpolate',
+    ['linear'],
+    ['number', ['get', 'span']],
+    1,
+    radialEm(1, size),
+    64,
+    radialEm(64, size),
+  ] as ExpressionSpecification;
 
 const nameOffset = (rank: number): ExpressionSpecification => {
   const [, full] = pillZooms(rank);
   const steps: number[] = [];
   for (let z = Math.ceil(full); z <= 14; z++) steps.push(z);
-  return ['step', ['zoom'],
+  return [
+    'step',
+    ['zoom'],
     0.9,
     ...steps.flatMap((z) => [z, byLength(sizeAt(z))]),
   ] as ExpressionSpecification;
 };
 
-const rankIs = (rank: number): ExpressionSpecification =>
-  ['==', ['get', 'rank'], rank];
+const rankIs = (rank: number): ExpressionSpecification => ['==', ['get', 'rank'], rank];
 
-const primary: ExpressionSpecification =
-  ['all', ['==', ['get', 'primary'], 1]];
+const primary: ExpressionSpecification = ['all', ['==', ['get', 'primary'], 1]];
 
 const dotLayer = (rank: number) => `stop-dots-r${rank}`;
 const markLayer = (rank: number) => `stop-marks-r${rank}`;
@@ -426,12 +426,13 @@ export const STOP_MARK_LAYERS: string[] = STOP_TIERS.flatMap((t) => [
 
 /** Station layers and the base filter each one is built with. */
 export const STATION_FILTERS: Record<string, ExpressionSpecification> = {
-  ...Object.fromEntries(STOP_TIERS.flatMap((t) => [
-    ...(t.mark < pillZooms(t.rank)[1] ? [[dotLayer(t.rank), rankIs(t.rank)]] : []),
-    [markLayer(t.rank), rankIs(t.rank)],
-    [labelLayer(t.rank),
-      ['all', rankIs(t.rank), primary] as ExpressionSpecification],
-  ])),
+  ...(Object.fromEntries(
+    STOP_TIERS.flatMap((t) => [
+      ...(t.mark < pillZooms(t.rank)[1] ? [[dotLayer(t.rank), rankIs(t.rank)]] : []),
+      [markLayer(t.rank), rankIs(t.rank)],
+      [labelLayer(t.rank), ['all', rankIs(t.rank), primary] as ExpressionSpecification],
+    ]),
+  ) as Record<string, ExpressionSpecification>),
   'station-positions': ['all', ['>', ['get', 'lineCount'], 0], ['==', ['get', 'pill'], 1]],
 };
 
@@ -449,8 +450,12 @@ function stationLayers(): LayerSpecification[] {
     const stops: [number, number][] = [[6, rank === 0 ? 1.9 : 1.5]];
     if (full > 9) stops.push([9, rank === 0 ? 2.9 : 2.3]);
     stops.push([full, (PILL_THICKNESS * sizeAt(full)) / 2]);
-    return ['interpolate', ['linear'], ['zoom'],
-      ...stops.flatMap(([z, r]) => [z, r])] as ExpressionSpecification;
+    return [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      ...stops.flatMap(([z, r]) => [z, r]),
+    ] as ExpressionSpecification;
   };
 
   // Placement runs from the top layer down, so a tier pushed later is placed
@@ -472,7 +477,13 @@ function stationLayers(): LayerSpecification[] {
           'circle-color': LNVG.white,
           'circle-stroke-color': INK,
           'circle-stroke-width': [
-            'interpolate', ['linear'], ['zoom'], 6, 0.7, pillFull, 1.5,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6,
+            0.7,
+            pillFull,
+            1.5,
           ] as ExpressionSpecification,
           'circle-opacity': fadeOut(tier.rank),
           'circle-stroke-opacity': fadeOut(tier.rank),
@@ -514,7 +525,7 @@ function stationLayers(): LayerSpecification[] {
         'text-font': muted ? FONT_REGULAR : FONT_MEDIUM,
         'text-size': muted
           ? 11
-          : ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 13] as ExpressionSpecification,
+          : (['interpolate', ['linear'], ['zoom'], 9, 10, 14, 13] as ExpressionSpecification),
         'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
         'text-radial-offset': nameOffset(tier.rank),
         'text-justify': 'auto',
@@ -527,8 +538,9 @@ function stationLayers(): LayerSpecification[] {
         // Trams get the quieter colour by tier; a coach bay of its own gets it
         // by being one, wherever it has been ranked. It is not a railway
         // station and is not named as loudly as one.
-        'text-color': muted ? MUTED_INK
-          : ['case', ['==', ['get', 'coachOnly'], 1], MUTED_INK, INK] as ExpressionSpecification,
+        'text-color': muted
+          ? MUTED_INK
+          : (['case', ['==', ['get', 'coachOnly'], 1], MUTED_INK, INK] as ExpressionSpecification),
         'text-halo-color': LNVG.ground,
         'text-halo-width': 1.6,
       },
@@ -548,13 +560,25 @@ function stationLayers(): LayerSpecification[] {
     filter: STATION_FILTERS['station-positions'],
     paint: {
       'circle-radius': [
-        'interpolate', ['linear'], ['zoom'], TRUE_POSITION_ZOOM, 2.4, 18, 4,
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        TRUE_POSITION_ZOOM,
+        2.4,
+        18,
+        4,
       ] as ExpressionSpecification,
       'circle-opacity': 0,
       'circle-stroke-color': INK,
       'circle-stroke-width': 1.3,
       'circle-stroke-opacity': [
-        'interpolate', ['linear'], ['zoom'], TRUE_POSITION_ZOOM, 0, TRUE_POSITION_ZOOM + 0.6, 0.8,
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        TRUE_POSITION_ZOOM,
+        0,
+        TRUE_POSITION_ZOOM + 0.6,
+        0.8,
       ] as ExpressionSpecification,
     },
   });
@@ -615,7 +639,10 @@ export const CLOSURE_TIERS = {
  * closure to be about one place.
  */
 const CLOSURE_WIDTH_STOPS: [number, number][] = [
-  [5, 1.2], [8, 2.4], [11, 5.0], [14, 8.0],
+  [5, 1.2],
+  [8, 2.4],
+  [11, 5.0],
+  [14, 8.0],
 ];
 
 /**
@@ -641,7 +668,9 @@ const CLOSURE_WIDTH_STOPS: [number, number][] = [
  * ranges apart.
  */
 const BAND_WEIGHT: Record<ClosureBand, number> = {
-  days: 0.7, weeks: 1, months: 1.45,
+  days: 0.7,
+  weeks: 1,
+  months: 1.45,
 };
 
 /**
@@ -654,9 +683,12 @@ const BAND_WEIGHT: Record<ClosureBand, number> = {
  * on the feature, which is the seam this uses.
  */
 const bandStop = (px: number): ExpressionSpecification => [
-  'match', ['get', 'band'],
-  'days', px * BAND_WEIGHT.days,
-  'months', px * BAND_WEIGHT.months,
+  'match',
+  ['get', 'band'],
+  'days',
+  px * BAND_WEIGHT.days,
+  'months',
+  px * BAND_WEIGHT.months,
   px * BAND_WEIGHT.weeks,
 ];
 
@@ -669,21 +701,26 @@ const bandStop = (px: number): ExpressionSpecification => [
  * meant to sit inside as soon as the corridor got wider.
  */
 const closureWidth = (scale: number): ExpressionSpecification =>
-  ['interpolate', ['linear'], ['zoom'],
+  [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
     ...CLOSURE_WIDTH_STOPS.flatMap(([z, px]) => [z, bandStop(px * scale)]),
   ] as ExpressionSpecification;
 
 export type ClosureTier = keyof typeof CLOSURE_TIERS;
 
 /** Every closure layer, in draw order - for visibility toggling. */
-export const CLOSURE_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
-  .flatMap((tier) => [
-    `closures-${tier}-casing`, `closures-${tier}-hazard`, `closures-${tier}-point`,
-  ]);
+export const CLOSURE_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[]).flatMap((tier) => [
+  `closures-${tier}-casing`,
+  `closures-${tier}-hazard`,
+  `closures-${tier}-point`,
+]);
 
 /** Layers a click should hit-test - the visible marks, not the casings. */
-export const CLOSURE_HIT_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[])
-  .flatMap((tier) => [`closures-${tier}-hazard`, `closures-${tier}-point`]);
+export const CLOSURE_HIT_LAYER_IDS = (Object.keys(CLOSURE_TIERS) as ClosureTier[]).flatMap(
+  (tier) => [`closures-${tier}-hazard`, `closures-${tier}-point`],
+);
 
 /**
  * The share of the corridor a single-track restriction's hazard covers, and how
@@ -706,15 +743,12 @@ function closureLayers(): LayerSpecification[] {
     // The hazard on a single-track restriction covers one side of the corridor
     // the casing draws; on the other two families it covers all of it.
     const hazardWidth = closureWidth(half ? weight * HALF_HAZARD : weight);
-    const ofTier: ExpressionSpecification =
-      ['in', ['get', 'effect'], ['literal', [...effects]]];
+    const ofTier: ExpressionSpecification = ['in', ['get', 'effect'], ['literal', [...effects]]];
     // A circle layer draws one circle per *vertex*, so without this the marker
     // layer beads every routed closure along its own geometry - which reads as
     // a row of stations that are not there.
-    const lines: ExpressionSpecification =
-      ['all', ofTier, ['!=', ['geometry-type'], 'Point']];
-    const points: ExpressionSpecification =
-      ['all', ofTier, ['==', ['geometry-type'], 'Point']];
+    const lines: ExpressionSpecification = ['all', ofTier, ['!=', ['geometry-type'], 'Point']];
+    const points: ExpressionSpecification = ['all', ofTier, ['==', ['geometry-type'], 'Point']];
 
     return [
       {
@@ -765,13 +799,26 @@ function closureLayers(): LayerSpecification[] {
         filter: points,
         paint: {
           'circle-radius': [
-            'interpolate', ['linear'], ['zoom'],
-            6, bandStop(1.6), 11, bandStop(3.4), 14, bandStop(5.4),
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6,
+            bandStop(1.6),
+            11,
+            bandStop(3.4),
+            14,
+            bandStop(5.4),
           ] as ExpressionSpecification,
           'circle-color': half ? HAZARD_DARK : LNVG.yellow,
           'circle-stroke-color': half ? LNVG.yellow : HAZARD_DARK,
           'circle-stroke-width': [
-            'interpolate', ['linear'], ['zoom'], 6, 0.8, 14, 2,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6,
+            0.8,
+            14,
+            2,
           ] as ExpressionSpecification,
         },
       },

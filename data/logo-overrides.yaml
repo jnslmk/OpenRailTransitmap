@@ -1,0 +1,66 @@
+# Manual corrections to the operator → Wikidata matching in pipeline/logos.ts.
+#
+# Keys are `operator` strings exactly as they appear in data/lines.json, which
+# is to say exactly as OSM has them. Values are either a Wikidata item id, or
+# `none` to refuse a logo for that operator altogether.
+#
+# Two things need correcting by hand, and only a person can do either:
+#
+#   - a wrong match. Searching Wikidata for "DB RegioNetz Verkehrs
+#     GmbH;Kurhessenbahn" finds the Erzgebirgsbahn, which is a sibling brand
+#     and the wrong mark to put against those lines.
+#   - a missing one. Most DB Regio subsidiaries have no item of their own, and
+#     the honest mark for a "DB Regio AG - Regio Bayern" line is DB Regio's.
+#
+# Run `npm run resolve:logos` after editing; it rewrites data/operator-logos.json,
+# which is committed so the matches can be read in a diff.
+
+operators:
+  # --- DB Regio subsidiaries, which wear the parent's mark ------------------
+  # Q18853 is DB Regio itself; these are its regions and franchises, most of
+  # which Wikidata has no item for, and none of which has a mark of its own.
+  DB Regio AG - Regio Bayern: Q18853
+  DB Regio AG - Region Nord: Q18853
+  DB Regio AG Verkehrsbetrieb Südbaden: Q18853
+  DB Regio Stuttgart: Q18853
+  DB Regio Stuttgart GmbH: Q18853
+  DB ZugBus Regionalverkehr Alb-Bodensee GmbH (RAB): Q18853
+
+  # --- the DB brands that do have their own mark ---------------------------
+  DB Regio AG/S-Bahn München: Q256524            # S-Bahn München
+  DB S-Bahn Rhein-Main: Q705684                  # S-Bahn Rhein-Main
+  DB RegioNetz Verkehrs GmbH Südostbayernbahn: Q1660947
+  # The RegioNetz services. Left to the search every one of them finds the
+  # Erzgebirgsbahn - the first hit for "DB RegioNetz Verkehrs GmbH" - so each
+  # is pinned to the brand its own tag names.
+  DB RegioNetz Verkehrs GmbH;Kurhessenbahn: Q1793083         # Kurhessenbahn
+  DB RegioNetz Verkehrs GmbH;Erzgebirgsbahn: Q1366149
+  DB RegioNetz Verkehrs GmbH;Westfrankenbahn: Q1662213
+  DB RegioNetz Verkehrs GmbH; Südostbayernbahn: Q1660947
+  # The Oberweißbacher operating company has no mark of its own, and the item
+  # for the line carries a photograph of a train rather than a logo.
+  DB RegioNetz Verkehrs GmbH;Oberweißbacher Berg- und Schwarzatalbahn: none
+  DB RegioNetz Verkehrs GmbH; Oberweißbacher Berg- und Schwarzatalbahn: none
+
+  # --- DB Regio regions, same mark as above --------------------------------
+  DB Regio AG Nord: Q18853
+
+  # --- companies the search does not find under their OSM name -------------
+  # Either the OSM tag leads with an abbreviation the item does not carry, or
+  # the item that does carry the mark is not the first hit for the name.
+  HLB Hessenbahn: Q896102                        # Hessische Landesbahn
+  ODEG Ostdeutsche Eisenbahn GmbH: Q145188       # Ostdeutsche Eisenbahn
+  agilis Verkehrsgesellschaft mbH & Co KG: Q393786
+  Agilis Verkehrsgesellschaft mbH & Co KG: Q393786
+  alex - Die Länderbahn GmbH DLB: Q315339        # Die Länderbahn
+  Rurtalbahn GmbH: Q895592
+
+  # --- initials that mean something else to Wikidata ------------------------
+  # Three letters are three letters, and Wikidata has other things to do with
+  # them. Each of these is identified by the lines that carry it: BVB is the
+  # Basel tram, NVS runs Schwerin's four tram lines.
+  BVB: Q678872                                   # not Borussia Dortmund
+  NVS: Q1231470                                  # not Novartis
+  # Zwickau's tram operator, which Wikidata has no item for; left to itself the
+  # search settles on Schweiz Tourismus.
+  SVZ: none

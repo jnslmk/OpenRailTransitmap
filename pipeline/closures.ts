@@ -64,7 +64,13 @@ const LOG_HORIZON_DAYS = 14;
 const REGIONS = ['MITTE', 'NORD', 'OST', 'SUED', 'SUEDOST', 'SUEDWEST', 'WEST'];
 
 const WEEKDAYS = [
-  'MONTAG', 'DIENSTAG', 'MITTWOCH', 'DONNERSTAG', 'FREITAG', 'SAMSTAG', 'SONNTAG',
+  'MONTAG',
+  'DIENSTAG',
+  'MITTWOCH',
+  'DONNERSTAG',
+  'FREITAG',
+  'SAMSTAG',
+  'SONNTAG',
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -101,60 +107,61 @@ const DIRECTIONS: Record<string, ClosureDirection> = {
  * S-Bahn, or for preventive work - not a description of any particular job.
  */
 const WORKS: Record<string, string> = {
-  'IH_StreckenContainer': 'Booked maintenance slot (line)',
-  'IH_KnotenContainer': 'Booked maintenance slot (junction)',
+  IH_StreckenContainer: 'Booked maintenance slot (line)',
+  IH_KnotenContainer: 'Booked maintenance slot (junction)',
   'IH_S-BahnContainer': 'Booked maintenance slot (S-Bahn)',
-  'IH_PräventionsContainer': 'Booked maintenance slot (preventive)',
+  IH_PräventionsContainer: 'Booked maintenance slot (preventive)',
   'Invest-Container': 'Booked slot (investment project)',
-  'Container': 'Booked slot',
+  Container: 'Booked slot',
   'sonstige Arbeiten': 'Other works',
   'Planbare kleine Instandhaltung': 'Minor scheduled maintenance',
-  'Brückenarbeiten': 'Bridge works',
-  'Brückenprüfung': 'Bridge inspection',
-  'Tunnelarbeiten': 'Tunnel works',
-  'Tunnelprüfung': 'Tunnel inspection',
-  'Durchlassarbeiten': 'Culvert works',
-  'Stützmauerarbeiten': 'Retaining wall works',
+  Brückenarbeiten: 'Bridge works',
+  Brückenprüfung: 'Bridge inspection',
+  Tunnelarbeiten: 'Tunnel works',
+  Tunnelprüfung: 'Tunnel inspection',
+  Durchlassarbeiten: 'Culvert works',
+  Stützmauerarbeiten: 'Retaining wall works',
   'Fels-/Hangsanierung': 'Rock face and embankment works',
-  'Untergrundverbesserung': 'Subgrade improvement',
-  'Baugrunduntersuchung': 'Ground investigation',
-  'Tiefenentwässerung': 'Deep drainage',
+  Untergrundverbesserung: 'Subgrade improvement',
+  Baugrunduntersuchung: 'Ground investigation',
+  Tiefenentwässerung: 'Deep drainage',
   'Einbau Planumsschutzschicht': 'Formation protection layer',
   'Arbeiten an LST-Anlagen': 'Signalling works',
   'Arbeiten an Schalthäusern': 'Switchgear building works',
   'Arbeiten an Telekommunikationsanlagen': 'Telecoms works',
-  'Kabelarbeiten': 'Cable works',
-  'Oberleitungsarbeiten': 'Overhead line works',
-  'Oberleitungsvollinspektion': 'Overhead line inspection',
-  'Stromschienenarbeiten': 'Conductor rail works',
-  'Bahnsteigarbeiten': 'Platform works',
+  Kabelarbeiten: 'Cable works',
+  Oberleitungsarbeiten: 'Overhead line works',
+  Oberleitungsvollinspektion: 'Overhead line inspection',
+  Stromschienenarbeiten: 'Conductor rail works',
+  Bahnsteigarbeiten: 'Platform works',
   'Arbeiten am Bahnübergang': 'Level crossing works',
   'Arbeiten an Lärmschutzanlagen': 'Noise barrier works',
-  'Vegetationsarbeiten': 'Vegetation clearance',
-  'Kampfmittelsondierung': 'Ordnance survey of the site',
-  'Inbetriebnahme': 'Commissioning',
-  'Gleiserneuerung': 'Track renewal',
+  Vegetationsarbeiten: 'Vegetation clearance',
+  Kampfmittelsondierung: 'Ordnance survey of the site',
+  Inbetriebnahme: 'Commissioning',
+  Gleiserneuerung: 'Track renewal',
   'Gleiserneuerung mit Bettungsreinigung': 'Track renewal with ballast cleaning',
   'Gleiserneuerung mit BR und PSS': 'Track renewal with ballast cleaning and formation layer',
-  'Gleiserneuerung mit BR, PSS und TE': 'Track renewal with ballast cleaning, formation layer and drainage',
-  'Gleisauswechslung': 'Track replacement',
+  'Gleiserneuerung mit BR, PSS und TE':
+    'Track renewal with ballast cleaning, formation layer and drainage',
+  Gleisauswechslung: 'Track replacement',
   'Gleisumbau ohne Schienenwechsel': 'Track rebuild, rails retained',
   'Durcharbeitung von Gleisen': 'Track overhaul',
   'Durcharbeitung Gleise und Weichen': 'Track and points overhaul',
   'Durcharbeitung von Weichen': 'Points overhaul',
-  'Weichenerneuerung': 'Points renewal',
+  Weichenerneuerung: 'Points renewal',
   'Weichenerneuerung mit PSS': 'Points renewal with formation layer',
-  'Weicheneinbau': 'Points installation',
-  'Weichenausbau': 'Points removal',
+  Weicheneinbau: 'Points installation',
+  Weichenausbau: 'Points removal',
   'Auswechslung v Weichengroßteilen': 'Replacement of major points components',
   'Schienenschleifen Weichen': 'Points rail grinding',
-  'Schienenauswechslung': 'Rail replacement',
-  'Schienenerneuerung': 'Rail renewal',
+  Schienenauswechslung: 'Rail replacement',
+  Schienenerneuerung: 'Rail renewal',
   'Schleifen von Schienen': 'Rail grinding',
-  'Schraublochsanierung': 'Bolt hole repair',
-  'Oberbauschweißen': 'Track welding',
-  'Schwellenauswechslung': 'Sleeper replacement',
-  'Schwellenerneuerung': 'Sleeper renewal',
+  Schraublochsanierung: 'Bolt hole repair',
+  Oberbauschweißen: 'Track welding',
+  Schwellenauswechslung: 'Sleeper replacement',
+  Schwellenerneuerung: 'Sleeper renewal',
 };
 
 export interface ClosureEnd {
@@ -209,7 +216,10 @@ export interface Closure {
  * combination. Carrying it would put a column in the tiles, the log and the
  * panel that is a restatement of the effect already there.
  */
-interface RawPoint { x: number; y: number }
+interface RawPoint {
+  x: number;
+  y: number;
+}
 
 export interface RawRestriction {
   baustellenID: string;
@@ -225,8 +235,11 @@ export interface RawRestriction {
   koordinaten: { von: RawPoint; bis: RawPoint };
   zeitraum: { beginn: string; ende: string };
   gueltigkeiten: {
-    vonDatum: string; bisDatum: string;
-    wochentage: string[]; vonUhrzeit: string; bisUhrzeit: string;
+    vonDatum: string;
+    bisDatum: string;
+    wochentage: string[];
+    vonUhrzeit: string;
+    bisUhrzeit: string;
   }[];
 }
 
@@ -257,11 +270,14 @@ async function fetchRevision(timeoutMs = 20_000): Promise<number> {
       settled = true;
       clearTimeout(timer);
       ws.close();
-      if (err) reject(err); else resolve(value!);
+      if (err) reject(err);
+      else resolve(value!);
     };
 
     const timer = setTimeout(
-      () => done(new ClosureFeedError('no revision pushed within the timeout')), timeoutMs);
+      () => done(new ClosureFeedError('no revision pushed within the timeout')),
+      timeoutMs,
+    );
 
     ws.onerror = () => done(new ClosureFeedError('websocket handshake failed'));
     ws.onclose = () => done(new ClosureFeedError('websocket closed before sending a revision'));
@@ -280,9 +296,7 @@ async function fetchRevision(timeoutMs = 20_000): Promise<number> {
 }
 
 /** `POST /api/baustellen` for one date range, both ends inclusive. */
-async function fetchRange(
-  revision: number, from: string, to: string,
-): Promise<RawRestriction[]> {
+async function fetchRange(revision: number, from: string, to: string): Promise<RawRestriction[]> {
   const body = {
     revision,
     filter: {
@@ -311,7 +325,9 @@ async function fetchRange(
       body: JSON.stringify(body),
     });
   } catch (err) {
-    throw new ClosureFeedError(`request failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new ClosureFeedError(
+      `request failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   if (!res.ok) {
     throw new ClosureFeedError(`responded ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -414,10 +430,12 @@ function compactWindows(raw: ClosureWindow[]): ClosureWindow[] {
   const merged: typeof prepared = [];
   for (const w of prepared) {
     const last = merged[merged.length - 1];
-    const contiguous = last
-      && last.fromTime === w.fromTime && last.toTime === w.toTime
-      && nextDay(last.to) === w.from
-      && (last.derived && w.derived ? true : last.days === w.days);
+    const contiguous =
+      last &&
+      last.fromTime === w.fromTime &&
+      last.toTime === w.toTime &&
+      nextDay(last.to) === w.from &&
+      (last.derived && w.derived ? true : last.days === w.days);
     if (contiguous) {
       last.to = w.to;
       last.days |= w.days;
@@ -442,13 +460,15 @@ export function normalise(raw: RawRestriction): Closure {
     to: endpoint(raw.langnameBis, raw.ril100Bis, raw.koordinaten.bis),
     begin: raw.zeitraum.beginn,
     end: raw.zeitraum.ende,
-    windows: compactWindows((raw.gueltigkeiten ?? []).map((g) => ({
-      from: g.vonDatum,
-      to: g.bisDatum,
-      days: dayMask(g.wochentage ?? []),
-      fromTime: g.vonUhrzeit,
-      toTime: g.bisUhrzeit,
-    }))),
+    windows: compactWindows(
+      (raw.gueltigkeiten ?? []).map((g) => ({
+        from: g.vonDatum,
+        to: g.bisDatum,
+        days: dayMask(g.wochentage ?? []),
+        fromTime: g.vonUhrzeit,
+        toTime: g.bisUhrzeit,
+      })),
+    ),
   };
 }
 
@@ -484,7 +504,13 @@ export type ClosureEvent =
   /** First time this id was seen, with everything the log keeps about it. */
   | ({ t: string; e: 'planned' } & PlannedClosure)
   /** The plan moved. Only the fields that changed are carried, old and new. */
-  | { t: string; e: 'revised'; id: string; was: Partial<PlannedClosure>; now: Partial<PlannedClosure> }
+  | {
+      t: string;
+      e: 'revised';
+      id: string;
+      was: Partial<PlannedClosure>;
+      now: Partial<PlannedClosure>;
+    }
   /** In the plan yesterday, gone today, and its dates had not yet run out. */
   | { t: string; e: 'withdrawn'; id: string };
 
@@ -528,7 +554,7 @@ export function replayLog(events: ClosureEvent[]): Map<string, LoggedClosure> {
     if (ev.e === 'planned') {
       const { t, e: _e, ...closure } = ev;
       state.set(ev.id, {
-        current: closure as PlannedClosure,
+        current: closure,
         since: t,
         firstEnd: closure.end,
         revisions: 0,
@@ -544,7 +570,9 @@ export function replayLog(events: ClosureEvent[]): Map<string, LoggedClosure> {
       // revision and adds nothing here, which is the honest split.
       if (typeof ev.was.end === 'string' && typeof ev.now.end === 'string') {
         entry.endMoves.push({
-          logged: ev.t, was: ev.was.end.slice(0, 10), now: ev.now.end.slice(0, 10),
+          logged: ev.t,
+          was: ev.was.end.slice(0, 10),
+          now: ev.now.end.slice(0, 10),
         });
       }
       entry.current = { ...entry.current, ...ev.now };
@@ -565,7 +593,10 @@ export function berlinDate(offsetDays = 0): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + offsetDays);
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).format(d);
 }
 
@@ -682,7 +713,8 @@ async function reconcileLog(): Promise<void> {
 
   console.log(
     `==> ${fresh.length} restrictions planned ${window.from}..${window.to}, ` +
-    `${known.size} already logged`);
+      `${known.size} already logged`,
+  );
 
   if (!events.length) {
     console.log('==> log already current');

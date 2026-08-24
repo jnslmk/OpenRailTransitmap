@@ -1,30 +1,54 @@
 import maplibregl, {
-  Map as MLMap, Popup,
-  type MapGeoJSONFeature, type ExpressionSpecification,
+  Map as MLMap,
+  Popup,
+  type GeoJSONSource,
+  type MapGeoJSONFeature,
+  type ExpressionSpecification,
 } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { LNVG, MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
+import { LNVG, MODES, textOn, type Mode } from '../shared/lnvg.ts';
 import {
-  buildStyle, selectionOpacity, highlightOpacity, servedByModes, STATION_FILTERS,
-  STOP_MARK_LAYERS, CLOSURE_LAYER_IDS, CLOSURE_HIT_LAYER_IDS,
+  buildStyle,
+  selectionOpacity,
+  highlightOpacity,
+  servedByModes,
+  STATION_FILTERS,
+  STOP_MARK_LAYERS,
+  CLOSURE_LAYER_IDS,
+  CLOSURE_HIT_LAYER_IDS,
 } from './style.ts';
 import { registerPillImages } from './stopmarks.ts';
 import { readState, writeState, type ViewState, type ChromeMode, type Tab } from './state.ts';
 import { t } from './strings.ts';
 import {
-  renderChrome, renderLinePanel, renderClosurePanel, setStatus, compareLines,
-  syncSheetHandle, setVisibleModes, unpinModes, setLiveAttributionUsed,
-  setVisibleLines, setLinePunctuality, setPunctualityAttributionUsed,
-  setVisibleClosures, setVisibleOperators, setClosureDay, setClosureAttributionUsed,
-  setCoachAttributionUsed, setRoutingAttributionUsed,
+  renderChrome,
+  renderLinePanel,
+  renderClosurePanel,
+  setStatus,
+  compareLines,
+  syncSheetHandle,
+  setVisibleModes,
+  unpinModes,
+  setLiveAttributionUsed,
+  setVisibleLines,
+  setLinePunctuality,
+  setPunctualityAttributionUsed,
+  setVisibleClosures,
+  setVisibleOperators,
+  setOperatorLogos,
+  setClosureDay,
+  setClosureAttributionUsed,
+  setCoachAttributionUsed,
+  setRoutingAttributionUsed,
 } from './ui.ts';
 import { setPlannerPlace, restorePlannerResult, type PlannerHost } from './planner.ts';
 import type { Itinerary, Leg, Place } from './routing.ts';
 import { ChromeToggleControl, labelControls, ZoomReadoutControl, DEBUG } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
+import { loadLogos } from './logos.ts';
 import { parseClosure } from './closures.ts';
 import { operatorExpression, operatorKey, operatorShown } from './operators.ts';
 import './styles.css';
@@ -33,12 +57,20 @@ import './styles.css';
 const BASE = import.meta.env.BASE_URL;
 
 export interface LineRecord {
-  id: string; ref: string; name: string; mode: Mode; colour: string;
-  colourSource: string; operator: string; network: string;
-  stops: number; ways: number;
+  id: string;
+  ref: string;
+  name: string;
+  mode: Mode;
+  colour: string;
+  colourSource: string;
+  operator: string;
+  network: string;
+  stops: number;
+  ways: number;
 }
 export interface Registry {
-  region: string; regionName: string;
+  region: string;
+  regionName: string;
   counts: { lines: number; stations: number; byMode: Record<string, number> };
   colourCoverage: { osmTagged: number; total: number };
   lines: LineRecord[];
@@ -47,7 +79,7 @@ export interface Registry {
 async function main() {
   maplibregl.addProtocol('pmtiles', new Protocol().tile);
 
-  const registry: Registry = await fetch(`${BASE}lines.json`).then((r) => r.json());
+  const registry = (await (await fetch(`${BASE}lines.json`)).json()) as Registry;
   const byId = new Map(registry.lines.map((l) => [l.id, l]));
 
   const initial = { center: [9.73, 52.63] as [number, number], zoom: 7 };
@@ -125,7 +157,10 @@ async function main() {
 
   const OSM_ATTRIBUTION =
     '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
-  let attribution = new maplibregl.AttributionControl({ compact: true, customAttribution: OSM_ATTRIBUTION });
+  let attribution = new maplibregl.AttributionControl({
+    compact: true,
+    customAttribution: OSM_ATTRIBUTION,
+  });
   map.addControl(attribution, 'bottom-right');
   collapseAttribution();
 
@@ -142,8 +177,7 @@ async function main() {
    * so neither a resize nor a later source credit re-opens it.
    */
   function collapseAttribution() {
-    const el = map.getContainer()
-      .querySelector('.maplibregl-ctrl-attrib.maplibregl-compact');
+    const el = map.getContainer().querySelector('.maplibregl-ctrl-attrib.maplibregl-compact');
     if (!el) return;
     el.setAttribute('open', '');
     el.classList.remove('maplibregl-compact-show');
@@ -218,10 +252,14 @@ async function main() {
   function applySelection() {
     for (const mode of MODES) {
       map.setPaintProperty(`route-${mode}`, 'line-opacity', routeOpacity());
-      map.setPaintProperty(`route-${mode}-highlight`, 'line-opacity', highlightOpacity(state.selected));
+      map.setPaintProperty(
+        `route-${mode}-highlight`,
+        'line-opacity',
+        highlightOpacity(state.selected),
+      );
     }
     map.setPaintProperty('route-badges', 'text-opacity', routeOpacity());
-    const line = state.selected ? byId.get(state.selected) ?? null : null;
+    const line = state.selected ? (byId.get(state.selected) ?? null) : null;
     renderLinePanel(line, { onClose: () => select(null) });
     if (line) showPunctuality(line.id);
   }
@@ -234,7 +272,7 @@ async function main() {
    * not paint one line's record under another line's name.
    */
   function showPunctuality(lineId: string) {
-    loadPunctuality(BASE).then((file) => {
+    void loadPunctuality(BASE).then((file) => {
       if (state.selected !== lineId) return;
       const score = file?.lines[lineId] ?? null;
       setLinePunctuality(lineId, score, file);
@@ -357,7 +395,8 @@ async function main() {
     if (!layers.length) return;
 
     const c = map.getCenter();
-    const key = `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}/` +
+    const key =
+      `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}/` +
       `${[...state.modes].sort().join(',')}/${operatorKey(state.operators)}/${state.closures}`;
     if (key === legendKey) return;
     legendKey = key;
@@ -424,7 +463,10 @@ async function main() {
    */
   function countClosures() {
     const layers = CLOSURE_HIT_LAYER_IDS.filter((id) => map.getLayer(id));
-    if (!layers.length || !state.closures) { setVisibleClosures(0); return; }
+    if (!layers.length || !state.closures) {
+      setVisibleClosures(0);
+      return;
+    }
 
     const ids = new Set<string>();
     for (const f of map.queryRenderedFeatures({ layers })) {
@@ -470,7 +512,8 @@ async function main() {
     for (const l of registry.lines) {
       const k = lineKey(l.ref);
       const set = byRef.get(k);
-      if (set) set.add(l.colour); else byRef.set(k, new Set([l.colour]));
+      if (set) set.add(l.colour);
+      else byRef.set(k, new Set([l.colour]));
     }
     const out = new Map<string, string>();
     for (const [k, colours] of byRef) if (colours.size === 1) out.set(k, [...colours][0]);
@@ -478,7 +521,7 @@ async function main() {
   })();
 
   const legColour = (leg: Leg): string | null =>
-    (leg.line ? unambiguousRefColours.get(lineKey(leg.line)) ?? null : null);
+    leg.line ? (unambiguousRefColours.get(lineKey(leg.line)) ?? null) : null;
 
   function itineraryData(it: Itinerary | null): GeoJSON.FeatureCollection {
     if (!it) return NO_ITINERARY;
@@ -520,8 +563,17 @@ async function main() {
     return { type: 'FeatureCollection', features };
   }
 
-  const itineraryWidth = (scale: number): ExpressionSpecification =>
-    ['interpolate', ['linear'], ['zoom'], 5, 2.5 * scale, 11, 5 * scale, 15, 8 * scale];
+  const itineraryWidth = (scale: number): ExpressionSpecification => [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    5,
+    2.5 * scale,
+    11,
+    5 * scale,
+    15,
+    8 * scale,
+  ];
 
   /**
    * Added after the style rather than inside it: the itinerary is a runtime
@@ -531,7 +583,8 @@ async function main() {
   function ensureItineraryLayers() {
     if (!map.getSource(ITINERARY_SOURCE)) {
       map.addSource(ITINERARY_SOURCE, {
-        type: 'geojson', data: itineraryData(shownItinerary),
+        type: 'geojson',
+        data: itineraryData(shownItinerary),
       });
     }
     if (map.getLayer('itinerary-casing')) return;
@@ -598,7 +651,7 @@ async function main() {
   function drawItinerary(it: Itinerary | null) {
     shownItinerary = it;
     ensureItineraryLayers();
-    const source = map.getSource(ITINERARY_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    const source = map.getSource<GeoJSONSource>(ITINERARY_SOURCE);
     source?.setData(itineraryData(it));
     applySelection();
     if (it) fitItinerary(it);
@@ -606,7 +659,10 @@ async function main() {
 
   /** Bring the whole journey into view, the way picking a route out of a list should. */
   function fitItinerary(it: Itinerary) {
-    let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+    let west = Infinity,
+      south = Infinity,
+      east = -Infinity,
+      north = -Infinity;
     for (const leg of it.legs) {
       for (const [lon, lat] of leg.path) {
         if (lon < west) west = lon;
@@ -616,7 +672,13 @@ async function main() {
       }
     }
     if (!Number.isFinite(west)) return;
-    map.fitBounds([[west, south], [east, north]], { padding: 48, maxZoom: 13, duration: 600 });
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding: 48, maxZoom: 13, duration: 600 },
+    );
   }
 
   // --- interactions ---------------------------------------------------------
@@ -654,10 +716,16 @@ async function main() {
   map.on('click', (e) => {
     const hits = map.queryRenderedFeatures(e.point, { layers: clickable() });
     const station = hits.find((f) => STATION_LAYERS.includes(f.layer.id));
-    if (station) { showStation(station); return; }
+    if (station) {
+      showStation(station);
+      return;
+    }
 
     const closure = hits.find((f) => CLOSURE_HIT_LAYER_IDS.includes(f.layer.id));
-    if (closure) { showClosure(closure); return; }
+    if (closure) {
+      showClosure(closure);
+      return;
+    }
 
     // Only now is a bare click on the map a change of line selection - and a
     // click on nothing at all clears it, as it always has.
@@ -701,15 +769,16 @@ async function main() {
     at: [number, number];
   } {
     const mark = (f.geometry as GeoJSON.Point).coordinates as [number, number];
-    const id = f.properties?.station;
-    if (!id) return { p: f.properties as Record<string, string>, at: mark };
+    const props = f.properties as Record<string, string>;
+    const id = props.station;
+    if (!id) return { p: props, at: mark };
     const [hit] = map.querySourceFeatures('rail', {
       sourceLayer: 'stations',
       filter: ['==', ['get', 'id'], id],
     });
-    if (!hit) return { p: f.properties as Record<string, string>, at: mark };
+    if (!hit) return { p: props, at: mark };
     return {
-      p: hit.properties as Record<string, string>,
+      p: hit.properties,
       // The station's own position, not the mark's, for anything that is about
       // the place rather than about the symbol - a journey planned from here
       // starts at the station, however far along the corridor its bar sits.
@@ -719,13 +788,19 @@ async function main() {
 
   function showStation(f: MapGeoJSONFeature) {
     const { p, at } = stationOf(f);
-    const served = String(p.lines ?? '').split(',').filter(Boolean)
-      .map((id) => byId.get(id)).filter((l): l is LineRecord => !!l)
+    const served = String(p.lines ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map((id) => byId.get(id))
+      .filter((l): l is LineRecord => !!l)
       .sort(compareLines);
 
-    const badges = served.map((l) =>
-      `<button class="badge" data-line="${l.id}" style="background:${l.colour};color:${textOn(l.colour)}" title="${l.name}">${l.ref}</button>`,
-    ).join('');
+    const badges = served
+      .map(
+        (l) =>
+          `<button class="badge" data-line="${l.id}" style="background:${l.colour};color:${textOn(l.colour)}" title="${l.name}">${l.ref}</button>`,
+      )
+      .join('');
 
     // Departure badges are painted from the lines this station serves, so a
     // board sitting under the "lines serving this station" row uses the same
@@ -747,7 +822,8 @@ async function main() {
     const geom = f.geometry as GeoJSON.Point;
     popup
       .setLngLat(geom.coordinates as [number, number])
-      .setHTML(`
+      .setHTML(
+        `
         <div class="pop">
           <strong>${p.name}</strong>
           ${p.uic_ref ? `<span class="uic">UIC ${p.uic_ref}</span>` : ''}
@@ -758,37 +834,47 @@ async function main() {
             <button class="pop-action" data-dir="to">${t().planDirectionsTo}</button>
           </div>
           ${stopId ? '<div class="pop-live"></div>' : ''}
-        </div>`)
+        </div>`,
+      )
       .addTo(map);
 
-    popup.getElement()?.querySelectorAll<HTMLElement>('.badge').forEach((el) => {
-      el.onclick = () => { select(el.dataset.line!); popup.remove(); };
-    });
+    popup
+      .getElement()
+      ?.querySelectorAll<HTMLElement>('.badge')
+      .forEach((el) => {
+        el.onclick = () => {
+          select(el.dataset.line!);
+          popup.remove();
+        };
+      });
 
     // Turning a station you are looking at into one end of a journey is the
     // whole reason the planner lives inside the map rather than beside it.
-    popup.getElement()?.querySelectorAll<HTMLElement>('.pop-action').forEach((el) => {
-      el.onclick = () => {
-        const [lon, lat] = at;
-        const place: Place = {
-          name: String(p.name ?? ''),
-          lat,
-          lon,
-          // The resolved MOTIS id where the pipeline found one, so the router
-          // plans from the stop itself rather than from a point near it.
-          stopId: stopId || null,
-          area: '',
-          kind: stopId ? 'STOP' : 'PLACE',
+    popup
+      .getElement()
+      ?.querySelectorAll<HTMLElement>('.pop-action')
+      .forEach((el) => {
+        el.onclick = () => {
+          const [lon, lat] = at;
+          const place: Place = {
+            name: String(p.name ?? ''),
+            lat,
+            lon,
+            // The resolved MOTIS id where the pipeline found one, so the router
+            // plans from the stop itself rather than from a point near it.
+            stopId: stopId || null,
+            area: '',
+            kind: stopId ? 'STOP' : 'PLACE',
+          };
+          popup.remove();
+          if (state.chrome === 'hidden') setChrome(lastVisible);
+          state.tab = 'plan';
+          // Renders the Plan tab, which is what gives `setPlannerPlace` a host.
+          renderChrome.rerender();
+          setPlannerPlace(el.dataset.dir === 'to' ? 'to' : 'from', place);
+          persist();
         };
-        popup.remove();
-        if (state.chrome === 'hidden') setChrome(lastVisible);
-        state.tab = 'plan';
-        // Renders the Plan tab, which is what gives `setPlannerPlace` a host.
-        renderChrome.rerender();
-        setPlannerPlace(el.dataset.dir === 'to' ? 'to' : 'from', place);
-        persist();
-      };
-    });
+      });
 
     // A station with no resolved stopId (most of them, until the pipeline
     // ships one) shows exactly what it always has - no departures section.
@@ -798,7 +884,9 @@ async function main() {
 
   /** Fetches and renders the departure board into an already-open popup. */
   function loadDepartures(
-    container: HTMLElement, stopId: string, colourOf: (d: Departure) => string | null,
+    container: HTMLElement,
+    stopId: string,
+    colourOf: (d: Departure) => string | null,
   ) {
     // showStation already bumped liveToken and cleared liveController just
     // above, synchronously, so this read sees that same generation.
@@ -834,10 +922,13 @@ async function main() {
         // Anything else is a bug in the render path, and swallowing it here
         // would make every future call look identical to "the API is down"
         // with nothing anywhere pointing at the real cause.
-        const expected = err instanceof LiveDataError
-          || (err instanceof DOMException && err.name === 'AbortError');
+        const expected =
+          err instanceof LiveDataError ||
+          (err instanceof DOMException && err.name === 'AbortError');
         if (!expected) console.error('[live] departures render failed unexpectedly:', err);
-        container.innerHTML = departuresSection(`<p class="muted">${t().departuresUnavailable}</p>`);
+        container.innerHTML = departuresSection(
+          `<p class="muted">${t().departuresUnavailable}</p>`,
+        );
       });
   }
 
@@ -873,7 +964,8 @@ async function main() {
       persist();
     },
     onToggleMode: (mode: Mode, on: boolean) => {
-      if (on) state.modes.add(mode); else state.modes.delete(mode);
+      if (on) state.modes.add(mode);
+      else state.modes.delete(mode);
       // Everything but the selected line paints dimmed, so a selection whose
       // own mode has just been switched off would leave the map greyed out
       // with nothing lit. Drop it with the mode that carried it.
@@ -895,7 +987,10 @@ async function main() {
       }
       applyFilters();
     },
-    onToggleClosures: (on) => { state.closures = on; applyClosures(); },
+    onToggleClosures: (on) => {
+      state.closures = on;
+      applyClosures();
+    },
     onToggleSheet: () => setChrome(state.chrome === 'peek' ? 'full' : 'peek'),
     onSelect: (id) => {
       select(id);
@@ -905,6 +1000,11 @@ async function main() {
     onFlyToStation: (lngLat) => map.flyTo({ center: lngLat, zoom: 12 }),
     searchStations: (q) => searchStations(map, q),
   });
+
+  // The operator marks, alongside the map rather than before it: the panel is
+  // complete without them and a rider watching a map draw should not wait on a
+  // manifest of logos.
+  void loadLogos(BASE).then(setOperatorLogos);
 
   map.on('load', () => {
     applyFilters();
@@ -937,11 +1037,16 @@ async function main() {
     let attempts = 0;
     const read = () => {
       const [feature] = map.querySourceFeatures('rail', { sourceLayer: 'closures' });
-      const day = feature?.properties?.day;
-      if (typeof day === 'string' && day) { setClosureDay(day); return true; }
+      const day = feature?.properties?.day as unknown;
+      if (typeof day === 'string' && day) {
+        setClosureDay(day);
+        return true;
+      }
       return ++attempts >= 5;
     };
-    const onIdle = () => { if (read()) map.off('idle', onIdle); };
+    const onIdle = () => {
+      if (read()) map.off('idle', onIdle);
+    };
     map.on('idle', onIdle);
   }
 
@@ -970,7 +1075,7 @@ function searchStations(map: MLMap, query: string) {
     })
     .slice(0, 8)
     .map((f) => ({
-      name: String(f.properties!.name),
+      name: String(f.properties.name),
       lngLat: (f.geometry as GeoJSON.Point).coordinates as [number, number],
     }));
 }
@@ -983,14 +1088,18 @@ function departuresSection(bodyHtml: string): string {
  *  it before it lands in innerHTML, unlike the tile-sourced strings above
  *  which are our own build output. */
 function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
-  ));
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
+  );
 }
 
 function formatTime(date: Date, tz: string | null): string {
   return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz ?? undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: tz ?? undefined,
   }).format(date);
 }
 
@@ -1005,7 +1114,10 @@ function formatTime(date: Date, tz: string | null): string {
  * train number rather than a line, and must not collapse onto `ICE 12`.
  */
 function lineKey(ref: string): string {
-  return ref.replace(/\s*\([^()]*\)\s*$/, '').replace(/\s+/g, '').toLowerCase();
+  return ref
+    .replace(/\s*\([^()]*\)\s*$/, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }
 
 function departureRow(d: Departure, colour: string | null): string {

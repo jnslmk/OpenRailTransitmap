@@ -39,7 +39,12 @@ test('endDirection points forwards along the chain at both ends', () => {
 test('endDirection reads past a short leading segment', () => {
   // A metre of switch detail heading due north, then the corridor's real run
   // east. Judging on the first vertex pair alone would call this northbound.
-  const chain: Coord[] = [[10, 52], [10, 52.00001], [10.01, 52.00001], [10.02, 52.00001]];
+  const chain: Coord[] = [
+    [10, 52],
+    [10, 52.00001],
+    [10.01, 52.00001],
+    [10.02, 52.00001],
+  ];
   const [dx, dy] = endDirection(chain, true);
   assert.ok(dx > 0.9, `expected an eastward reading, got ${dx},${dy}`);
 });
@@ -88,7 +93,11 @@ test('two alignments merely crossing do not drag each other round', () => {
   // A north-south chain touching an east-west one at a point. Nothing about
   // one says anything about which side the other draws on.
   const eastWest: Coord[] = [P(0), P(1), P(2)];
-  const northSouth: Coord[] = [[10.01, 51.99], [10.01, 52], [10.01, 52.01]];
+  const northSouth: Coord[] = [
+    [10.01, 51.99],
+    [10.01, 52],
+    [10.01, 52.01],
+  ];
   const flips = coorientChains([eastWest, northSouth]);
   assert.equal(flips[0], false);
   // The crossing chain is anchored on its own geometry, not on the other's.
@@ -114,14 +123,21 @@ test('a short chain against the run does not turn the component round', () => {
 });
 
 test('a north-south component is anchored running north', () => {
-  const chain: Coord[] = [[10, 52.02], [10, 52.01], [10, 52]];
+  const chain: Coord[] = [
+    [10, 52.02],
+    [10, 52.01],
+    [10, 52],
+  ];
   const flips = coorientChains([chain]);
   assert.deepEqual(flips, [true]);
 });
 
 test('the same input always gives the same answer', () => {
   const chains: Coord[][] = [
-    [P(0), P(1)], [P(2), P(1)], [P(2), P(3)], [P(3), P(4)],
+    [P(0), P(1)],
+    [P(2), P(1)],
+    [P(2), P(3)],
+    [P(3), P(4)],
   ];
   const once = coorientChains(chains);
   const twice = coorientChains(chains);

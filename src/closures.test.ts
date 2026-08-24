@@ -112,8 +112,10 @@ test('a possession pushed back marks where it was first meant to finish', () => 
   assert.equal(endMoved(c), 'later');
   const p = progressOn(c, '2026-09-01')!;
   assert.ok(p.firstEndThrough !== null);
-  assert.ok(p.firstEndThrough! > 0.4 && p.firstEndThrough! < 0.45,
-    `first end at ${p.firstEndThrough}`);
+  assert.ok(
+    p.firstEndThrough > 0.4 && p.firstEndThrough < 0.45,
+    `first end at ${p.firstEndThrough}`,
+  );
 });
 
 test('a possession brought forward gets no tick, because it would be off the bar', () => {
@@ -132,12 +134,18 @@ test('a fresh log claims no movement at all', () => {
 });
 
 test('each move of the end date is read back with the days it added', () => {
-  const c = parseClosure(props({
-    moves: '2026-09-02:2026-09-11>2026-10-02;2026-10-20:2026-10-02>2026-12-12',
-  }), false);
+  const c = parseClosure(
+    props({
+      moves: '2026-09-02:2026-09-11>2026-10-02;2026-10-20:2026-10-02>2026-12-12',
+    }),
+    false,
+  );
   assert.equal(c.moves.length, 2);
   assert.deepEqual(c.moves[0], {
-    logged: '2026-09-02', was: '2026-09-11', now: '2026-10-02', delta: 21,
+    logged: '2026-09-02',
+    was: '2026-09-11',
+    now: '2026-10-02',
+    delta: 21,
   });
   assert.equal(c.moves[1].delta, 71);
 });
@@ -148,7 +156,10 @@ test('a move that pulled the end date forward reads as negative, not as nothing'
 });
 
 test('a malformed move is dropped rather than shown half-read', () => {
-  const c = parseClosure(props({ moves: 'rubbish;2026-09-02:2026-09-11>2026-10-02;also-rubbish' }), false);
+  const c = parseClosure(
+    props({ moves: 'rubbish;2026-09-02:2026-09-11>2026-10-02;also-rubbish' }),
+    false,
+  );
   assert.equal(c.moves.length, 1);
   assert.equal(c.moves[0].was, '2026-09-11');
 });

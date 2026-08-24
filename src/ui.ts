@@ -4,17 +4,30 @@ import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import { t } from './strings.ts';
 import type { LineRecord, Registry } from './main.ts';
 import {
-  worstFirst, bands, formatMinutes, type LineScore, type PunctualityFile,
+  worstFirst,
+  bands,
+  formatMinutes,
+  type LineScore,
+  type PunctualityFile,
 } from './punctuality.ts';
 import type { Tab, ViewState } from './state.ts';
 import { renderPlanner, type PlannerHost } from './planner.ts';
 import {
-  endMoved, formatDate, progressOn, projectSearchUrl, type ClosureRecord,
+  endMoved,
+  formatDate,
+  progressOn,
+  projectSearchUrl,
+  type ClosureRecord,
 } from './closures.ts';
 import { MAX_MOVES, spanDays } from '../shared/closures.ts';
 import {
-  allOperators, drawsEveryOperator, drawsNoOperator, noOperators, operatorShown,
-  withOperator, type OperatorFilter,
+  allOperators,
+  drawsEveryOperator,
+  drawsNoOperator,
+  noOperators,
+  operatorShown,
+  withOperator,
+  type OperatorFilter,
 } from './operators.ts';
 
 export { compareLines };
@@ -42,8 +55,20 @@ export interface ChromeOptions {
  * falls to the end, with the number compared numerically within each group.
  */
 const REF_PREFIXES = [
-  'ICE', 'IC', 'EC', 'ECE', 'FLX', 'NJ', 'EN', 'RJ', 'TGV',
-  'RE', 'RB', 'S', 'U', 'STR',
+  'ICE',
+  'IC',
+  'EC',
+  'ECE',
+  'FLX',
+  'NJ',
+  'EN',
+  'RJ',
+  'TGV',
+  'RE',
+  'RB',
+  'S',
+  'U',
+  'STR',
 ];
 
 function refSortKey(ref: string): [number, string, number, string] {
@@ -59,15 +84,20 @@ function compareLines(a: LineRecord, b: LineRecord): number {
   const byMode = MODE_SPECS[b.mode].order - MODE_SPECS[a.mode].order;
   if (byMode !== 0) return byMode;
 
-  const ka = refSortKey(a.ref), kb = refSortKey(b.ref);
-  return ka[0] - kb[0]
-    || ka[1].localeCompare(kb[1], 'de')
-    || ka[2] - kb[2]
-    || ka[3].localeCompare(kb[3], 'de');
+  const ka = refSortKey(a.ref),
+    kb = refSortKey(b.ref);
+  return (
+    ka[0] - kb[0] ||
+    ka[1].localeCompare(kb[1], 'de') ||
+    ka[2] - kb[2] ||
+    ka[3].localeCompare(kb[3], 'de')
+  );
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K, cls?: string, html?: string,
+  tag: K,
+  cls?: string,
+  html?: string,
 ): HTMLElementTagNameMap[K] => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -117,7 +147,9 @@ function sheetHandle(): HTMLElement {
     const wantsCollapsed = dy > 0;
     if (wantsCollapsed !== collapsed) opts.onToggleSheet();
   });
-  btn.onclick = () => { if (!dragged) opts.onToggleSheet(); };
+  btn.onclick = () => {
+    if (!dragged) opts.onToggleSheet();
+  };
 
   btn.append(el('span', 'grabber'), el('span', 'sheet-label'));
   handleEl = btn;
@@ -150,7 +182,11 @@ export function syncSheetHandle(collapsed: boolean) {
 // about to be hidden disappear from under the pointer.
 // ---------------------------------------------------------------------------
 
-interface ModeRow { row: HTMLElement; box: HTMLInputElement; count: HTMLElement }
+interface ModeRow {
+  row: HTMLElement;
+  box: HTMLInputElement;
+  count: HTMLElement;
+}
 
 let modeBox: HTMLElement | null = null;
 let modeRows = new Map<Mode, ModeRow>();
@@ -247,7 +283,7 @@ function syncModes() {
     const on = opts.state.modes.has(mode);
     // Until the map has settled once there is nothing in view to count, so the
     // national total stands in.
-    const n = inView ? inView.get(mode) ?? 0 : opts.registry.counts.byMode[mode] ?? 0;
+    const n = inView ? (inView.get(mode) ?? 0) : (opts.registry.counts.byMode[mode] ?? 0);
     const visible = !on || pinnedModes.has(mode) || n > 0;
 
     row.hidden = !visible;
@@ -284,9 +320,16 @@ export function setVisibleClosures(n: number) {
 function syncClosures() {
   if (!closureCountEl) return;
   const s = t();
-  if (!opts.state.closures) { closureCountEl.textContent = ''; return; }
-  closureCountEl.textContent = closuresInView === null
-    ? '' : closuresInView ? s.closureCount(closuresInView) : s.noClosuresInView;
+  if (!opts.state.closures) {
+    closureCountEl.textContent = '';
+    return;
+  }
+  closureCountEl.textContent =
+    closuresInView === null
+      ? ''
+      : closuresInView
+        ? s.closureCount(closuresInView)
+        : s.noClosuresInView;
 }
 
 function buildClosures(): HTMLElement {
@@ -298,7 +341,10 @@ function buildClosures(): HTMLElement {
   const cb = el('input');
   cb.type = 'checkbox';
   cb.checked = opts.state.closures;
-  cb.onchange = () => { opts.onToggleClosures(cb.checked); syncClosures(); };
+  cb.onchange = () => {
+    opts.onToggleClosures(cb.checked);
+    syncClosures();
+  };
   closureCountEl = el('span', 'count');
   row.append(cb, el('span', 'label', s.showClosures), closureCountEl);
   box.appendChild(row);
@@ -367,7 +413,12 @@ export function setClosureDay(day: string) {
 // pointer over the same box, only the second keeps their keyboard focus on it.
 // ---------------------------------------------------------------------------
 
-interface OperatorRow { row: HTMLElement; box: HTMLInputElement; count: HTMLElement }
+interface OperatorRow {
+  row: HTMLElement;
+  box: HTMLInputElement;
+  count: HTMLElement;
+  mark: HTMLElement;
+}
 
 let operatorList: HTMLElement | null = null;
 let operatorMaster: HTMLInputElement | null = null;
@@ -378,9 +429,24 @@ const operatorRows = new Map<string, OperatorRow>();
 /** Lines in view per operator, or null until the map has first settled. */
 let operatorsInView: Map<string, number> | null = null;
 
+/**
+ * Operator name to logo URL. Empty until the manifest has loaded, and empty
+ * for good in a checkout that has never run the pipeline - a row without a
+ * mark is a row with a name in it, which is what the panel had before.
+ */
+let operatorLogos = new Map<string, string>();
+
 export function setVisibleOperators(counts: Map<string, number>) {
   operatorsInView = counts;
   syncOperators();
+}
+
+/** Called once, when the logo manifest arrives. */
+export function setOperatorLogos(logos: Map<string, string>) {
+  operatorLogos = logos;
+  // Rows built before the manifest landed have an empty mark waiting for it.
+  for (const [name, row] of operatorRows) fillOperatorMark(row, name);
+  syncLogoAttribution();
 }
 
 function buildOperators(): HTMLElement {
@@ -427,6 +493,10 @@ function operatorRow(name: string): OperatorRow {
     syncOperators();
     fillLines();
   };
+  // The mark, in a box of its own whether or not there is one to put in it:
+  // two thirds of operators have a logo, and a column that collapsed on the
+  // other third would step the names in and out down the list.
+  const mark = el('span', 'op-mark');
   const count = el('span', 'count');
   // Text, not markup: the name is whatever an OSM `operator` tag says, and
   // this is the one label in the sidebar that does not come from strings.ts.
@@ -436,8 +506,33 @@ function operatorRow(name: string): OperatorRow {
   // that wide, so the full name goes on the title for the ones the ellipsis
   // eats.
   label.title = name;
-  row.append(box, label, count);
-  return { row, box, count };
+  row.append(box, mark, label, count);
+  const built = { row, box, count, mark };
+  fillOperatorMark(built, name);
+  return built;
+}
+
+/**
+ * Put this operator's mark in its box, if there is one.
+ *
+ * `alt` is empty on purpose: the name is right beside it in the same row, and
+ * a screen reader that read both would say every operator twice. A logo that
+ * fails to load - a manifest naming a file the build did not fetch - takes
+ * itself out of the row rather than leaving a broken-image glyph in it, and
+ * the empty box holds the column open either way.
+ */
+function fillOperatorMark(row: OperatorRow, name: string) {
+  const src = operatorLogos.get(name);
+  row.mark.innerHTML = '';
+  if (!src) return; // An empty box, holding the column open.
+  const img = el('img');
+  img.src = src;
+  img.alt = '';
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.onerror = () => img.remove();
+  img.onload = () => markLogosUsed();
+  row.mark.appendChild(img);
 }
 
 function syncOperators() {
@@ -509,7 +604,12 @@ function tabBar(): HTMLElement {
   const s = t();
   const bar = el('div', 'tabs');
   bar.setAttribute('role', 'tablist');
-  ([['explore', s.tabExplore], ['plan', s.tabPlan]] as [Tab, string][]).forEach(([tab, label]) => {
+  (
+    [
+      ['explore', s.tabExplore],
+      ['plan', s.tabPlan],
+    ] as [Tab, string][]
+  ).forEach(([tab, label]) => {
     const on = opts.state.tab === tab;
     const b = el('button', `tab${on ? ' on' : ''}`, label);
     b.type = 'button';
@@ -591,9 +691,15 @@ const REPO = 'https://github.com/jnslmk/openrailtransitmap';
 function buildStamp(): string {
   if (!__BUILD_COMMIT__) return '';
   const when = new Date(__BUILD_TIME__);
-  const time = Number.isNaN(when.getTime()) ? '' : when.toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
+  const time = Number.isNaN(when.getTime())
+    ? ''
+    : when.toLocaleString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
   const link = `<a href="${REPO}/commit/${__BUILD_COMMIT__}"><code>${__BUILD_COMMIT__}</code></a>`;
   return `<p class="build" title="${__BUILD_TIME__}">${t().buildStamp(link, time)}</p>`;
 }
@@ -606,7 +712,10 @@ function buildStamp(): string {
 function buildFooter(): HTMLElement {
   const s = t();
   const { registry } = opts;
-  const footer = el('footer', 'panel attrib', `
+  const footer = el(
+    'footer',
+    'panel attrib',
+    `
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
     <a href="${REPO}">Source on GitHub</a>
@@ -614,8 +723,10 @@ function buildFooter(): HTMLElement {
     <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>
     <span class="closure-attrib" hidden>${s.closureAttribution}</span>
     <span class="coach-attrib" hidden>${s.coachAttribution}</span>
+    <span class="logo-attrib" hidden>${s.logoAttribution}</span>
     <span class="routing-attrib" hidden>${s.planAttribution}</span>
-    ${buildStamp()}`);
+    ${buildStamp()}`,
+  );
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
   punctAttribEl = footer.querySelector('.punct-attrib');
@@ -624,6 +735,8 @@ function buildFooter(): HTMLElement {
   closureAttribEl!.hidden = !closuresUsed;
   coachAttribEl = footer.querySelector('.coach-attrib');
   coachAttribEl!.hidden = !coachUsed;
+  logoAttribEl = footer.querySelector('.logo-attrib');
+  logoAttribEl!.hidden = !logosUsed;
   routingAttribEl = footer.querySelector('.routing-attrib');
   routingAttribEl!.hidden = !routingUsed;
   return footer;
@@ -687,6 +800,26 @@ export function setCoachAttributionUsed() {
   if (coachUsed) return;
   coachUsed = true;
   if (coachAttribEl) coachAttribEl.hidden = false;
+}
+
+/**
+ * The marks in the operator panel are public-domain files from Wikimedia
+ * Commons, which asks for no attribution and gets it anyway: a reader is owed
+ * the provenance of every mark on the page, and a logo carries more of an
+ * implied claim than a line colour does. Same latch as the rest - set when a
+ * mark actually paints, not when the manifest loads.
+ */
+let logoAttribEl: HTMLElement | null = null;
+let logosUsed = false;
+
+function markLogosUsed() {
+  if (logosUsed) return;
+  logosUsed = true;
+  syncLogoAttribution();
+}
+
+function syncLogoAttribution() {
+  if (logoAttribEl) logoAttribEl.hidden = !logosUsed;
 }
 
 /**
@@ -809,7 +942,9 @@ export function renderLinePanel(line: LineRecord | null, handlers: { onClose: ()
  * be discarded rather than painted onto the wrong line.
  */
 export function setLinePunctuality(
-  lineId: string, score: LineScore | null, meta: PunctualityFile | null,
+  lineId: string,
+  score: LineScore | null,
+  meta: PunctualityFile | null,
 ) {
   const host = document.getElementById('detail')?.querySelector<HTMLElement>('.detail-punctuality');
   if (!host || host.dataset.line === lineId) return;
@@ -821,7 +956,11 @@ export function setLinePunctuality(
   const head = el('div', 'punct-head');
   head.append(
     el('h3', '', s.punctuality),
-    el('span', 'punct-window', s.punctualityWindow(meta.window.months, formatMonth(meta.window.to))),
+    el(
+      'span',
+      'punct-window',
+      s.punctualityWindow(meta.window.months, formatMonth(meta.window.to)),
+    ),
   );
   host.appendChild(head);
 
@@ -853,7 +992,10 @@ export function setLinePunctuality(
   const legend = el('div', 'punct-legend');
   for (const band of bands(score, meta.bucketEdges, meta.onTimeThresholdMin)) {
     const item = el('span', 'punct-legend-item');
-    item.append(el('span', `punct-swatch punct-band-${band.key}`), el('span', '', s.band[band.key]));
+    item.append(
+      el('span', `punct-swatch punct-band-${band.key}`),
+      el('span', '', s.band[band.key]),
+    );
     legend.appendChild(item);
   }
   host.appendChild(legend);
@@ -865,9 +1007,12 @@ export function setLinePunctuality(
   const facts = el('dl', 'detail-meta');
   const mins = (v: number) => s.minutesLate(formatMinutes(v, meta.bucketEdges));
   facts.append(
-    el('dt', '', s.typicalDelay), el('dd', '', mins(aggregate.median)),
-    el('dt', '', s.oneInTen), el('dd', '', mins(aggregate.p90)),
-    el('dt', '', s.cancelRate), el('dd', '', `${(aggregate.cancelRate * 100).toFixed(1)}%`),
+    el('dt', '', s.typicalDelay),
+    el('dd', '', mins(aggregate.median)),
+    el('dt', '', s.oneInTen),
+    el('dd', '', mins(aggregate.p90)),
+    el('dt', '', s.cancelRate),
+    el('dd', '', `${(aggregate.cancelRate * 100).toFixed(1)}%`),
   );
   host.append(facts, el('p', 'punct-n muted small', s.departureCount(aggregate.n)));
 
@@ -917,9 +1062,7 @@ export function setLinePunctuality(
  * there is nothing to report but the fact that we started watching, and a row
  * reading "Rescheduled 0 times" would dress that up as a finding.
  */
-export function renderClosurePanel(
-  closure: ClosureRecord, handlers: { onClose: () => void },
-) {
+export function renderClosurePanel(closure: ClosureRecord, handlers: { onClose: () => void }) {
   const host = document.getElementById('detail')!;
   host.innerHTML = '';
   host.classList.add('open');
@@ -983,8 +1126,9 @@ function closureSpan(closure: ClosureRecord): HTMLElement {
   const head = el('div', 'span-head');
   head.appendChild(el('span', 'span-length', s.closureSpan(closure.days)));
   if (progress) {
-    head.appendChild(el('span', 'span-left',
-      progress.left ? s.closureLeft(progress.left) : s.closureEndsToday));
+    head.appendChild(
+      el('span', 'span-left', progress.left ? s.closureLeft(progress.left) : s.closureEndsToday),
+    );
   }
   box.appendChild(head);
 
@@ -1123,10 +1267,13 @@ function closureMoves(closure: ClosureRecord): HTMLElement {
   const list = el('ol', 'closure-move-list');
   for (const m of closure.moves) {
     const later = m.delta > 0;
-    const row = el('li', later ? 'moved-later' : '',
+    const row = el(
+      'li',
+      later ? 'moved-later' : '',
       later
         ? s.closureMoveLater(formatDate(m.was), formatDate(m.now), m.delta)
-        : s.closureMoveEarlier(formatDate(m.was), formatDate(m.now), -m.delta));
+        : s.closureMoveEarlier(formatDate(m.was), formatDate(m.now), -m.delta),
+    );
     row.title = formatDate(m.logged);
     list.appendChild(row);
   }
@@ -1144,13 +1291,14 @@ function closureMoves(closure: ClosureRecord): HTMLElement {
   return box;
 }
 
-
 /** "2026-07" as the month a rider reads, not as a key. */
 function formatMonth(ym: string): string {
   const [y, m] = ym.split('-').map(Number);
   if (!y || !m) return ym;
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en', {
-    month: 'short', year: 'numeric', timeZone: 'UTC',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
   });
 }
 

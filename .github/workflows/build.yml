@@ -67,6 +67,16 @@ jobs:
           key: coach-${{ github.run_id }}
           restore-keys: coach-
 
+      # 141 small files off Commons, which change only when someone re-runs the
+      # resolver, so they are kept between runs rather than re-downloaded
+      # nightly. `logos.ts` fetches only what the cache is missing.
+      - name: Restore logo cache
+        uses: actions/cache@v4
+        with:
+          path: .work/logos
+          key: logos-${{ hashFiles('data/operator-logos.json') }}
+          restore-keys: logos-
+
       - name: Fetch OSM extract
         run: bash pipeline/fetch.sh
 
@@ -98,6 +108,14 @@ jobs:
 
       - name: Generate glyphs
         run: npx tsx pipeline/fonts.ts
+
+      # The operator marks named by the committed manifest, downloaded from
+      # Wikimedia Commons into public/logos/. `|| true` for the same reason the
+      # closure plan and the coach feed have it: the panel lists operators with
+      # or without their marks, so Commons being slow costs a night of logos
+      # rather than the deploy. The cache means an ordinary run fetches nothing.
+      - name: Fetch operator logos
+        run: npx tsx pipeline/logos.ts || true
 
       - name: Build tiles
         run: bash pipeline/tiles.sh

@@ -18,12 +18,15 @@
  * closures, and are kept because a line that is merely slow still explains a
  * timetable that has gone strange.
  */
-export type ClosureEffect =
-  | 'closed' | 'single-track' | 'diverted' | 'slower' | 'other';
+export type ClosureEffect = 'closed' | 'single-track' | 'diverted' | 'slower' | 'other';
 
 /** Worst first. Where restrictions overlap, this decides which is drawn on top. */
 export const EFFECT_RANK: Record<ClosureEffect, number> = {
-  closed: 4, 'single-track': 3, diverted: 2, slower: 1, other: 0,
+  closed: 4,
+  'single-track': 3,
+  diverted: 2,
+  slower: 1,
+  other: 0,
 };
 
 /**
@@ -51,7 +54,8 @@ export type ClosureBand = 'days' | 'weeks' | 'months';
 
 /** Upper bound of each band in days, inclusive. `months` is everything above. */
 export const BAND_DAYS: Record<Exclude<ClosureBand, 'months'>, number> = {
-  days: 3, weeks: 31,
+  days: 3,
+  weeks: 31,
 };
 
 /**

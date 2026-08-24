@@ -28,8 +28,7 @@ const BASE_URL = 'https://api.transitous.org/api/v1';
 /** Rail-borne mode filter for the request: heavy rail, light rail, tram, and
  *  subway. Mandatory: an unfiltered query against a Hauptbahnhof returns
  *  mostly buses departing the forecourt ZOB, which is wrong for a rail map. */
-const RAIL_REQUEST_MODES =
-  'HIGHSPEED_RAIL,LONG_DISTANCE,REGIONAL_RAIL,SUBURBAN,TRAM,SUBWAY';
+const RAIL_REQUEST_MODES = 'HIGHSPEED_RAIL,LONG_DISTANCE,REGIONAL_RAIL,SUBURBAN,TRAM,SUBWAY';
 
 /**
  * Response `mode` values accepted. The request and response mode
@@ -38,8 +37,13 @@ const RAIL_REQUEST_MODES =
  * never by equality with the mode that was requested.
  */
 const RAIL_RESPONSE_MODES = new Set([
-  'HIGHSPEED_RAIL', 'LONG_DISTANCE', 'REGIONAL_RAIL', 'SUBURBAN', 'METRO',
-  'TRAM', 'SUBWAY',
+  'HIGHSPEED_RAIL',
+  'LONG_DISTANCE',
+  'REGIONAL_RAIL',
+  'SUBURBAN',
+  'METRO',
+  'TRAM',
+  'SUBWAY',
 ]);
 
 /**
@@ -62,7 +66,9 @@ export class LiveDataError extends Error {}
  * `src/` is the bug this export exists to make unnecessary.
  */
 export async function request<T>(
-  path: string, params: Record<string, string>, signal: AbortSignal,
+  path: string,
+  params: Record<string, string>,
+  signal: AbortSignal,
 ): Promise<T> {
   const url = `${BASE_URL}${path}?${new URLSearchParams(params)}`;
 
@@ -71,7 +77,9 @@ export async function request<T>(
     res = await fetch(url, { signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
-    throw new LiveDataError(`${path} request failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new LiveDataError(
+      `${path} request failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   if (!res.ok) throw new LiveDataError(`${path} responded ${res.status}`);
 
@@ -143,9 +151,8 @@ function toDeparture(raw: RawStopTime): Departure {
   const place = raw.place ?? {};
   const scheduled = toDate(place.scheduledDeparture);
   const actual = toDate(place.departure) ?? scheduled;
-  const delayMinutes = scheduled && actual
-    ? Math.round((actual.getTime() - scheduled.getTime()) / 60000)
-    : null;
+  const delayMinutes =
+    scheduled && actual ? Math.round((actual.getTime() - scheduled.getTime()) / 60000) : null;
 
   return {
     line: raw.routeShortName ?? '',
@@ -166,11 +173,19 @@ function toDeparture(raw: RawStopTime): Departure {
 
 /** Next `n` rail departures at `stopId`, soonest first as the API returns them. */
 export async function fetchDepartures(
-  stopId: string, signal: AbortSignal, n = 6,
+  stopId: string,
+  signal: AbortSignal,
+  n = 6,
 ): Promise<Departure[]> {
-  const data = await request<RawStopTimesResponse>('/stoptimes', {
-    stopId, n: String(n), mode: RAIL_REQUEST_MODES,
-  }, signal);
+  const data = await request<RawStopTimesResponse>(
+    '/stoptimes',
+    {
+      stopId,
+      n: String(n),
+      mode: RAIL_REQUEST_MODES,
+    },
+    signal,
+  );
 
   // An entry with no `mode` at all is dropped rather than kept: the whole
   // point of matching against a response-side set instead of the requested

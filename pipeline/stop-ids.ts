@@ -62,12 +62,11 @@
  * re-probing the ambiguous backlog - see AMBIGUOUS_REPROBE_CAP.
  */
 
-import {
-  readFileSync, writeFileSync, existsSync, renameSync, unlinkSync,
-} from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'node:fs';
 
 const API = 'https://api.transitous.org/api/v1';
-const USER_AGENT = 'OpenRailTransitmap/0.1 (+https://github.com/jnslmk/OpenRailTransitmap; claude@lemke.dev)';
+const USER_AGENT =
+  'OpenRailTransitmap/0.1 (+https://github.com/jnslmk/OpenRailTransitmap; claude@lemke.dev)';
 const CACHE_PATH = 'data/stop-ids.json';
 
 // OSM places a station node wherever mappers put it - a building entrance,
@@ -204,7 +203,9 @@ function loadCache(): CacheFile {
   try {
     return parseCache(JSON.parse(readFileSync(CACHE_PATH, 'utf8')));
   } catch (err) {
-    console.log(`==> stop ids: ${CACHE_PATH} is unreadable (${(err as Error).message}), starting empty`);
+    console.log(
+      `==> stop ids: ${CACHE_PATH} is unreadable (${(err as Error).message}), starting empty`,
+    );
     return { version: RESOLVER_VERSION, stops: {} };
   }
 }
@@ -218,7 +219,10 @@ function dropStaleNegatives(cache: CacheFile): number {
   if (cache.version >= RESOLVER_VERSION) return 0;
   let dropped = 0;
   for (const [id, value] of Object.entries(cache.stops)) {
-    if (value === '' || value === AMBIGUOUS_MARKER) { delete cache.stops[id]; dropped++; }
+    if (value === '' || value === AMBIGUOUS_MARKER) {
+      delete cache.stops[id];
+      dropped++;
+    }
   }
   cache.version = RESOLVER_VERSION;
   return dropped;
@@ -243,7 +247,9 @@ function saveCache(cache: Cache): void {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function fetchJson(url: string): Promise<unknown> {
@@ -361,7 +367,8 @@ export function namesEqual(a: string, b: string): boolean {
  * only.
  */
 function comparableNames(a: string, b: string): [string, string] {
-  const na = normaliseName(a), nb = normaliseName(b);
+  const na = normaliseName(a),
+    nb = normaliseName(b);
   if (na && nb) return [na, nb];
   return [normaliseName(a, true), normaliseName(b, true)];
 }
@@ -373,7 +380,8 @@ export function namesMatch(a: string, b: string): boolean {
   // Feeds sometimes qualify a name with its town or drop/add a suffix;
   // accept when one normalised form is wholly contained in the other.
   if ((na.length >= 3 && nb.includes(na)) || (nb.length >= 3 && na.includes(nb))) return true;
-  const ta = na.split(' '), tb = nb.split(' ');
+  const ta = na.split(' '),
+    tb = nb.split(' ');
   return tokensMatch(ta, tb) || tokensMatch(tb, ta);
 }
 
@@ -395,7 +403,8 @@ export function namesMatch(a: string, b: string): boolean {
  */
 function sameStopName(a: string, b: string): boolean {
   if (a === b) return true;
-  const ta = a.split(' '), tb = b.split(' ');
+  const ta = a.split(' '),
+    tb = b.split(' ');
   return tokensMatch(ta, tb) || tokensMatch(tb, ta);
 }
 
@@ -412,9 +421,17 @@ function metres(aLon: number, aLat: number, bLon: number, bLat: number): number 
  * (country, state, city, quarter). Only the city-level entry is read, and
  * only to qualify a retry query - see `locality`.
  */
-interface CandidateArea { name: string; adminLevel: number; default?: boolean }
+interface CandidateArea {
+  name: string;
+  adminLevel: number;
+  default?: boolean;
+}
 interface Candidate {
-  type: string; id: string; name: string; lat: number; lon: number;
+  type: string;
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
   areas?: CandidateArea[];
 }
 
@@ -431,7 +448,13 @@ interface Candidate {
 type MatchResult = { id: string } | { ambiguous: true } | null;
 
 export function bestMatch(candidates: Candidate[], station: StationInput): MatchResult {
-  interface Match { id: string; d: number; name: string; lon: number; lat: number; }
+  interface Match {
+    id: string;
+    d: number;
+    name: string;
+    lon: number;
+    lat: number;
+  }
   const all: (Match & { exact: boolean })[] = [];
   for (const c of candidates) {
     if (c.type !== 'STOP') continue;
@@ -439,7 +462,11 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
     if (d > MAX_DISTANCE_M) continue;
     if (!namesMatch(c.name, station.name)) continue;
     all.push({
-      id: c.id, d, name: normaliseName(c.name), lon: c.lon, lat: c.lat,
+      id: c.id,
+      d,
+      name: normaliseName(c.name),
+      lon: c.lon,
+      lat: c.lat,
       exact: namesEqual(c.name, station.name),
     });
   }
@@ -490,26 +517,33 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
   // one hub -> more chained duplicate pairs, not fewer).
   const parent = matches.map((_, i) => i);
   function find(i: number): number {
-    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
     return i;
   }
   function union(a: number, b: number): void {
-    const ra = find(a), rb = find(b);
+    const ra = find(a),
+      rb = find(b);
     if (ra !== rb) parent[ra] = rb;
   }
   for (let i = 0; i < matches.length; i++) {
     for (let j = i + 1; j < matches.length; j++) {
       if (
-        sameStopName(matches[i].name, matches[j].name)
-        && metres(matches[i].lon, matches[i].lat, matches[j].lon, matches[j].lat) <= DUPLICATE_DISTANCE_M
-      ) union(i, j);
+        sameStopName(matches[i].name, matches[j].name) &&
+        metres(matches[i].lon, matches[i].lat, matches[j].lon, matches[j].lat) <=
+          DUPLICATE_DISTANCE_M
+      )
+        union(i, j);
     }
   }
   const groups = new Map<number, Match[]>();
   matches.forEach((m, i) => {
     const root = find(i);
     const g = groups.get(root);
-    if (g) g.push(m); else groups.set(root, [m]);
+    if (g) g.push(m);
+    else groups.set(root, [m]);
   });
   const representatives = [...groups.values()]
     .map((g) => [...g].sort((a, b) => a.id.localeCompare(b.id))[0])
@@ -559,7 +593,13 @@ function locality(candidates: Candidate[]): string | null {
  * there is no `type` field at all - see `boxCandidates` for the reconciliation
  * and why it happens here rather than in `bestMatch`.
  */
-export interface MapStop { stopId: string; name: string; lat: number; lon: number; modes?: string[] }
+export interface MapStop {
+  stopId: string;
+  name: string;
+  lat: number;
+  lon: number;
+  modes?: string[];
+}
 
 /**
  * The `min`/`max` query pair for a box centred on the station, sized so the
@@ -584,8 +624,10 @@ export interface MapStop { stopId: string; name: string; lat: number; lon: numbe
 export function stopsBox(station: StationInput): string {
   const dLat = MAX_DISTANCE_M / 111320;
   const dLon = MAX_DISTANCE_M / (111320 * Math.max(Math.cos((station.lat * Math.PI) / 180), 0.01));
-  return `min=${station.lat - dLat},${station.lon - dLon}`
-    + `&max=${station.lat + dLat},${station.lon + dLon}`;
+  return (
+    `min=${station.lat - dLat},${station.lon - dLon}` +
+    `&max=${station.lat + dLat},${station.lon + dLon}`
+  );
 }
 
 /**
@@ -757,25 +799,25 @@ export function boxCandidates(stops: MapStop[]): Candidate[] {
 async function lookup(station: StationInput): Promise<MatchResult> {
   // grouped=true: collapse each feed's platforms onto the parent it publishes,
   // where it publishes one - see above.
-  const boxed = await fetchJson(
+  const boxed = (await fetchJson(
     `${API}/map/stops?${stopsBox(station)}&grouped=true`,
-  ) as MapStop[];
+  )) as MapStop[];
   // Any verdict from the box is final - an id *and* an ambiguity. Only `null`
   // ("nothing in the box matched") falls through to the geocoder.
   const spatial = bestMatch(boxCandidates(boxed), station);
   if (spatial) return spatial;
 
   await sleep(THROTTLE_MS);
-  const byName = await fetchJson(
+  const byName = (await fetchJson(
     `${API}/geocode?text=${encodeURIComponent(station.name)}&type=STOP`,
-  ) as Candidate[];
+  )) as Candidate[];
   const direct = bestMatch(byName, station);
   if (direct && 'id' in direct) return direct;
 
   await sleep(THROTTLE_MS);
-  const nearby = await fetchJson(
+  const nearby = (await fetchJson(
     `${API}/reverse-geocode?place=${station.lat},${station.lon}&type=STOP`,
-  ) as Candidate[];
+  )) as Candidate[];
   const pool = mergeCandidates(byName, nearby);
   const merged = bestMatch(pool, station);
   if (merged && 'id' in merged) return merged;
@@ -787,9 +829,9 @@ async function lookup(station: StationInput): Promise<MatchResult> {
   if (!town || normaliseName(station.name).includes(normaliseName(town))) return merged;
 
   await sleep(THROTTLE_MS);
-  const qualified = await fetchJson(
+  const qualified = (await fetchJson(
     `${API}/geocode?text=${encodeURIComponent(`${town} ${station.name}`)}&type=STOP`,
-  ) as Candidate[];
+  )) as Candidate[];
   return bestMatch(mergeCandidates(pool, qualified), station);
 }
 
@@ -840,7 +882,12 @@ export async function resolveStopIds(
   const cache = cacheFile.stops;
   const stopIds = new Map<string, string>();
 
-  let cachedN = 0, resolved = 0, unresolved = 0, ambiguous = 0, errored = 0, budgetUsed = 0;
+  let cachedN = 0,
+    resolved = 0,
+    unresolved = 0,
+    ambiguous = 0,
+    errored = 0,
+    budgetUsed = 0;
   let dirty = false;
 
   // Before the split below reads the cache, so a station whose negative was
@@ -851,7 +898,7 @@ export async function resolveStopIds(
     dirty = true; // the version stamp has to land even if every lookup below errors
     console.log(
       `==> stop ids: cache written by resolver v${cacheVersion}, dropped ${staleDropped} ` +
-      `stale negatives for re-probing under v${RESOLVER_VERSION}`,
+        `stale negatives for re-probing under v${RESOLVER_VERSION}`,
     );
   }
   let consecutiveErrors = 0;
@@ -933,9 +980,10 @@ export async function resolveStopIds(
     await attempt(st);
   }
 
-  const reprobeBudget = budget === Infinity
-    ? Infinity
-    : Math.min(Math.max(budget - budgetUsed, 0), AMBIGUOUS_REPROBE_CAP);
+  const reprobeBudget =
+    budget === Infinity
+      ? Infinity
+      : Math.min(Math.max(budget - budgetUsed, 0), AMBIGUOUS_REPROBE_CAP);
   let reprobed = 0;
   for (const st of retryAmbiguous) {
     if (breakerTripped || reprobed >= reprobeBudget) break;
@@ -947,10 +995,10 @@ export async function resolveStopIds(
 
   console.log(
     `==> stop ids: ${cachedN} from cache, ${resolved} newly resolved, ` +
-    `${unresolved} confirmed unresolved, ${ambiguous} ambiguous (${reprobed}/${retryAmbiguous.length} known-ambiguous re-probed), ` +
-    `${errored} lookup errors` +
-    `${breakerTripped ? ' (circuit breaker tripped - Transitous looked down)' : ''}, ` +
-    `${budgetUsed}/${budget === Infinity ? 'unlimited' : budget} of budget used`,
+      `${unresolved} confirmed unresolved, ${ambiguous} ambiguous (${reprobed}/${retryAmbiguous.length} known-ambiguous re-probed), ` +
+      `${errored} lookup errors` +
+      `${breakerTripped ? ' (circuit breaker tripped - Transitous looked down)' : ''}, ` +
+      `${budgetUsed}/${budget === Infinity ? 'unlimited' : budget} of budget used`,
   );
 
   return { stopIds, cached: cachedN, resolved, unresolved, ambiguous, errored, budgetUsed };
@@ -973,14 +1021,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const WORK = process.env.WORK_DIR ?? '.work';
   const EXTRACT = `${WORK}/extract`;
 
+  /** One record of osmium's geojsonseq output - a RS-delimited GeoJSON Feature. */
+  interface OsmFeature {
+    id?: string;
+    geometry?: { type: string; coordinates: [number, number] } | null;
+    properties?: Record<string, string> | null;
+  }
+
   const stations: StationInput[] = [];
   for await (const raw of createInterface({
     input: createReadStream(`${EXTRACT}/stations.geojsonseq`),
     crlfDelay: Infinity,
   })) {
-    const text = raw.replace(/^\x1e/, '').trim();
+    const text = (raw.startsWith('\x1e') ? raw.slice(1) : raw).trim();
     if (!text) continue;
-    const f = JSON.parse(text);
+    const f = JSON.parse(text) as OsmFeature;
     if (f.geometry?.type !== 'Point' || !f.properties?.name) continue;
     stations.push({
       id: String(f.id),
@@ -989,7 +1044,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       lat: f.geometry.coordinates[1],
     });
   }
-  console.log(`==> resolving stop ids for ${stations.length} stations (no budget cap unless STOP_ID_BUDGET is set)`);
+  console.log(
+    `==> resolving stop ids for ${stations.length} stations (no budget cap unless STOP_ID_BUDGET is set)`,
+  );
   const budget = envBudget() ?? Infinity;
   await resolveStopIds(stations, { budget });
 }
