@@ -130,7 +130,10 @@ export function readZipMembers(zip: Buffer, wanted: string[]): Map<string, Buffe
   // after it, so scan back from the end for the signature.
   let eocd = -1;
   for (let i = zip.length - 22; i >= 0 && i >= zip.length - 22 - 0xffff; i--) {
-    if (zip.readUInt32LE(i) === EOCD_SIG) { eocd = i; break; }
+    if (zip.readUInt32LE(i) === EOCD_SIG) {
+      eocd = i;
+      break;
+    }
   }
   if (eocd < 0) throw new CoachFeedError('not a zip file: no end-of-central-directory record');
 
@@ -194,13 +197,21 @@ export function splitCsvLine(line: string): string[] {
   for (let i = 0; i < line.length; i++) {
     const c = line[i];
     if (quoted) {
-      if (c !== '"') { field += c; continue; }
-      if (line[i + 1] === '"') { field += '"'; i++; continue; }
+      if (c !== '"') {
+        field += c;
+        continue;
+      }
+      if (line[i + 1] === '"') {
+        field += '"';
+        i++;
+        continue;
+      }
       quoted = false;
     } else if (c === '"') {
       quoted = true;
     } else if (c === ',') {
-      out.push(field); field = '';
+      out.push(field);
+      field = '';
     } else {
       field += c;
     }
@@ -222,7 +233,8 @@ function* csvRows(buf: Buffer): Generator<{ cols: Map<string, number>; row: stri
   while (start < text.length) {
     let end = text.indexOf('\n', start);
     if (end < 0) end = text.length;
-    const raw = text.charCodeAt(end - 1) === 13 ? text.slice(start, end - 1) : text.slice(start, end);
+    const raw =
+      text.charCodeAt(end - 1) === 13 ? text.slice(start, end - 1) : text.slice(start, end);
     start = end + 1;
     if (!raw) continue;
 
@@ -230,7 +242,7 @@ function* csvRows(buf: Buffer): Generator<{ cols: Map<string, number>; row: stri
     if (!header) {
       // Strip a UTF-8 BOM off the first column name, which several GTFS
       // publishers emit and which otherwise breaks every lookup on that column.
-      row[0] = row[0].replace(/^﻿/, '');
+      row[0] = row[0].replace(/^\uFEFF/, '');
       header = new Map(row.map((name, i) => [name.trim(), i]));
       continue;
     }
@@ -334,7 +346,7 @@ function clipSegment(a: Coord, b: Coord, [w, s, e, n]: Bbox): [Coord, Coord] | n
       if (r < t1) t1 = r;
     }
   }
-  if (t1 - t0 <= 0) return null;  // touches a corner, encloses no length
+  if (t1 - t0 <= 0) return null; // touches a corner, encloses no length
   return [
     [a[0] + t0 * dx, a[1] + t0 * dy],
     [a[0] + t1 * dx, a[1] + t1 * dy],
@@ -371,7 +383,10 @@ export function clipToBbox(points: Coord[], bbox: Bbox): Coord[][] {
   for (let i = 1; i < points.length; i++) {
     const seg = clipSegment(points[i - 1], points[i], bbox);
     if (!seg) {
-      if (part) { parts.push(part); part = null; }
+      if (part) {
+        parts.push(part);
+        part = null;
+      }
       continue;
     }
     const [from, to] = seg;
@@ -439,7 +454,11 @@ export function parseFeed(source: CoachSource, zip: Buffer, bbox: Bbox): CoachLi
   const keepAgency = new Set(source.agencies);
 
   // --- routes ---------------------------------------------------------------
-  interface Route { ref: string; name: string; colour: string }
+  interface Route {
+    ref: string;
+    name: string;
+    colour: string;
+  }
   const routes = new Map<string, Route>();
   for (const { cols, row } of csvRows(members.get('routes.txt')!)) {
     if (!keepAgency.has(row[cols.get('agency_id')!])) continue;
@@ -467,22 +486,28 @@ export function parseFeed(source: CoachSource, zip: Buffer, bbox: Bbox): CoachLi
     if (!shapeId) continue;
 
     let uses = shapeUse.get(routeId);
-    if (!uses) { uses = new Map(); shapeUse.set(routeId, uses); }
+    if (!uses) {
+      uses = new Map();
+      shapeUse.set(routeId, uses);
+    }
     uses.set(shapeId, (uses.get(shapeId) ?? 0) + 1);
 
     const key = `${routeId} ${shapeId}`;
     if (!tripForShape.has(key)) tripForShape.set(key, row[cols.get('trip_id')!]);
   }
 
-  const chosenShape = new Map<string, string>();   // routeId -> shapeId
-  const chosenTrip = new Map<string, string>();    // tripId  -> routeId
+  const chosenShape = new Map<string, string>(); // routeId -> shapeId
+  const chosenTrip = new Map<string, string>(); // tripId  -> routeId
   for (const [routeId, uses] of shapeUse) {
     // Ties broken on the shape id so a rebuild of an unchanged feed is a no-op
     // in the diff rather than a coin toss.
     let best = '';
     let bestN = -1;
     for (const [shapeId, n] of uses) {
-      if (n > bestN || (n === bestN && shapeId < best)) { best = shapeId; bestN = n; }
+      if (n > bestN || (n === bestN && shapeId < best)) {
+        best = shapeId;
+        bestN = n;
+      }
     }
     chosenShape.set(routeId, best);
     chosenTrip.set(tripForShape.get(`${routeId} ${best}`)!, routeId);
@@ -506,7 +531,7 @@ export function parseFeed(source: CoachSource, zip: Buffer, bbox: Bbox): CoachLi
   }
 
   // --- stop_times: the call list of each representative trip ----------------
-  const calls = new Map<string, { seq: number; stopId: string }[]>();  // routeId -> calls
+  const calls = new Map<string, { seq: number; stopId: string }[]>(); // routeId -> calls
   for (const { cols, row } of csvRows(members.get('stop_times.txt')!)) {
     const routeId = chosenTrip.get(row[cols.get('trip_id')!]);
     if (!routeId) continue;
@@ -515,13 +540,14 @@ export function parseFeed(source: CoachSource, zip: Buffer, bbox: Bbox): CoachLi
       seq: Number(row[cols.get('stop_sequence')!]),
       stopId: row[cols.get('stop_id')!],
     };
-    if (list) list.push(call); else calls.set(routeId, [call]);
+    if (list) list.push(call);
+    else calls.set(routeId, [call]);
   }
 
   // --- shapes ---------------------------------------------------------------
   // Only the chosen shapes are kept; the feed carries 3,586 and the region uses
   // a fraction of them.
-  const wantShape = new Map<string, string>();  // shapeId -> routeId
+  const wantShape = new Map<string, string>(); // shapeId -> routeId
   for (const [routeId, shapeId] of chosenShape) wantShape.set(shapeId, routeId);
 
   const shapePoints = new Map<string, { seq: number; coord: Coord }[]>();
@@ -533,7 +559,8 @@ export function parseFeed(source: CoachSource, zip: Buffer, bbox: Bbox): CoachLi
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     const entry = { seq: Number(row[cols.get('shape_pt_sequence')!]), coord: [lon, lat] as Coord };
     const list = shapePoints.get(shapeId);
-    if (list) list.push(entry); else shapePoints.set(shapeId, [entry]);
+    if (list) list.push(entry);
+    else shapePoints.set(shapeId, [entry]);
   }
 
   // --- assemble -------------------------------------------------------------
@@ -596,7 +623,9 @@ async function fetchFeed(source: CoachSource): Promise<Buffer> {
   }
 
   const res = await fetch(source.url, {
-    headers: { 'user-agent': 'OpenRailTransitmap/0.1 (+https://github.com/jnslmk/OpenRailTransitmap)' },
+    headers: {
+      'user-agent': 'OpenRailTransitmap/0.1 (+https://github.com/jnslmk/OpenRailTransitmap)',
+    },
   });
   if (!res.ok) throw new CoachFeedError(`${source.url}: HTTP ${res.status}`);
 
@@ -642,24 +671,32 @@ export function readSnapshot(path = SNAPSHOT_PATH): CoachNetwork | null {
   }
 }
 
+interface RegionsConfig {
+  active: string;
+  regions: Record<string, { bbox: Bbox }>;
+}
+
 async function main() {
   const { parse: parseYaml } = await import('yaml');
-  const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8'));
+  const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8')) as RegionsConfig;
   const active: string = process.env.REGION || cfg.active;
   const region = cfg.regions[active];
   if (!region) throw new Error(`unknown region '${active}'`);
 
-  const network = await loadCoachNetwork(region.bbox as Bbox);
+  const network = await loadCoachNetwork(region.bbox);
   mkdirSync(OUT, { recursive: true });
   writeFileSync(SNAPSHOT_PATH, JSON.stringify(network));
 
   const points = network.lines.reduce((n, l) => n + l.parts.reduce((m, p) => m + p.length, 0), 0);
   console.log(
     `==> ${network.lines.length} coach lines, ${network.stops.length} stops, ` +
-    `${points} shape points -> ${SNAPSHOT_PATH}`,
+      `${points} shape points -> ${SNAPSHOT_PATH}`,
   );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(err); process.exit(1); });
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

@@ -3,44 +3,88 @@
 import type { ClosureDirection, ClosureEffect } from '../shared/closures.ts';
 
 export interface Strings {
-  search: string; noResults: string;
-  modes: string; longdistance: string; regional: string; suburban: string;
-  subway: string; tram: string; coach: string;
-  operator: string; operators: string; allOperators: string; noOperatorsInView: string;
+  search: string;
+  noResults: string;
+  modes: string;
+  longdistance: string;
+  regional: string;
+  suburban: string;
+  subway: string;
+  tram: string;
+  coach: string;
+  operator: string;
+  operators: string;
+  allOperators: string;
+  noOperatorsInView: string;
   stations: string;
-  lines: string; servedBy: string; close: string; clearSelection: string;
-  network: string; legend: string; noLinesInView: string;
-  stopOne: string; stopShared: string; stopSkipped: string;
-  hideChrome: string; showChrome: string;
-  collapsePanel: string; expandPanel: string; panelPeek: string;
-  fullscreen: string; exitFullscreen: string;
-  locate: string; locateDenied: string; locateError: string;
-  zoomIn: string; zoomOut: string; northUp: string;
+  lines: string;
+  servedBy: string;
+  close: string;
+  clearSelection: string;
+  network: string;
+  legend: string;
+  noLinesInView: string;
+  stopOne: string;
+  stopShared: string;
+  stopSkipped: string;
+  hideChrome: string;
+  showChrome: string;
+  collapsePanel: string;
+  expandPanel: string;
+  panelPeek: string;
+  fullscreen: string;
+  exitFullscreen: string;
+  locate: string;
+  locateDenied: string;
+  locateError: string;
+  zoomIn: string;
+  zoomOut: string;
+  northUp: string;
   lineCount: (n: number) => string;
   stationCount: (n: number) => string;
-  loading: string; dataDate: string;
-  departures: string; loadingDepartures: string; departuresUnavailable: string;
-  noDepartures: string; cancelled: string; scheduledOnly: string;
+  loading: string;
+  dataDate: string;
+  departures: string;
+  loadingDepartures: string;
+  departuresUnavailable: string;
+  noDepartures: string;
+  cancelled: string;
+  scheduledOnly: string;
   platform: (n: string) => string;
   liveAttribution: string;
-  punctuality: string; onTimeShare: string; cancelRate: string;
-  typicalDelay: string; oneInTen: string; typicalShort: string; p90Short: string;
-  byStation: string; noPunctuality: string; punctualityAttribution: string;
+  punctuality: string;
+  onTimeShare: string;
+  cancelRate: string;
+  typicalDelay: string;
+  oneInTen: string;
+  typicalShort: string;
+  p90Short: string;
+  byStation: string;
+  noPunctuality: string;
+  punctualityAttribution: string;
   band: Record<'punctual' | 'slight' | 'late' | 'severe' | 'cancelled', string>;
   punctualityWindow: (months: number, to: string) => string;
   onTimeExplainer: (threshold: number) => string;
   departureCount: (n: number) => string;
   minutesLate: (n: string) => string;
-  closures: string; showClosures: string; closureCount: (n: number) => string;
+  closures: string;
+  showClosures: string;
+  closureCount: (n: number) => string;
   noClosuresInView: string;
   closureEffect: Record<ClosureEffect, string>;
   closureDirection: Record<ClosureDirection, string>;
-  closureLegendMajor: string; closureLegendMinor: string;
-  closureWorks: string; closureLine: string; closureTrack: string;
+  closureLegendMajor: string;
+  closureLegendMinor: string;
+  closureWorks: string;
+  closureLine: string;
+  closureTrack: string;
   closureHours: string;
-  closureAllDay: string; closureUntil: string; closureFrom: string;
+  closureAllDay: string;
+  closureUntil: string;
+  closureFrom: string;
   closureAtStation: string;
-  closureHistory: string; closureSince: string;
+  closureHistory: string;
+  closureSince: string;
   closureExtended: (n: number) => string;
   closureMovedLater: (from: string) => string;
   closureMovedEarlier: (from: string) => string;
@@ -51,26 +95,49 @@ export interface Strings {
   buildStamp: (commit: string, when: string) => string;
 
   // --- journey planner ------------------------------------------------------
-  tabExplore: string; tabPlan: string;
-  planFrom: string; planTo: string; planSwap: string;
-  planUseMap: string; planSearching: string; planNoPlaces: string;
-  planWhen: string; planLeaveNow: string; planDepartAt: string; planArriveBy: string;
-  planModes: string; planBike: string; planBikeQuestion: string;
-  planBikeNone: string; planBikeMinutes: (n: number) => string;
-  planCarriage: string; planCarriageNote: string;
+  tabExplore: string;
+  tabPlan: string;
+  planFrom: string;
+  planTo: string;
+  planSwap: string;
+  planUseMap: string;
+  planSearching: string;
+  planNoPlaces: string;
+  planWhen: string;
+  planLeaveNow: string;
+  planDepartAt: string;
+  planArriveBy: string;
+  planDate: string;
+  planTime: string;
+  planModes: string;
+  planBike: string;
+  planBikeQuestion: string;
+  planBikeNone: string;
+  planBikeMinutes: (n: number) => string;
+  planCarriage: string;
+  planCarriageNote: string;
   planSubmit: string;
-  planLoading: string; planFailed: string; planNothing: string; planNeedBoth: string;
-  planEarlier: string; planLater: string;
+  planLoading: string;
+  planFailed: string;
+  planNothing: string;
+  planNeedBoth: string;
+  planEarlier: string;
+  planLater: string;
   planTransfers: (n: number) => string;
   planRiding: (mins: string) => string;
-  planWholeWayBike: string; planWholeWayWalk: string;
+  planWholeWayBike: string;
+  planWholeWayWalk: string;
   planStops: (n: number) => string;
-  planBikesCarried: string; planBikesUnknown: string;
+  planBikesCarried: string;
+  planBikesUnknown: string;
   planReservation: string;
-  planCancelled: string; planDelayed: (mins: number) => string;
-  planWalk: string; planBikeLeg: string;
+  planCancelled: string;
+  planDelayed: (mins: number) => string;
+  planWalk: string;
+  planBikeLeg: string;
   planPlatform: (n: string) => string;
-  planDirectionsFrom: string; planDirectionsTo: string;
+  planDirectionsFrom: string;
+  planDirectionsTo: string;
   planAttribution: string;
 }
 
@@ -189,8 +256,7 @@ const STRINGS: Strings = {
   closureAsOf: (day) => `Construction as planned on ${day}`,
   closureAttribution:
     'Construction: <a href="https://strecken-info.de">DB InfraGO strecken.info</a>',
-  coachAttribution:
-    'Coach: <a href="https://global.flixbus.com">FlixMobility Tech GmbH</a>',
+  coachAttribution: 'Coach: <a href="https://global.flixbus.com">FlixMobility Tech GmbH</a>',
   // `commit` arrives as a link to the commit on GitHub, so this one is markup
   // rather than text. The date is dropped rather than left dangling after the
   // separator when the build has a commit but no readable date behind it.
@@ -208,6 +274,8 @@ const STRINGS: Strings = {
   planLeaveNow: 'Leave now',
   planDepartAt: 'Depart at',
   planArriveBy: 'Arrive by',
+  planDate: 'Date',
+  planTime: 'Time',
   planModes: 'Travel by',
   planBike: 'Bike',
   // The control is named by what it decides, not by the parameter it sets.
@@ -218,8 +286,8 @@ const STRINGS: Strings = {
   // Said plainly, because turning this on can empty the results for a reason
   // that is nothing to do with the journey - see docs/spike-transitous.md.
   planCarriageNote:
-    'Most German timetables do not publish whether bikes are carried, and this '
-    + 'filter treats silence as no. It can return nothing at all.',
+    'Most German timetables do not publish whether bikes are carried, and this ' +
+    'filter treats silence as no. It can return nothing at all.',
   planSubmit: 'Find routes',
   planLoading: 'Finding routes…',
   planFailed: 'Could not reach the routing service',
@@ -243,8 +311,7 @@ const STRINGS: Strings = {
   planPlatform: (n) => `Pl. ${n}`,
   planDirectionsFrom: 'Directions from here',
   planDirectionsTo: 'Directions to here',
-  planAttribution:
-    'Routing: <a href="https://transitous.org">Transitous</a>',
+  planAttribution: 'Routing: <a href="https://transitous.org">Transitous</a>',
 };
 
 export const t = (): Strings => STRINGS;

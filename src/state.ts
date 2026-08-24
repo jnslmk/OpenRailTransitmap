@@ -94,7 +94,9 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
 
   const modesParam = q.get('modes');
   const modes = modesParam
-    ? new Set(modesParam.split(',').filter((m): m is Mode => (MODES as readonly string[]).includes(m)))
+    ? new Set(
+        modesParam.split(',').filter((m): m is Mode => (MODES as readonly string[]).includes(m)),
+      )
     : new Set<Mode>(MODES);
 
   const plan = defaultPlannerState();

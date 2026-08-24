@@ -9,8 +9,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  BUNDLE_SPREAD_STOPS, TILE_BUFFER_PX_PER_UNIT, TILE_BUFFER_REFERENCE_ZOOM,
-  bandReachPx, tileBufferUnits,
+  BUNDLE_SPREAD_STOPS,
+  TILE_BUFFER_PX_PER_UNIT,
+  TILE_BUFFER_REFERENCE_ZOOM,
+  bandReachPx,
+  tileBufferUnits,
 } from '../shared/lnvg.ts';
 
 const tilesSh = readFileSync('pipeline/tiles.sh', 'utf8');
@@ -31,8 +34,8 @@ test('the buffer covers the band at every zoom a tile is drawn at', () => {
       const reach = bandReachPx(zoom, maxAbsOffset);
       assert.ok(
         reach <= buffer,
-        `a bundle of ${bundle} reaches ${reach.toFixed(1)} px at z${zoom}, `
-        + `but its tiles carry only ${buffer.toFixed(1)} px of their neighbours`,
+        `a bundle of ${bundle} reaches ${reach.toFixed(1)} px at z${zoom}, ` +
+          `but its tiles carry only ${buffer.toFixed(1)} px of their neighbours`,
       );
     }
   }
@@ -55,17 +58,29 @@ test('and it is not wider than the widest band needs', () => {
     const maxAbsOffset = (bundle - 1) / 2;
     const buffer = tileBufferUnits(maxAbsOffset) * TILE_BUFFER_PX_PER_UNIT;
     const reach = bandReachPx(TILE_BUFFER_REFERENCE_ZOOM, maxAbsOffset);
-    assert.ok(buffer - reach < TILE_BUFFER_PX_PER_UNIT, `bundle of ${bundle}: ${buffer} vs ${reach}`);
+    assert.ok(
+      buffer - reach < TILE_BUFFER_PX_PER_UNIT,
+      `bundle of ${bundle}: ${buffer} vs ${reach}`,
+    );
   }
 });
 
 test('tiles.sh reads the buffer build.ts writes, and falls back wide enough', () => {
-  assert.match(tilesSh, /BUFFER="\$\(cat "\$BUILD\/tile-buffer"/,
-    'tiles.sh no longer reads the buffer build.ts writes');
-  assert.match(tilesSh, /--buffer="\$BUFFER"/,
-    'tiles.sh reads the buffer but does not pass it to tippecanoe');
-  assert.match(readFileSync('pipeline/build.ts', 'utf8'), /\$\{OUT\}\/tile-buffer/,
-    'build.ts no longer writes the buffer tiles.sh reads');
+  assert.match(
+    tilesSh,
+    /BUFFER="\$\(cat "\$BUILD\/tile-buffer"/,
+    'tiles.sh no longer reads the buffer build.ts writes',
+  );
+  assert.match(
+    tilesSh,
+    /--buffer="\$BUFFER"/,
+    'tiles.sh reads the buffer but does not pass it to tippecanoe',
+  );
+  assert.match(
+    readFileSync('pipeline/build.ts', 'utf8'),
+    /\$\{OUT\}\/tile-buffer/,
+    'build.ts no longer writes the buffer tiles.sh reads',
+  );
 
   const fallback = /\|\| echo (\d+)\)"/.exec(tilesSh);
   assert.ok(fallback, 'tiles.sh has no fallback buffer');

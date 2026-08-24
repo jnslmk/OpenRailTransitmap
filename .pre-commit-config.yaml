@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npx eslint --fix
+        language: system
+        files: \.([mc]?js|ts)$
+        exclude: ^(dist/|\.work/|public/|e2e/node_modules/)
+      - id: prettier
+        name: prettier
+        entry: npx prettier --write
+        language: system
+        files: \.([mc]?js|ts|json|ya?ml|css|html)$
+        exclude: ^(dist/|\.work/|public/(tiles|fonts)/|public/(lines|punctuality)\.json$|data/)

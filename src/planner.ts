@@ -30,8 +30,15 @@
 
 import { t } from './strings.ts';
 import {
-  geocode, plan, MODE_GROUPS, ALL_TRANSIT_MODES,
-  type Place, type PlanResult, type Itinerary, type Leg, type TransitMode,
+  geocode,
+  plan,
+  MODE_GROUPS,
+  ALL_TRANSIT_MODES,
+  type Place,
+  type PlanResult,
+  type Itinerary,
+  type Leg,
+  type TransitMode,
 } from './routing.ts';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +102,9 @@ let statusDetail = '';
 let inFlight: AbortController | null = null;
 
 const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K, cls?: string, text?: string,
+  tag: K,
+  cls?: string,
+  text?: string,
 ): HTMLElementTagNameMap[K] => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -109,7 +118,10 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 
 function clockAt(date: Date, tz: string | null): string {
   return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz ?? undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: tz ?? undefined,
   }).format(date);
 }
 
@@ -122,11 +134,20 @@ function duration(seconds: number): string {
   return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
-/** `<input type="datetime-local">` wants wall-clock in the browser's own zone. */
-function toLocalInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * `<input type="date">` and `<input type="time">` want wall-clock in the
+ * browser's own zone, in the fixed shapes `2026-08-25` and `07:12`. That is the
+ * *value* only: what the rider sees in the field is formatted by the browser,
+ * in their own locale - see the note on `plan-at` in `buildForm`.
+ */
+function toDateInput(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toTimeInput(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 /** A bicycle, drawn rather than typed: no icon font, and no emoji to render badly. */
@@ -136,8 +157,8 @@ function bikeGlyph(): SVGSVGElement {
   svg.setAttribute('class', 'glyph');
   svg.setAttribute('aria-hidden', 'true');
   svg.innerHTML =
-    '<circle cx="5" cy="11" r="4"/><circle cx="19" cy="11" r="4"/>'
-    + '<path d="M5 11 L10 4 L15 11 M10 4 L14 4 M9.5 11 L15 11"/>';
+    '<circle cx="5" cy="11" r="4"/><circle cx="19" cy="11" r="4"/>' +
+    '<path d="M5 11 L10 4 L15 11 M10 4 L14 4 M9.5 11 L15 11"/>';
   return svg;
 }
 
@@ -192,47 +213,54 @@ function runPlan(pageCursor: string | undefined, keepSelection = false): void {
   // nothing and reads as a broken planner. Fall back to everything.
   if (!modes.size) ALL_TRANSIT_MODES.forEach((m) => modes.add(m));
 
-  plan({
-    from: s.from,
-    to: s.to,
-    time: s.time ?? new Date(),
-    arriveBy: s.arriveBy,
-    modes,
-    bike: { maxRideSeconds: s.bikeMinutes * 60, carriage: s.carriage },
-    pageCursor,
-  }, ac.signal).then((r) => {
-    if (ac.signal.aborted) return;
-    // Earlier/Later replace the list rather than growing it: an unbounded list
-    // of near-identical departures is not what the buttons are for, and the
-    // cursors come back fresh on each page so paging stays possible.
-    result = r;
-    status = r.itineraries.length ? 'idle' : 'empty';
-    // A page of results is a different set, so the old index means nothing.
-    const wanted = host.state.selected;
-    const restorable = keepSelection && wanted !== null && wanted < r.itineraries.length;
-    host.state.selected = restorable ? wanted
-      : r.itineraries.length && pageCursor === undefined ? 0
-      : null;
-    if (r.itineraries.length) host.onRoutingUsed();
-    showSelected();
-    host.persist();
-    redraw();
-  }).catch((err) => {
-    if (ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
-    result = null;
-    status = 'error';
-    // Deliberately one message for every failure. A public API timing out, a
-    // bad status and an unparseable body are the same event to a rider, and
-    // `LiveDataError` exists precisely so the UI does not have to tell them
-    // apart - the same stance the departure board takes in live.ts.
-    statusDetail = t().planFailed;
-    redraw();
-  });
+  plan(
+    {
+      from: s.from,
+      to: s.to,
+      time: s.time ?? new Date(),
+      arriveBy: s.arriveBy,
+      modes,
+      bike: { maxRideSeconds: s.bikeMinutes * 60, carriage: s.carriage },
+      pageCursor,
+    },
+    ac.signal,
+  )
+    .then((r) => {
+      if (ac.signal.aborted) return;
+      // Earlier/Later replace the list rather than growing it: an unbounded list
+      // of near-identical departures is not what the buttons are for, and the
+      // cursors come back fresh on each page so paging stays possible.
+      result = r;
+      status = r.itineraries.length ? 'idle' : 'empty';
+      // A page of results is a different set, so the old index means nothing.
+      const wanted = host.state.selected;
+      const restorable = keepSelection && wanted !== null && wanted < r.itineraries.length;
+      host.state.selected = restorable
+        ? wanted
+        : r.itineraries.length && pageCursor === undefined
+          ? 0
+          : null;
+      if (r.itineraries.length) host.onRoutingUsed();
+      showSelected();
+      host.persist();
+      redraw();
+    })
+    .catch((err) => {
+      if (ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
+      result = null;
+      status = 'error';
+      // Deliberately one message for every failure. A public API timing out, a
+      // bad status and an unparseable body are the same event to a rider, and
+      // `LiveDataError` exists precisely so the UI does not have to tell them
+      // apart - the same stance the departure board takes in live.ts.
+      statusDetail = t().planFailed;
+      redraw();
+    });
 }
 
 function showSelected(): void {
   const i = host.state.selected;
-  host.onItinerary(i !== null ? result?.itineraries[i] ?? null : null);
+  host.onItinerary(i !== null ? (result?.itineraries[i] ?? null) : null);
 }
 
 // ---------------------------------------------------------------------------
@@ -264,35 +292,48 @@ function placeField(which: 'from' | 'to'): HTMLElement {
 
   let timer: number | undefined;
   let ac: AbortController | null = null;
+  /** What the list is offering right now, so Enter can take the first of it. */
+  let offered: Place[] = [];
+  /** An Enter that arrived before the geocoder answered, to honour when it does. */
+  let takeFirst = false;
 
-  const close = () => { list.innerHTML = ''; list.classList.remove('open'); };
+  const close = () => {
+    list.innerHTML = '';
+    list.classList.remove('open');
+    offered = [];
+  };
 
   function choose(place: Place) {
-    if (which === 'from') state.from = place; else state.to = place;
+    if (which === 'from') state.from = place;
+    else state.to = place;
     input.value = place.name;
     close();
     host.persist();
     // Both ends known is the moment a search is worth making unasked; it is
     // the one place this module plans without an explicit submit, and it
     // matches what a rider means by filling in the second box.
-    if (state.from && state.to) query(); else redraw();
+    if (state.from && state.to) query();
+    else redraw();
   }
 
-  input.oninput = () => {
-    window.clearTimeout(timer);
-    const text = input.value;
-    if (text.trim().length < 2) { close(); return; }
-    timer = window.setTimeout(() => {
-      ac?.abort();
-      ac = new AbortController();
-      const signal = ac.signal;
-      list.classList.add('open');
-      list.innerHTML = '';
-      list.appendChild(el('p', 'muted', s.planSearching));
-      geocode(text, signal).then((places) => {
+  function search(text: string): void {
+    ac?.abort();
+    ac = new AbortController();
+    const signal = ac.signal;
+    offered = [];
+    list.classList.add('open');
+    list.innerHTML = '';
+    list.appendChild(el('p', 'muted', s.planSearching));
+    geocode(text, signal)
+      .then((places) => {
         if (signal.aborted) return;
         list.innerHTML = '';
-        if (!places.length) { list.appendChild(el('p', 'muted', s.planNoPlaces)); return; }
+        if (!places.length) {
+          takeFirst = false;
+          list.appendChild(el('p', 'muted', s.planNoPlaces));
+          return;
+        }
+        offered = places;
         for (const p of places) {
           const row = el('button', 'plan-suggestion');
           row.type = 'button';
@@ -302,12 +343,51 @@ function placeField(which: 'from' | 'to'): HTMLElement {
           row.onclick = () => choose(p);
           list.appendChild(row);
         }
-      }).catch(() => {
+        if (takeFirst) {
+          takeFirst = false;
+          choose(places[0]);
+        }
+      })
+      .catch(() => {
         if (signal.aborted) return;
+        takeFirst = false;
         list.innerHTML = '';
         list.appendChild(el('p', 'muted', s.planFailed));
       });
-    }, 350);
+  }
+
+  input.oninput = () => {
+    window.clearTimeout(timer);
+    // Whatever an earlier Enter was waiting for, this keystroke is no longer it.
+    takeFirst = false;
+    const text = input.value;
+    if (text.trim().length < 2) {
+      close();
+      return;
+    }
+    timer = window.setTimeout(() => search(text), 350);
+  };
+
+  /**
+   * Enter takes the first suggestion, because typing a station name and
+   * pressing return is a rider saying "that one" - and the top hit is what the
+   * geocoder ranked as that one.
+   *
+   * If nothing is on offer yet the request has not been made or not come back:
+   * rather than swallow the key, the debounce is skipped, the search goes out
+   * at once, and the choice is made when it lands. So Enter never does nothing.
+   */
+  input.onkeydown = (e: KeyboardEvent) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (offered.length) {
+      choose(offered[0]);
+      return;
+    }
+    if (input.value.trim().length < 2) return;
+    window.clearTimeout(timer);
+    takeFirst = true;
+    search(input.value);
   };
 
   // A blur that lands on a suggestion must not close the list before the click
@@ -337,7 +417,8 @@ function buildForm(): HTMLElement {
   swap.onclick = () => {
     [state.from, state.to] = [state.to, state.from];
     host.persist();
-    if (state.from && state.to) query(); else redraw();
+    if (state.from && state.to) query();
+    else redraw();
   };
   places.appendChild(swap);
   box.appendChild(places);
@@ -350,29 +431,77 @@ function buildForm(): HTMLElement {
   mode.appendChild(new Option(s.planArriveBy, 'arrive'));
   mode.value = state.time === null ? 'now' : state.arriveBy ? 'arrive' : 'depart';
 
-  const at = el('input', 'select plan-time');
-  at.type = 'datetime-local';
-  at.value = toLocalInput(state.time ?? new Date());
+  /**
+   * A day and a clock, as two native fields rather than one `datetime-local`.
+   *
+   * Two reasons. A combined field has to fit a date *and* a clock in one
+   * control, and in a sidebar this narrow the browser drops the clock off the
+   * end - which leaves a planner that cannot be asked for the 07:12.
+   *
+   * And the fields are told the rider's own locale rather than inheriting the
+   * page's. This interface is English and the document says so, but the day a
+   * German rider writes 25.08.2026 is not a day to offer them as 08/25/2026 -
+   * and Firefox formats a date field by the document's language, not the
+   * browser's. Where the browser's own locale already governs (Chrome, Safari)
+   * `lang` says the same thing, so all three end up formatting for the rider.
+   */
+  const at = el('div', 'plan-at');
+  const day = el('input', 'select plan-date');
+  day.type = 'date';
+  day.lang = navigator.language;
+  day.setAttribute('aria-label', s.planDate);
+
+  const clock = el('input', 'select plan-time');
+  clock.type = 'time';
+  clock.lang = navigator.language;
+  clock.setAttribute('aria-label', s.planTime);
+
+  const seed = state.time ?? new Date();
+  day.value = toDateInput(seed);
+  clock.value = toTimeInput(seed);
+  at.append(day, clock);
   at.hidden = state.time === null;
+
+  /** The two fields read as one instant, or null while either is empty. */
+  const picked = (): Date | null => {
+    const [y, m, d] = day.value.split('-').map(Number);
+    const [hh, mm] = clock.value.split(':').map(Number);
+    if ([y, m, d, hh, mm].some((n) => !Number.isFinite(n))) return null;
+    const instant = new Date(y, m - 1, d, hh, mm);
+    // `new Date(25, ...)` means 1925, and the field can hold a year that small.
+    instant.setFullYear(y);
+    return instant;
+  };
 
   mode.onchange = () => {
     if (mode.value === 'now') {
       state.time = null;
       state.arriveBy = false;
     } else {
-      state.time = at.value ? new Date(at.value) : new Date();
+      state.time = picked() ?? new Date();
       state.arriveBy = mode.value === 'arrive';
     }
     at.hidden = state.time === null;
     host.persist();
     if (state.from && state.to) query();
   };
-  at.onchange = () => {
-    if (!at.value) return;
-    state.time = new Date(at.value);
+
+  // Half a time is not a time. An emptied field is put back to what was already
+  // chosen rather than searched with, so the pair always says something true.
+  const chosen = () => {
+    const instant = picked();
+    if (!instant) {
+      const fallback = state.time ?? new Date();
+      if (!day.value) day.value = toDateInput(fallback);
+      if (!clock.value) clock.value = toTimeInput(fallback);
+      return;
+    }
+    state.time = instant;
     host.persist();
     if (state.from && state.to) query();
   };
+  day.onchange = chosen;
+  clock.onchange = chosen;
 
   when.append(mode, at);
   box.appendChild(when);
@@ -389,7 +518,8 @@ function buildForm(): HTMLElement {
       if (state.groups.has(group.key)) state.groups.delete(group.key);
       else state.groups.add(group.key);
       host.persist();
-      if (state.from && state.to) query(); else redraw();
+      if (state.from && state.to) query();
+      else redraw();
     };
     chips.appendChild(chip);
   }
@@ -438,7 +568,8 @@ function buildForm(): HTMLElement {
   carriageBox.onchange = () => {
     state.carriage = carriageBox.checked;
     host.persist();
-    if (state.from && state.to) query(); else redraw();
+    if (state.from && state.to) query();
+    else redraw();
   };
   carriage.append(carriageBox, el('span', 'label', s.planCarriage));
   bike.appendChild(carriage);
@@ -529,8 +660,13 @@ function legDetail(leg: Leg): HTMLElement {
     pill.append(isBike(leg) ? bikeGlyph() : walkGlyph());
     title.append(pill);
     const km = leg.metres !== null ? ` · ${(leg.metres / 1000).toFixed(1)} km` : '';
-    title.append(el('span', 'leg-dest',
-      `${isBike(leg) ? s.planBikeLeg : s.planWalk} ${duration(leg.seconds)}${km}`));
+    title.append(
+      el(
+        'span',
+        'leg-dest',
+        `${isBike(leg) ? s.planBikeLeg : s.planWalk} ${duration(leg.seconds)}${km}`,
+      ),
+    );
   }
   body.appendChild(title);
 
@@ -545,7 +681,8 @@ function legDetail(leg: Leg): HTMLElement {
   // cannot give honestly is said as not-given rather than as no.
   if (leg.transit) {
     const flags = el('div', 'leg-flags');
-    if (leg.bikesAllowed === true) flags.appendChild(el('span', 'flag flag-yes', s.planBikesCarried));
+    if (leg.bikesAllowed === true)
+      flags.appendChild(el('span', 'flag flag-yes', s.planBikesCarried));
     else if (host.state.bikeMinutes > 0) flags.appendChild(el('span', 'flag', s.planBikesUnknown));
     if (leg.reservationRequired) flags.appendChild(el('span', 'flag', s.planReservation));
     if (leg.cancelled) flags.appendChild(el('span', 'flag flag-bad', s.planCancelled));
@@ -583,15 +720,21 @@ function itineraryRow(itinerary: Itinerary, index: number): HTMLElement {
   head.append(el('span', 'itin-dur', duration(itinerary.seconds)));
   const from = itinerary.legs[0]?.from;
   const to = itinerary.legs[itinerary.legs.length - 1]?.to;
-  head.append(el('span', 'itin-span',
-    `${clockAt(itinerary.start, from?.tz ?? null)} → ${clockAt(itinerary.end, to?.tz ?? null)}`));
+  head.append(
+    el(
+      'span',
+      'itin-span',
+      `${clockAt(itinerary.start, from?.tz ?? null)} → ${clockAt(itinerary.end, to?.tz ?? null)}`,
+    ),
+  );
   head.append(el('span', 'itin-transfers', s.planTransfers(itinerary.transfers)));
   row.appendChild(head);
 
   if (itinerary.direct) {
     const only = itinerary.legs[0];
-    row.appendChild(el('div', 'itin-note',
-      only && isBike(only) ? s.planWholeWayBike : s.planWholeWayWalk));
+    row.appendChild(
+      el('div', 'itin-note', only && isBike(only) ? s.planWholeWayBike : s.planWholeWayWalk),
+    );
   } else {
     row.appendChild(modeStrip(itinerary));
   }
@@ -693,9 +836,11 @@ export function renderPlanner(container: HTMLElement, h: PlannerHost): void {
  */
 export function setPlannerPlace(which: 'from' | 'to', place: Place): void {
   if (!host) return;
-  if (which === 'from') host.state.from = place; else host.state.to = place;
+  if (which === 'from') host.state.from = place;
+  else host.state.to = place;
   host.persist();
-  if (host.state.from && host.state.to) query(); else redraw();
+  if (host.state.from && host.state.to) query();
+  else redraw();
 }
 
 /** Re-show whatever the URL restored, once the planner is on screen. */

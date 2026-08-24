@@ -147,7 +147,8 @@ const MERCATOR_M_PER_PX_AT_EQUATOR_Z0 = 156543.03392;
 const REFERENCE_LAT_DEG = 51;
 
 export function taperMinzoom(lengthM: number): number {
-  const mPerPxAtZ0 = MERCATOR_M_PER_PX_AT_EQUATOR_Z0 * Math.cos((REFERENCE_LAT_DEG * Math.PI) / 180);
+  const mPerPxAtZ0 =
+    MERCATOR_M_PER_PX_AT_EQUATOR_Z0 * Math.cos((REFERENCE_LAT_DEG * Math.PI) / 180);
   return Math.ceil(Math.log2(mPerPxAtZ0 / lengthM));
 }
 

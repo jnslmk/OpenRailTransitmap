@@ -16,8 +16,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalise, replayLog, diffAgainstLog, windowsOn,
-  type Closure, type ClosureEvent, type PlannedClosure, type RawRestriction,
+  normalise,
+  replayLog,
+  diffAgainstLog,
+  windowsOn,
+  type Closure,
+  type ClosureEvent,
+  type PlannedClosure,
+  type RawRestriction,
 } from './closures.ts';
 
 // EPSG:3857 coordinates of two operating points either side of the Cornberg
@@ -46,9 +52,11 @@ function raw(over: Partial<RawRestriction> = {}): RawRestriction {
 
 /** The feed's shape for "this date, these hours". */
 const day = (date: string, from = '03:00:00', to = '04:00:00') => ({
-  vonDatum: date, bisDatum: date,
+  vonDatum: date,
+  bisDatum: date,
   wochentage: ['MONTAG', 'DIENSTAG', 'MITTWOCH', 'DONNERSTAG', 'FREITAG', 'SAMSTAG', 'SONNTAG'],
-  vonUhrzeit: from, bisUhrzeit: to,
+  vonUhrzeit: from,
+  bisUhrzeit: to,
 });
 
 // ---------------------------------------------------------------------------
@@ -64,7 +72,7 @@ test('reads the effect, the direction and the trimmed operating point codes', ()
   assert.equal(c.to.ril100, 'FCG');
 });
 
-test('projects the feed\'s Mercator coordinates into degrees', () => {
+test("projects the feed's Mercator coordinates into degrees", () => {
   const c = normalise(raw());
   // Bebra is at roughly 9.83 E, 51.02 N.
   assert.ok(Math.abs(c.from.lon - 9.835) < 0.01, `lon was ${c.from.lon}`);
@@ -77,75 +85,118 @@ test('keeps an unlisted work category in its own words', () => {
 });
 
 test('folds a run of nightly dates into one range', () => {
-  const c = normalise(raw({
-    gueltigkeiten: ['2026-08-14', '2026-08-15', '2026-08-16'].map((d) => day(d)),
-  }));
-  assert.deepEqual(c.windows, [{
-    from: '2026-08-14', to: '2026-08-16',
-    // Friday, Saturday, Sunday - from the dates, not from the feed's mask.
-    days: 0b1110000,
-    fromTime: '03:00:00', toTime: '04:00:00',
-  }]);
+  const c = normalise(
+    raw({
+      gueltigkeiten: ['2026-08-14', '2026-08-15', '2026-08-16'].map((d) => day(d)),
+    }),
+  );
+  assert.deepEqual(c.windows, [
+    {
+      from: '2026-08-14',
+      to: '2026-08-16',
+      // Friday, Saturday, Sunday - from the dates, not from the feed's mask.
+      days: 0b1110000,
+      fromTime: '03:00:00',
+      toTime: '04:00:00',
+    },
+  ]);
 });
 
 test('a gap in the dates breaks the range in two', () => {
-  const c = normalise(raw({
-    gueltigkeiten: ['2026-08-14', '2026-08-15', '2026-08-17'].map((d) => day(d)),
-  }));
+  const c = normalise(
+    raw({
+      gueltigkeiten: ['2026-08-14', '2026-08-15', '2026-08-17'].map((d) => day(d)),
+    }),
+  );
   assert.equal(c.windows.length, 2);
   assert.deepEqual(
     c.windows.map((w) => [w.from, w.to]),
-    [['2026-08-14', '2026-08-15'], ['2026-08-17', '2026-08-17']],
+    [
+      ['2026-08-14', '2026-08-15'],
+      ['2026-08-17', '2026-08-17'],
+    ],
   );
 });
 
 test('a change of hours breaks the range in two', () => {
-  const c = normalise(raw({
-    gueltigkeiten: [day('2026-08-14'), day('2026-08-15', '22:00:00', '05:00:00')],
-  }));
+  const c = normalise(
+    raw({
+      gueltigkeiten: [day('2026-08-14'), day('2026-08-15', '22:00:00', '05:00:00')],
+    }),
+  );
   assert.equal(c.windows.length, 2);
 });
 
 test('a weekday mask the feed actually states is left alone', () => {
   // "Weekends, all year" must not become "every day, all year" because the
   // dates it spans happen to include every weekday.
-  const c = normalise(raw({
-    gueltigkeiten: [{
-      vonDatum: '2026-01-10', bisDatum: '2026-06-30',
-      wochentage: ['SAMSTAG', 'SONNTAG'],
-      vonUhrzeit: '00:00:00', bisUhrzeit: '23:59:00',
-    }],
-  }));
-  assert.deepEqual(c.windows, [{
-    from: '2026-01-10', to: '2026-06-30',
-    days: 0b1100000,
-    fromTime: '00:00:00', toTime: '23:59:00',
-  }]);
+  const c = normalise(
+    raw({
+      gueltigkeiten: [
+        {
+          vonDatum: '2026-01-10',
+          bisDatum: '2026-06-30',
+          wochentage: ['SAMSTAG', 'SONNTAG'],
+          vonUhrzeit: '00:00:00',
+          bisUhrzeit: '23:59:00',
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(c.windows, [
+    {
+      from: '2026-01-10',
+      to: '2026-06-30',
+      days: 0b1100000,
+      fromTime: '00:00:00',
+      toTime: '23:59:00',
+    },
+  ]);
 });
 
 test('two stated ranges with different masks stay apart', () => {
-  const c = normalise(raw({
-    gueltigkeiten: [
-      { vonDatum: '2026-01-05', bisDatum: '2026-01-09', wochentage: ['MONTAG'], vonUhrzeit: '01:00:00', bisUhrzeit: '05:00:00' },
-      { vonDatum: '2026-01-10', bisDatum: '2026-01-16', wochentage: ['SAMSTAG'], vonUhrzeit: '01:00:00', bisUhrzeit: '05:00:00' },
-    ],
-  }));
+  const c = normalise(
+    raw({
+      gueltigkeiten: [
+        {
+          vonDatum: '2026-01-05',
+          bisDatum: '2026-01-09',
+          wochentage: ['MONTAG'],
+          vonUhrzeit: '01:00:00',
+          bisUhrzeit: '05:00:00',
+        },
+        {
+          vonDatum: '2026-01-10',
+          bisDatum: '2026-01-16',
+          wochentage: ['SAMSTAG'],
+          vonUhrzeit: '01:00:00',
+          bisUhrzeit: '05:00:00',
+        },
+      ],
+    }),
+  );
   assert.equal(c.windows.length, 2);
 });
 
 test('the windows in effect on a day exclude a weekday the feed rules out', () => {
   // 2026-01-13 is a Tuesday inside a weekends-only range. A date test alone
   // would report Saturday's hours on it.
-  const c = normalise(raw({
-    gueltigkeiten: [{
-      vonDatum: '2026-01-10', bisDatum: '2026-06-30',
-      wochentage: ['SAMSTAG', 'SONNTAG'],
-      vonUhrzeit: '22:00:00', bisUhrzeit: '05:00:00',
-    }],
-  }));
+  const c = normalise(
+    raw({
+      gueltigkeiten: [
+        {
+          vonDatum: '2026-01-10',
+          bisDatum: '2026-06-30',
+          wochentage: ['SAMSTAG', 'SONNTAG'],
+          vonUhrzeit: '22:00:00',
+          bisUhrzeit: '05:00:00',
+        },
+      ],
+    }),
+  );
   assert.equal(windowsOn(c, '2026-01-13').length, 0);
-  assert.equal(windowsOn(c, '2026-01-17').length, 1);   // a Saturday
-  assert.equal(windowsOn(c, '2026-07-04').length, 0);   // past the range
+  assert.equal(windowsOn(c, '2026-01-17').length, 1); // a Saturday
+  assert.equal(windowsOn(c, '2026-07-04').length, 0); // past the range
 });
 
 // ---------------------------------------------------------------------------
@@ -178,12 +229,17 @@ test('a closure whose end date moves is logged as a revision, old and new', () =
 
   assert.equal(events.length, 1);
   assert.equal(events[0].e, 'revised');
-  assert.deepEqual((events[0] as { was: Partial<PlannedClosure> }).was, { end: '2026-12-12T04:00:00' });
-  assert.deepEqual((events[0] as { now: Partial<PlannedClosure> }).now, { end: '2027-03-14T04:00:00' });
+  assert.deepEqual((events[0] as { was: Partial<PlannedClosure> }).was, {
+    end: '2026-12-12T04:00:00',
+  });
+  assert.deepEqual((events[0] as { now: Partial<PlannedClosure> }).now, {
+    end: '2027-03-14T04:00:00',
+  });
 
   // Replaying reaches the new state, and remembers what was first planned.
   const after = replayLog([
-    ...diffAgainstLog(new Map(), [closure()], '2026-08-22', WINDOW), ...events,
+    ...diffAgainstLog(new Map(), [closure()], '2026-08-22', WINDOW),
+    ...events,
   ]).get('ABC.1')!;
   assert.equal(after.current.end, '2027-03-14T04:00:00');
   assert.equal(after.firstEnd, '2026-12-12T04:00:00');

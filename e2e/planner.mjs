@@ -56,7 +56,11 @@ function check(ok, what, detail = '') {
 }
 
 const eq = (actual, expected, what) =>
-  check(Object.is(actual, expected), what, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  check(
+    Object.is(actual, expected),
+    what,
+    `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+  );
 
 async function testCase(name, fn) {
   currentCase = { name, checks: [], failed: false };
@@ -76,9 +80,12 @@ const ready = (page) => page.waitForSelector('body.ready', { timeout: 40000 });
 // ---------------------------------------------------------------------------
 
 async function run(page) {
+  let navigatorLanguage = '';
+
   await testCase('the sidebar offers a Plan tab, and coach as a mode', async () => {
     await page.goto(BASE, { waitUntil: 'load' });
     await ready(page);
+    navigatorLanguage = await page.evaluate(() => navigator.language);
 
     const tabs = await page.$$eval('.tab', (n) => n.map((x) => x.textContent));
     check(tabs.includes('Plan'), 'a Plan tab exists', JSON.stringify(tabs));
@@ -103,6 +110,57 @@ async function run(page) {
     check(stops.length > 0, 'at least one suggestion is a stop');
   });
 
+  await testCase('Enter takes the first suggestion', async () => {
+    // A rider who types a station name and hits return means the top hit, so
+    // the key must commit it rather than do nothing.
+    const from = '.plan-places > .plan-field:nth-of-type(1) input';
+    const first = await page.$eval('.plan-suggestion-name', (x) => x.textContent);
+    await page.press(from, 'Enter');
+    await page
+      .waitForSelector('.plan-suggestions.open', { state: 'detached', timeout: 5000 })
+      .catch(() => {});
+    eq(await page.inputValue(from), first, 'the field holds the first suggestion');
+  });
+
+  await testCase("a departure has a day and a clock, in the browser's locale", async () => {
+    await page.selectOption('.plan-when select', 'depart');
+    await page.waitForSelector('.plan-at', { timeout: 5000 });
+
+    // Regression: a single `datetime-local` fitted the date and pushed the time
+    // out of the sidebar, so the hour could be read but never set.
+    const fields = await page.$$eval('.plan-at input', (n) =>
+      n.map((x) => ({
+        type: x.type,
+        lang: x.lang,
+        width: Math.round(x.getBoundingClientRect().width),
+      })),
+    );
+    eq(
+      fields.map((f) => f.type).join('+'),
+      'date+time',
+      'the day and the clock are separate fields',
+    );
+    check(
+      fields.every((f) => f.width > 60),
+      'both are wide enough to use',
+      JSON.stringify(fields),
+    );
+    check(
+      fields.every((f) => f.lang === navigatorLanguage),
+      'both format for the rider, not the page',
+      JSON.stringify(fields),
+    );
+
+    await page.fill('.plan-date', '2026-08-25');
+    await page.fill('.plan-time', '07:12');
+    const at = await page.evaluate(() => new URL(location.href).searchParams.get('at'));
+    const clock = await page.evaluate((iso) => {
+      const d = new Date(iso);
+      return `${d.getHours()}:${d.getMinutes()}`;
+    }, at);
+    eq(clock, '7:12', 'the chosen clock time is what gets planned with');
+  });
+
   await testCase('a link with both ends plans and draws the journey', async () => {
     await page.goto(`${BASE}?tab=plan&from=${RURAL}&to=${HANNOVER}&bike=45`, { waitUntil: 'load' });
     await ready(page);
@@ -119,7 +177,11 @@ async function run(page) {
     const bike = await page.$('.itin-street.is-bike');
     check(!!bike, 'a bike leg is in the mode strip');
     const notes = await page.$$eval('.itin-note', (x) => x.map((y) => y.textContent));
-    check(notes.some((t) => /riding/.test(t)), 'riding time is stated', JSON.stringify(notes));
+    check(
+      notes.some((t) => /riding/.test(t)),
+      'riding time is stated',
+      JSON.stringify(notes),
+    );
 
     const drawn = await page.evaluate(() => {
       const m = window.__map;
@@ -131,8 +193,11 @@ async function run(page) {
     });
     check(drawn.transit > 0, 'transit legs are drawn on the map', JSON.stringify(drawn));
     eq(drawn.ends, 2, 'both ends of the journey are marked');
-    check(typeof drawn.dimmed === 'number' && drawn.dimmed < 1,
-      'the network dims behind the journey', String(drawn.dimmed));
+    check(
+      typeof drawn.dimmed === 'number' && drawn.dimmed < 1,
+      'the network dims behind the journey',
+      String(drawn.dimmed),
+    );
   });
 
   await testCase('a leg says what it cannot promise about bikes', async () => {
@@ -141,7 +206,11 @@ async function run(page) {
     // `bikesAllowed: false` and "the feed did not say" are indistinguishable in
     // the API, so the UI must never render the first as a refusal. See the note
     // in src/routing.ts.
-    check(/not published|Bikes carried/.test(flags), 'bike carriage is stated honestly', flags.slice(0, 200));
+    check(
+      /not published|Bikes carried/.test(flags),
+      'bike carriage is stated honestly',
+      flags.slice(0, 200),
+    );
   });
 
   await testCase('the plan survives being shared', async () => {

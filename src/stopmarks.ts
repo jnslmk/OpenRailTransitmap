@@ -48,8 +48,7 @@ const MAX_SPAN = 64;
 export const PILL_IMAGE_PREFIX = 'stop-pill-';
 
 /** Image length in `icon-size` 1 pixels: the bands covered, plus a round end. */
-export const pillLength = (span: number) =>
-  (Math.max(1, span) - 1) * PILL_PITCH + PILL_THICKNESS;
+export const pillLength = (span: number) => (Math.max(1, span) - 1) * PILL_PITCH + PILL_THICKNESS;
 
 /**
  * White bar with a dark outline, long axis along +x, at `RESOLUTION` times the

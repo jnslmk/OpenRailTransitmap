@@ -8,14 +8,18 @@ import assert from 'node:assert/strict';
 import { buildStopMarks, type MarkBundle, type MarkStation } from './lib/stopmarks.ts';
 import type { Coord } from './lib/track.ts';
 import { slotOffset } from './lib/taper.ts';
+import { STOP_TIERS, markTileFile, markTileZoom } from '../shared/lnvg.ts';
 
 /**
  * A bundle with the slots `build.ts` would give it. Real bundles can have gaps
  * in their ordinals, because slots are assigned per corridor rather than per
  * bundle; these test bundles stand alone, so theirs are the plain lattice.
  */
-const mb = (lineIds: string[], chains: Coord[][]): MarkBundle =>
-  ({ lineIds, chains, slots: lineIds.map((_, i) => slotOffset(i, lineIds.length)) });
+const mb = (lineIds: string[], chains: Coord[][]): MarkBundle => ({
+  lineIds,
+  chains,
+  slots: lineIds.map((_, i) => slotOffset(i, lineIds.length)),
+});
 
 /** A due-east corridor at latitude 52, one vertex every ~70 m. */
 function eastward(lon0: number, lon1: number, lat = 52): Coord[] {
@@ -24,8 +28,11 @@ function eastward(lon0: number, lon1: number, lat = 52): Coord[] {
   return out;
 }
 
-const station = (id: string, coord: Coord, served: string[]): MarkStation =>
-  ({ id, coord, served: new Set(served) });
+const station = (id: string, coord: Coord, served: string[]): MarkStation => ({
+  id,
+  coord,
+  served: new Set(served),
+});
 
 test('a bar spans only the lines that call, centred on their bands', () => {
   // Four lines abreast; the middle two stop here.
@@ -60,9 +67,18 @@ test('lines that skip the station leave a gap, and the gap splits the bar', () =
 
   const list = marks.get('n1')!.sort((x, y) => x.mid - y.mid);
   assert.equal(list.length, 2);
-  assert.deepEqual(list.map((m) => m.lines), [['a'], ['c']]);
-  assert.deepEqual(list.map((m) => m.span), [1, 1]);
-  assert.deepEqual(list.map((m) => m.mid), [-1, 1]);
+  assert.deepEqual(
+    list.map((m) => m.lines),
+    [['a'], ['c']],
+  );
+  assert.deepEqual(
+    list.map((m) => m.span),
+    [1, 1],
+  );
+  assert.deepEqual(
+    list.map((m) => m.mid),
+    [-1, 1],
+  );
 });
 
 test('a corridor whose bundle changes at the station gets one bar, not two', () => {
@@ -104,10 +120,7 @@ test('a bundle stitched the other way round is flipped before it is merged', () 
 test('a real junction keeps one bar per corridor', () => {
   const northward: Coord[] = [];
   for (let lat = 51.99; lat <= 52.01 + 1e-9; lat += 0.001) northward.push([13.01, +lat.toFixed(6)]);
-  const bundles: MarkBundle[] = [
-    mb(['a'], [eastward(13.0, 13.02)]),
-    mb(['b'], [northward]),
-  ];
+  const bundles: MarkBundle[] = [mb(['a'], [eastward(13.0, 13.02)]), mb(['b'], [northward])];
   const marks = buildStopMarks(bundles, [station('n1', [13.01, 52], ['a', 'b'])]);
 
   const list = marks.get('n1')!;
@@ -144,10 +157,33 @@ test('two alignments side by side stay two bars, however alike their heading', (
     mb(['re'], [eastward(13.0, 13.02)]),
     mb(['s1'], [eastward(13.0, 13.02, 52.0005)]),
   ];
-  const marks = buildStopMarks([bundles[0], bundles[1]],
-    [station('n1', [13.01, 52.00025], ['re', 's1'])]);
+  const marks = buildStopMarks(
+    [bundles[0], bundles[1]],
+    [station('n1', [13.01, 52.00025], ['re', 's1'])],
+  );
 
   const list = marks.get('n1')!;
   assert.equal(list.length, 2);
-  assert.deepEqual(list.map((m) => m.lines).flat().sort(), ['re', 's1']);
+  assert.deepEqual(
+    list
+      .map((m) => m.lines)
+      .flat()
+      .sort(),
+    ['re', 's1'],
+  );
+});
+
+test('every tier tiles at a whole zoom, in a file tiles.sh will find', () => {
+  // The marks are tiled a pass per tier, and each pass reads its own
+  // `--minimum-zoom` back out of the file name build.ts wrote (pipeline
+  // /tiles.sh). A fractional `mark` would put a fractional zoom in the name and
+  // fail the pass; a renamed file would be collected by no glob at all, which
+  // is quieter and worse - the marks would simply not be in the map.
+  const glob = /^stopmarks-z\d+\.geojsonl$/;
+  for (const tier of STOP_TIERS) {
+    const z = markTileZoom(tier.rank);
+    assert.equal(z, Math.trunc(z), `rank ${tier.rank} tiles at a fractional zoom`);
+    assert.ok(z <= tier.mark, `rank ${tier.rank} would be tiled later than it is drawn`);
+    assert.match(markTileFile(z), glob);
+  }
 });

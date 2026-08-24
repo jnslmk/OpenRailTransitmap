@@ -1,0 +1,11 @@
+dist/
+node_modules/
+.work/
+public/tiles/
+public/fonts/
+public/lines.json
+public/punctuality.json
+data/
+
+# Hand-wrapped prose with deliberate emphasis/formatting choices, not code.
+*.md
