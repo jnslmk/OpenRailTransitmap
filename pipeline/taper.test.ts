@@ -9,8 +9,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  slotOffset, taperLengthM, taperMinzoom, chainLengthM, trimEnd, splitByLength, buildTaper,
-  TAPER_STEPS, type Coord,
+  slotOffset, taperLengthM, fitTaperLength, taperSteps, taperMinzoom, chainLengthM, trimEnd,
+  splitByLength, buildTaper, TAPER_STEPS, type Coord,
 } from './lib/taper.ts';
 
 /** Metres, at Braunschweig's latitude, as a longitude/latitude delta. */
@@ -75,6 +75,83 @@ test('taperLengthM is 40m for tram and 80m for everything else', () => {
   assert.equal(taperLengthM('tram'), 40);
   for (const mode of ['subway', 'suburban', 'regional', 'longdistance'] as const) {
     assert.equal(taperLengthM(mode), 80);
+  }
+});
+
+test('taperLengthM lengthens the ramp in proportion to the move', () => {
+  // Slots are compacted per segment, so a line whose inboard neighbours leave
+  // together moves several bands at one junction. Ramping that over the same
+  // ground as a one-band move is what makes a staircase read as a step.
+  assert.equal(taperLengthM('regional', 2), 160);
+  assert.equal(taperLengthM('tram', 2), 80);
+});
+
+test('taperLengthM never asks for less than a one-pitch ramp', () => {
+  // A parity slide is half a pitch - the smallest move there is, and the one
+  // that most wants a gentle ramp rather than a proportionally tiny one.
+  assert.equal(taperLengthM('regional', 0.5), 80);
+  assert.equal(taperLengthM('regional', 0), 80);
+});
+
+test('taperLengthM caps the ramp so a wide move cannot reach the next junction', () => {
+  assert.equal(taperLengthM('regional', 3), 240);
+  assert.equal(taperLengthM('regional', 9), 240);
+  assert.equal(taperLengthM('tram', 9), 120);
+});
+
+test('taperLengthM reads the size of the move, not its direction', () => {
+  assert.equal(taperLengthM('regional', -2), taperLengthM('regional', 2));
+});
+
+test('fitTaperLength gives the full ramp when both chains can afford it', () => {
+  assert.equal(fitTaperLength(500, 500, 80), 80);
+});
+
+test('fitTaperLength shortens the ramp to what the shorter chain can spare', () => {
+  // 0.4 of the shorter chain per end, so 0.8 of it in total.
+  assert.equal(fitTaperLength(50, 500, 80), 40);
+  assert.equal(fitTaperLength(500, 50, 80), 40);
+});
+
+test('fitTaperLength leaves the majority of the shortest chain untapered', () => {
+  // The invariant that makes a trim collision impossible: a chain tapered at
+  // both ends still keeps a fifth of itself drawn at its own slot.
+  for (const len of [20, 50, 137, 400]) {
+    const fitted = fitTaperLength(len, len, 80);
+    assert.ok(fitted <= 0.8 * len, `len=${len} fitted=${fitted}`);
+  }
+});
+
+test('fitTaperLength refuses a ramp too short to see', () => {
+  // Under a pixel at z13, the highest zoom the tiles carry - as is the step
+  // it would replace, so there is nothing to smooth.
+  assert.equal(fitTaperLength(10, 500, 80), 0);
+  assert.equal(fitTaperLength(14, 500, 80), 0);
+  assert.ok(fitTaperLength(15, 500, 80) > 0);
+});
+
+test('fitTaperLength never returns more than was asked for', () => {
+  assert.equal(fitTaperLength(5000, 5000, 40), 40);
+});
+
+test('taperSteps holds the step size rather than the step count', () => {
+  // Three steps across a six-pitch move would jump two bands at a time and
+  // read as three hard steps; the count grows so no riser exceeds 0.75 of a
+  // pitch until the cap.
+  for (const delta of [0.5, 1, 2, 3, 4, 6, 12]) {
+    const n = taperSteps(delta);
+    assert.ok(n >= TAPER_STEPS, `delta=${delta} steps=${n}`);
+    assert.ok(n <= 8, `delta=${delta} steps=${n}`);
+    if (n < 8) assert.ok(Math.abs(delta) / n <= 0.75 + 1e-9, `delta=${delta} steps=${n}`);
+  }
+});
+
+test('taperSteps keeps every riser wider than the occupied-slot nudge', () => {
+  // buildTaper nudges a step 0.2 of a pitch along the ramp to clear an
+  // occupied slot, and relies on that being smaller than one riser to keep
+  // the staircase monotonic. Only a move wider than a pitch is ever nudged.
+  for (let delta = 1; delta <= 20; delta += 0.5) {
+    assert.ok(delta / taperSteps(delta) > 0.2, `delta=${delta}`);
   }
 });
 
@@ -186,6 +263,22 @@ test('buildTaper skips when a chain is shorter than L', () => {
   const long = eastward(10.52 + 30 * M_LON, 52.26, 200);
   assert.equal(buildTaper(short, long, 0, 1, 80), null);
   assert.equal(buildTaper(long, short, 0, 1, 80), null);
+});
+
+test('buildTaper ramps a short chain at a fitted length instead of skipping it', () => {
+  // The pair above, put through fitTaperLength first: a chain too short for
+  // the full 80 m still gets a ramp, which is the point - a skipped ramp is
+  // the sideways jump this module exists to remove.
+  const short = eastward(10.52, 52.26, 30);
+  const long = eastward(10.52 + 30 * M_LON, 52.26, 200);
+  const fitted = fitTaperLength(chainLengthM(short), chainLengthM(long), 80);
+  assert.ok(fitted > 0 && fitted < 80);
+  const steps = buildTaper(short, long, 0, 1, fitted)!;
+  assert.ok(steps);
+  // ...and it spends only its fitted half of the short chain.
+  const junction = short[short.length - 1];
+  const firstPoint = steps[0].coords[0];
+  assert.ok(chainLengthM([firstPoint, junction]) < 0.4 * chainLengthM(short) + 0.5);
 });
 
 test('buildTaper is a no-op in effect when slots already match', () => {

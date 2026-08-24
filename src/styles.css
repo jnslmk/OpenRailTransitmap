@@ -207,6 +207,22 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 .hazard.major { height: 6px; }
 .hazard.minor { height: 3px; }
 
+/* --- operators ------------------------------------------------------------ */
+
+/* The master switch is not one of the rows, it is what all of them do at once,
+   so it sits above the list with a rule under it rather than in it. */
+.toggle.master { font-weight: 500; border-bottom: 1px solid var(--grey); padding-bottom: 8px; }
+.toggle.master + .operator-list { margin-top: 4px; }
+
+/* The same ceiling as the line index below, for the same reason: a city view
+   has a dozen operators in it and a section that grows to fit them all would
+   push the index off the bottom of the screen. */
+.operator-list { max-height: 320px; overflow-y: auto; padding-right: 2px; }
+/* Operator names run to "Verkehrsverbund Mittelsachsen GmbH"; the row is not
+   that wide, and a wrapped name would make some rows twice the height of
+   others. The full name is on the row's `title`. */
+.operator-list .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* --- line index ----------------------------------------------------------- */
 
 .line-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
@@ -415,6 +431,20 @@ body.chrome-hidden #sidebar { display: none; }
   align-items: center;
   justify-content: center;
   color: #333;
+}
+
+/* The debug zoom readout. Not a button, so it takes none of the control-group
+   chrome - a plain plate, out of the way of a drag, legible over the map. */
+.maplibregl-ctrl-zoom-readout {
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 /* MapLibre's 29px buttons are below the comfortable touch target on a phone. */

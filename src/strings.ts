@@ -5,7 +5,8 @@ import type { ClosureDirection, ClosureEffect } from '../shared/closures.ts';
 export interface Strings {
   search: string; noResults: string;
   modes: string; longdistance: string; regional: string; suburban: string;
-  subway: string; tram: string; coach: string; operator: string; allOperators: string;
+  subway: string; tram: string; coach: string;
+  operator: string; operators: string; allOperators: string; noOperatorsInView: string;
   stations: string;
   lines: string; servedBy: string; close: string; clearSelection: string;
   network: string; legend: string; noLinesInView: string;
@@ -84,7 +85,9 @@ const STRINGS: Strings = {
   tram: 'Tram',
   coach: 'Long-distance coach',
   operator: 'Operator',
+  operators: 'Operators',
   allOperators: 'All operators',
+  noOperatorsInView: 'No operators in view',
   stations: 'Stations',
   lines: 'Lines',
   servedBy: 'Lines serving this station',

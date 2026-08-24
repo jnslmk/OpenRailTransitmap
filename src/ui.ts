@@ -9,6 +9,10 @@ import {
 import type { Tab, ViewState } from './state.ts';
 import { renderPlanner, type PlannerHost } from './planner.ts';
 import { endMoved, formatDate, type ClosureRecord } from './closures.ts';
+import {
+  allOperators, drawsEveryOperator, drawsNoOperator, noOperators, operatorShown,
+  withOperator, type OperatorFilter,
+} from './operators.ts';
 
 export { compareLines };
 
@@ -16,7 +20,7 @@ export interface ChromeOptions {
   registry: Registry;
   state: ViewState;
   onToggleMode: (mode: Mode, on: boolean) => void;
-  onOperator: (op: string | null) => void;
+  onOperators: (filter: OperatorFilter) => void;
   onToggleClosures: (on: boolean) => void;
   onToggleSheet: () => void;
   onSelect: (lineId: string) => void;
@@ -336,6 +340,143 @@ export function setClosureDay(day: string) {
   syncClosureDay();
 }
 
+// ---------------------------------------------------------------------------
+// Operators
+//
+// The same shape as the mode legend, and for the same reason: a drop-down that
+// can hold one value can only ever answer "show me this operator", where the
+// question riders actually have - which of these companies am I looking at,
+// and what does the map look like without that one - needs a set. So the
+// section is a master switch over a list of checkboxes: all on by default, all
+// off in one click, and any mixture in between.
+//
+// The list is scoped to the view like everything else in this sidebar. Nearly
+// three hundred operators run something in the data and a dozen or so are ever
+// on screen, so a national list would be a scroll through companies that run
+// nothing the reader can see. Which also means the rows come and go as the map
+// moves, so the list is reconciled rather than rebuilt, and a row already in
+// its place is left alone rather than re-inserted: both would keep the reader's
+// pointer over the same box, only the second keeps their keyboard focus on it.
+// ---------------------------------------------------------------------------
+
+interface OperatorRow { row: HTMLElement; box: HTMLInputElement; count: HTMLElement }
+
+let operatorList: HTMLElement | null = null;
+let operatorMaster: HTMLInputElement | null = null;
+let operatorCount: HTMLElement | null = null;
+let operatorEmpty: HTMLElement | null = null;
+const operatorRows = new Map<string, OperatorRow>();
+
+/** Lines in view per operator, or null until the map has first settled. */
+let operatorsInView: Map<string, number> | null = null;
+
+export function setVisibleOperators(counts: Map<string, number>) {
+  operatorsInView = counts;
+  syncOperators();
+}
+
+function buildOperators(): HTMLElement {
+  const s = t();
+  const box = el('div', 'panel');
+  box.appendChild(el('h2', '', s.operators));
+
+  const master = el('label', 'toggle master');
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.onchange = () => {
+    // Read from the filter rather than from the box: a tri-state checkbox
+    // clicked out of its indeterminate state reports whatever the browser
+    // decided, and the switch means one thing in each direction - if anything
+    // at all is filtered, show everything; otherwise show nothing.
+    opts.onOperators(drawsEveryOperator(opts.state.operators) ? noOperators() : allOperators());
+    syncOperators();
+    fillLines();
+  };
+  operatorMaster = cb;
+  operatorCount = el('span', 'count');
+  master.append(cb, el('span', 'label', s.allOperators), operatorCount);
+  box.appendChild(master);
+
+  operatorRows.clear();
+  operatorList = el('div', 'operator-list');
+  box.appendChild(operatorList);
+
+  operatorEmpty = el('p', 'muted', s.noOperatorsInView);
+  box.appendChild(operatorEmpty);
+
+  syncOperators();
+  return box;
+}
+
+function operatorRow(name: string): OperatorRow {
+  const row = el('label', 'toggle');
+  const box = el('input');
+  box.type = 'checkbox';
+  box.onchange = () => {
+    opts.onOperators(withOperator(opts.state.operators, name, box.checked));
+    // The map recounts on its next idle; sync now so the row answers the click
+    // rather than a frame later.
+    syncOperators();
+    fillLines();
+  };
+  const count = el('span', 'count');
+  // Text, not markup: the name is whatever an OSM `operator` tag says, and
+  // this is the one label in the sidebar that does not come from strings.ts.
+  const label = el('span', 'label');
+  label.textContent = name;
+  // They run long - "Verkehrsverbund Mittelsachsen GmbH" - and the row is not
+  // that wide, so the full name goes on the title for the ones the ellipsis
+  // eats.
+  label.title = name;
+  row.append(box, label, count);
+  return { row, box, count };
+}
+
+function syncOperators() {
+  if (!operatorList || !operatorMaster || !operatorCount || !operatorEmpty) return;
+  const filter = opts.state.operators;
+  const counts = operatorsInView;
+
+  const names = counts ? [...counts.keys()].sort((a, b) => a.localeCompare(b, 'de')) : [];
+
+  for (const [name, row] of operatorRows) {
+    if (counts?.has(name)) continue;
+    row.row.remove();
+    operatorRows.delete(name);
+  }
+  names.forEach((name, i) => {
+    let row = operatorRows.get(name);
+    if (!row) {
+      row = operatorRow(name);
+      operatorRows.set(name, row);
+    }
+    row.box.checked = operatorShown(filter, name);
+    // Unlike a switched-off mode, a switched-off operator keeps its count. The
+    // number is read off the unfiltered layers, so it stays true either way,
+    // and on an off row it answers the only question that row raises: how much
+    // of what I am looking at would come back.
+    row.count.textContent = String(counts?.get(name) ?? 0);
+    // Only moved when it is not already where it belongs. Re-inserting a node
+    // that is already in place is not free: it blurs whatever inside it had
+    // the focus, which on a settled view is the checkbox the reader has just
+    // reached with the keyboard.
+    const at = operatorList!.children[i];
+    if (at !== row.row) operatorList!.insertBefore(row.row, at ?? null);
+  });
+
+  // Everything, nothing, or some mixture - which is the one state a plain
+  // checkbox cannot show, so it gets the indeterminate dash.
+  const every = drawsEveryOperator(filter);
+  const none = drawsNoOperator(filter);
+  operatorMaster.checked = !none;
+  operatorMaster.indeterminate = !every && !none;
+
+  operatorCount.textContent = counts ? String(names.length) : '';
+  // Before the map has settled there is no view to have operators in, and
+  // "none in view" would be a claim about a count nobody has taken yet.
+  operatorEmpty.hidden = !counts || names.length > 0;
+}
+
 /**
  * Explore and Plan share the sidebar, so every reference the Explore half keeps
  * into the DOM has to be dropped when the Plan half replaces it. Each `sync*`
@@ -348,6 +489,11 @@ function clearExploreRefs() {
   emptyNote = null;
   closureCountEl = null;
   closureDayEl = null;
+  operatorList = null;
+  operatorMaster = null;
+  operatorCount = null;
+  operatorEmpty = null;
+  operatorRows.clear();
   lineList = null;
 }
 
@@ -368,7 +514,7 @@ function tabBar(): HTMLElement {
 }
 
 function draw() {
-  const { registry, state } = opts;
+  const { state } = opts;
   const s = t();
   const root = document.getElementById('sidebar')!;
   root.innerHTML = '';
@@ -406,19 +552,8 @@ function draw() {
   // --- construction ---------------------------------------------------------
   root.appendChild(buildClosures());
 
-  // --- operator -------------------------------------------------------------
-  const operators = [...new Set(registry.lines.map((l) => l.operator).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, 'de'));
-
-  const opBox = el('div', 'panel');
-  opBox.appendChild(el('h2', '', s.operator));
-  const sel = el('select', 'select');
-  sel.appendChild(new Option(s.allOperators, ''));
-  for (const o of operators) sel.appendChild(new Option(o, o));
-  sel.value = state.operator ?? '';
-  sel.onchange = () => { opts.onOperator(sel.value || null); fillLines(); };
-  opBox.appendChild(sel);
-  root.appendChild(opBox);
+  // --- operators ------------------------------------------------------------
+  root.appendChild(buildOperators());
 
   // --- line index -----------------------------------------------------------
   const linesBox = el('div', 'panel');
@@ -573,7 +708,7 @@ function fillLines() {
   lineList.innerHTML = '';
   const visible = registry.lines
     .filter((l) => state.modes.has(l.mode))
-    .filter((l) => !state.operator || l.operator === state.operator)
+    .filter((l) => operatorShown(state.operators, l.operator))
     // A selected line keeps its row after being panned off screen: that row
     // carries the selection, and dropping it drops the way to clear it.
     .filter((l) => !inViewLines || inViewLines.has(l.id) || state.selected === l.id)

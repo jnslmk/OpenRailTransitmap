@@ -1,11 +1,12 @@
 /**
- * End-to-end check of the mode legend, driven against a real deployment.
+ * End-to-end check of the sidebar's view-scoped filters - the mode legend and
+ * the operator panel - driven against a real deployment.
  *
  *   node e2e/legend.mjs                                  # the published site
  *   node e2e/legend.mjs --url http://127.0.0.1:5173/     # a local dev server
  *   node e2e/legend.mjs --headed                         # watch it run
  *
- * The legend is scoped to the view, which is exactly what makes it easy to get
+ * Both are scoped to the view, which is exactly what makes them easy to get
  * wrong: a row must never disappear as a result of the click that toggled it,
  * or the toggle cannot be undone. These cases pin that behaviour down.
  */
@@ -120,6 +121,10 @@ async function settle(page, since = -1) {
 const idleCount = (page) => page.evaluate(() => window.__idle ?? 0);
 
 async function goto(page, hash, query = '') {
+  // Cleared first, because a URL that differs from the current one only in its
+  // hash is a same-document navigation: nothing reloads, the map does not move,
+  // and the case runs against whatever the case before it left on screen.
+  await page.goto('about:blank');
   await page.goto(`${BASE}${query}${hash}`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body.ready', { timeout: 30000 });
   // The first idle is the one that counts what is in view; before it the legend
@@ -157,8 +162,67 @@ const drawn = (page, mode) => page.evaluate((m) => {
   return map.queryRenderedFeatures({ layers: [`route-${m}`] }).length;
 }, mode);
 
+/**
+ * The operator panel: the master switch, and every row the current view has
+ * put in the list. Unlike the mode legend the rows are not fixed - the list is
+ * whoever runs something on screen - so they come back as an array.
+ */
+const operators = (page) => page.evaluate(() => {
+  const panel = [...document.querySelectorAll('#sidebar .panel')]
+    .find((p) => p.querySelector('h2')?.textContent === 'Operators');
+  if (!panel) throw new Error('operator panel not found');
+  const master = panel.querySelector('.toggle.master input');
+  const note = [...panel.querySelectorAll('p')]
+    .find((p) => p.textContent === 'No operators in view');
+  return {
+    master: { on: master.checked, mixed: master.indeterminate },
+    count: panel.querySelector('.toggle.master .count').textContent,
+    note: !!note && !!note.offsetParent,
+    rows: [...panel.querySelectorAll('.operator-list label.toggle')].map((row) => ({
+      name: row.querySelector('.label').textContent,
+      checked: row.querySelector('input').checked,
+      count: row.querySelector('.count').textContent,
+      focused: document.activeElement === row.querySelector('input'),
+    })),
+  };
+});
+
+/** Click one operator's checkbox, then wait for the map to catch up. */
+async function toggleOperator(page, name) {
+  const n = await idleCount(page);
+  await page.evaluate((who) => {
+    const row = [...document.querySelectorAll('.operator-list label.toggle')]
+      .find((r) => r.querySelector('.label').textContent === who);
+    if (!row) throw new Error(`no operator row for ${who}`);
+    row.querySelector('input').click();
+  }, name);
+  await settle(page, n);
+}
+
+/** The master switch: everything on, or - from anywhere else - everything off. */
+async function toggleAllOperators(page) {
+  const n = await idleCount(page);
+  await page.evaluate(() => document.querySelector('.toggle.master input').click());
+  await settle(page, n);
+}
+
+/** Route features on screen whose operator is this one, drawn or not. */
+const drawnBy = (page, name) => page.evaluate((who) => {
+  const map = window.__map;
+  const layers = ['longdistance', 'regional', 'suburban', 'subway', 'tram', 'coach']
+    .map((m) => `route-${m}`)
+    .filter((id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none');
+  return map.queryRenderedFeatures({ layers })
+    .filter((f) => String(f.properties.operator ?? '') === who).length;
+}, name);
+
 const modesParam = (page) =>
   page.evaluate(() => new URLSearchParams(location.search).get('modes'));
+
+const opParams = (page) => page.evaluate(() => {
+  const q = new URLSearchParams(location.search);
+  return { op: q.get('op'), opoff: q.get('opoff') };
+});
 
 const lineIndexSize = (page) =>
   page.evaluate(() => document.querySelectorAll('#sidebar .line-list .line-row').length);
@@ -322,6 +386,136 @@ async function run(page) {
     const rows = (await legend(page)).rows;
     eq(rows.regional.checked, false, 'space toggled the mode');
     check(rows.regional.focused, 'and the focus stayed on the box that was pressed');
+  });
+
+  await testCase('the operator list is scoped to the view', async () => {
+    await goto(page, VIEWS.berlin);
+    const { rows, count, note, master } = await operators(page);
+    check(rows.length > 1, 'a city view lists the operators running in it', `${rows.length} rows`);
+    eq(count, String(rows.length), 'the master switch counts them');
+    eq(note, false, 'and the empty note is out of the way');
+    check(master.on && !master.mixed, 'everything is on to begin with');
+    for (const row of rows) {
+      check(Number(row.count) > 0, `${row.name}: listed because it has lines in view`, row.count);
+      check(row.checked, `${row.name}: switched on`);
+    }
+
+    await jumpTo(page, VIEWS.northSea);
+    const empty = await operators(page);
+    eq(empty.rows.length, 0, 'nobody runs anything out at sea');
+    check(empty.note, 'so the note stands in for the list');
+    eq(empty.count, '0', 'and the count says so');
+  });
+
+  await testCase('switching an operator off keeps its row, its count and the way back', async () => {
+    await goto(page, VIEWS.berlin);
+    const [first] = (await operators(page)).rows;
+    check(await drawnBy(page, first.name) > 0, `${first.name} is on the map to begin with`);
+
+    await toggleOperator(page, first.name);
+    const off = (await operators(page)).rows.find((r) => r.name === first.name);
+    check(!!off, 'the row survives being switched off');
+    eq(off?.checked, false, 'the box is now clear');
+    // The count comes off the unfiltered layers, so it stays true - it is what
+    // switching the operator back on would put back.
+    eq(off?.count, first.count, 'and it still says how much of the view it runs');
+    eq(await drawnBy(page, first.name), 0, 'while none of it is drawn');
+    eq((await opParams(page)).opoff, first.name, 'the URL names what is left out');
+    check((await operators(page)).master.mixed, 'and the master switch shows a mixture');
+
+    await toggleOperator(page, first.name);
+    check(await drawnBy(page, first.name) > 0, 'and switching it back on draws its lines again');
+    eq((await opParams(page)).opoff, null, 'and the URL drops the filter entirely');
+  });
+
+  await testCase('the master switch clears the whole list and puts it back', async () => {
+    await goto(page, VIEWS.berlin);
+    const before = await lineIndexSize(page);
+    check(before > 0, 'the index starts with lines in it');
+
+    await toggleAllOperators(page);
+    const none = await operators(page);
+    check(!none.master.on && !none.master.mixed, 'the master switch reads off, not mixed');
+    eq(none.rows.some((r) => r.checked), false, 'every row went with it');
+    check(none.rows.length > 0, 'while the rows themselves stay listed');
+    eq(await lineIndexSize(page), 0, 'and the line index empties');
+    eq((await opParams(page)).op, '', 'an empty allow-list is what the URL says');
+
+    await toggleAllOperators(page);
+    const all = await operators(page);
+    check(all.master.on && !all.master.mixed, 'and one more click brings everyone back');
+    eq(all.rows.some((r) => !r.checked), false, 'with every row ticked');
+    eq(await lineIndexSize(page), before, 'and the index as it was');
+    eq((await opParams(page)).op, null, 'leaving nothing in the URL');
+  });
+
+  await testCase('the master switch is the way out of any mixture', async () => {
+    await goto(page, VIEWS.berlin);
+    const [first, second] = (await operators(page)).rows;
+    await toggleOperator(page, first.name);
+    await toggleOperator(page, second.name);
+    check((await operators(page)).master.mixed, 'two off is a mixture');
+
+    await toggleAllOperators(page);
+    const all = await operators(page);
+    check(all.master.on && !all.master.mixed, 'the switch resolves it to everything on');
+    eq(all.rows.some((r) => !r.checked), false, 'including the two that were off');
+  });
+
+  await testCase('a chosen handful of operators round-trips through the URL', async () => {
+    await goto(page, VIEWS.berlin);
+    const [first, second] = (await operators(page)).rows;
+
+    await goto(page, VIEWS.berlin, `?op=${encodeURIComponent(`${first.name}~${second.name}`)}`);
+    const restored = await operators(page);
+    check(restored.master.mixed, 'the master switch shows the mixture the link asked for');
+    for (const row of restored.rows) {
+      eq(row.checked, [first.name, second.name].includes(row.name),
+        `${row.name}: restored from the link`);
+    }
+    check(await drawnBy(page, first.name) > 0, `${first.name} is drawn`);
+    const others = restored.rows.filter((r) => ![first.name, second.name].includes(r.name));
+    if (others.length) eq(await drawnBy(page, others[0].name), 0, `${others[0].name} is not`);
+  });
+
+  await testCase('a keyboard toggle keeps its focus on an operator row too', async () => {
+    // The rows are rebuilt as the view changes, which is exactly what can take
+    // the focus off the box being pressed.
+    await goto(page, VIEWS.berlin);
+    const [first] = (await operators(page)).rows;
+    const n = await idleCount(page);
+    await page.evaluate((who) => {
+      [...document.querySelectorAll('.operator-list label.toggle')]
+        .find((r) => r.querySelector('.label').textContent === who)
+        .querySelector('input').focus();
+    }, first.name);
+    await page.keyboard.press('Space');
+    await settle(page, n);
+
+    const row = (await operators(page)).rows.find((r) => r.name === first.name);
+    eq(row?.checked, false, 'space switched the operator off');
+    check(row?.focused, 'and the focus stayed on the box that was pressed');
+  });
+
+  await testCase('filtering an operator away drops a selection it carried', async () => {
+    await goto(page, VIEWS.berlin);
+    const who = await page.evaluate(() => {
+      document.querySelector('#sidebar .line-list .line-row').click();
+      const dl = document.querySelector('#detail .detail-meta');
+      const keys = [...dl.querySelectorAll('dt')].map((d) => d.textContent);
+      return [...dl.querySelectorAll('dd')][keys.indexOf('Operator')].textContent;
+    });
+    check(await page.evaluate(() => !!new URLSearchParams(location.search).get('line')),
+      'a line from the index lands in the URL');
+
+    await toggleOperator(page, who);
+    check(await page.evaluate(() => !document.getElementById('detail').classList.contains('open')),
+      'switching off the operator that runs it closes the panel');
+    check(await page.evaluate(() => !new URLSearchParams(location.search).get('line')),
+      'and clears the selection from the URL');
+    const dimmed = await page.evaluate(() =>
+      window.__map.getPaintProperty('route-regional', 'line-opacity'));
+    eq(dimmed, 1, 'so nothing is left dimmed against a selection that is gone');
   });
 
   await testCase('the mode selection round-trips through the URL', async () => {

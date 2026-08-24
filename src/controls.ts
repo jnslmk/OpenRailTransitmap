@@ -90,3 +90,53 @@ export function labelControls(): void {
     });
   }
 }
+
+/**
+ * Whether the debugging aids are wanted: always under `vite dev`, and on a
+ * built site only when it is opened with `?debug`. The second half is what
+ * keeps the deployed map answerable - "which zoom is this actually at?" is a
+ * question about a real screen on a real device, and that is the build the
+ * question gets asked of.
+ */
+export const DEBUG = import.meta.env.DEV
+  || new URLSearchParams(location.search).has('debug');
+
+/**
+ * The current zoom, printed on the map.
+ *
+ * This map is a stack of zoom thresholds - which stop tier marks, where its
+ * name follows one step behind, where the bars take over from dots, which
+ * closures show - and tuning any of them means knowing the zoom to better than
+ * "about eleven". Two decimals, because several of the thresholds are
+ * fractional (10.2, 13.5) and an integer would not say which side of one the
+ * view is on.
+ */
+export class ZoomReadoutControl implements IControl {
+  private container: HTMLDivElement | null = null;
+  private map: MLMap | null = null;
+
+  private readonly render = (): void => {
+    if (this.container && this.map) {
+      this.container.textContent = `z ${this.map.getZoom().toFixed(2)}`;
+    }
+  };
+
+  onAdd(map: MLMap): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'maplibregl-ctrl maplibregl-ctrl-zoom-readout';
+    this.container = container;
+    this.map = map;
+    // `zoom` rather than `zoomend`: the number is worth watching *while* the
+    // map moves, which is when a threshold is crossed and something appears.
+    map.on('zoom', this.render);
+    this.render();
+    return container;
+  }
+
+  onRemove(): void {
+    this.map?.off('zoom', this.render);
+    this.container?.remove();
+    this.container = null;
+    this.map = null;
+  }
+}

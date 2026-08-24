@@ -172,6 +172,95 @@ export function normaliseColour(raw: string | undefined): string | null {
 export const BUNDLE_PITCH_PX = MODE_SPECS.regional.weightPt * PT_TO_PX * 1.02;
 
 /**
+ * How line weights grow with zoom, and how far a bundle fans out at each -
+ * two curves the style paints from and the tile build has to know about, so
+ * they live beside the pitch they are measured in rather than in either.
+ *
+ * The spread deliberately does *not* follow the width curve. Germany's busiest
+ * corridors carry 20+ lines; at national zoom a proportional spread turns those
+ * into wide coloured blobs that read as noise, so the offset collapses to zero
+ * below z6 and bundles stack on the true alignment, which is what the reference
+ * poster does at that scale. The bands fan out again as soon as there is room.
+ */
+export const LINE_WEIGHT_STOPS: readonly [number, number][] = [
+  [5, 0.45],
+  [8, 0.7],
+  [11, 1.0],
+  [14, 1.6],
+];
+
+export const BUNDLE_SPREAD_STOPS: readonly [number, number][] = [
+  [5, 0],
+  [6, 0.08],
+  [8, 0.4],
+  [11, 1.0],
+  [14, 1.6],
+];
+
+/** A zoom-keyed factor table, read the way MapLibre reads an `interpolate`. */
+export function factorAt(stops: readonly [number, number][], zoom: number): number {
+  if (zoom <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [z0, f0] = stops[i - 1], [z1, f1] = stops[i];
+    if (zoom <= z1) return f0 + ((f1 - f0) * (zoom - z0)) / (z1 - z0);
+  }
+  return stops[stops.length - 1][1];
+}
+
+/** The bundle spread factor at a zoom, read off the same table the bands use. */
+export const spreadAt = (zoom: number): number => factorAt(BUNDLE_SPREAD_STOPS, zoom);
+
+/**
+ * How much wider the white casing under the selected line is than the line
+ * itself - the widest thing any route feature paints.
+ */
+export const HIGHLIGHT_FACTOR = 2.1;
+
+/**
+ * How far, in screen pixels, the painted edge of a route band can sit from the
+ * geometry it was built from: its `line-offset`, plus half the widest stroke
+ * drawn over it.
+ *
+ * This is what a vector tile has to be buffered by. MapLibre stencil-clips
+ * each tile's lines to the tile's own square, and only then moves them
+ * sideways, in the vertex shader. So a band whose slot carries it over the
+ * edge is cut at the edge, and the tile on the other side - which holds only
+ * its own geometry, not the stretch whose band lands there - has nothing to
+ * put in its place. A line crossing an edge at a shallow angle to the offset
+ * then loses everything from the crossing until its own geometry is this far
+ * clear of the edge, which on a nearly straight corridor is hundreds of metres
+ * of missing line ending in a round cap in open country.
+ *
+ * Giving every tile this much of its neighbours' geometry closes it: whichever
+ * tile the band lands in also holds the geometry it was offset from.
+ */
+export function bandReachPx(zoom: number, maxAbsOffset: number): number {
+  const widestPt = Math.max(...MODES.map((m) => MODE_SPECS[m].weightPt));
+  const halfStroke =
+    (widestPt * PT_TO_PX * factorAt(LINE_WEIGHT_STOPS, zoom) * HIGHLIGHT_FACTOR) / 2;
+  return Math.abs(maxAbsOffset) * BUNDLE_PITCH_PX * spreadAt(zoom) + halfStroke;
+}
+
+/**
+ * `bandReachPx` as a tippecanoe `--buffer`, for a build whose widest band sits
+ * `maxAbsOffset` pitches off its alignment.
+ *
+ * A buffer unit is a 256th of a tile, and a tile is 512 px across when drawn
+ * at its own zoom - so one unit buys 2 px there, and overzooming only makes it
+ * wider. Both curves above are flat from z14, so z14 is the widest reach any
+ * tile can be asked for however far `--extend-zooms-if-still-dropping` runs,
+ * and sizing for it covers every zoom in the archive.
+ */
+export const TILE_BUFFER_REFERENCE_ZOOM = 14;
+export const TILE_BUFFER_PX_PER_UNIT = 512 / 256;
+
+export function tileBufferUnits(maxAbsOffset: number): number {
+  return Math.ceil(
+    bandReachPx(TILE_BUFFER_REFERENCE_ZOOM, maxAbsOffset) / TILE_BUFFER_PX_PER_UNIT,
+  );
+}
+
+/**
  * Which stops are drawn at which zoom.
  *
  * A geographic map cannot do what the reference poster does - draw every stop

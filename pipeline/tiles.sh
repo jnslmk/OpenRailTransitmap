@@ -43,24 +43,22 @@ fi
 # corridor falls back to.
 
 # How much of a neighbouring tile's geometry every tile carries, in 256ths of
-# a tile. The default 5 is sized for geometry that is drawn where it lies; a
-# route band is not. MapLibre stencil-clips each tile's lines to the tile's own
-# square and only then applies `line-offset` in the vertex shader, so a band
-# whose slot pushes it sideways over the edge is cut there, and the tile on the
-# other side of the edge - which does not carry that geometry - draws nothing
-# in its place. On a corridor crossing a tile edge at a shallow angle that
-# removes the line from the crossing until the track itself is clear of the
-# edge by the full offset: hundreds of metres of missing band ending in a round
-# cap in open country.
+# a tile. tippecanoe's default 5 is sized for geometry that is drawn where it
+# lies; a route band is not. MapLibre stencil-clips each tile's lines to the
+# tile's own square and only then moves them sideways, so a band whose slot
+# carries it over the edge is cut there, and the tile on the other side - which
+# holds its own geometry, not the stretch whose band lands there - has nothing
+# to put in its place. On a corridor crossing an edge at a shallow angle that
+# takes the line out from the crossing until the track itself is clear of the
+# edge by the whole offset: hundreds of metres of missing band, ending in a
+# round cap in open country.
 #
-# So the buffer has to cover the widest a band can stray from its own geometry
-# (`bandReachPx` in src/style.ts: the outermost slot of the largest corridor,
-# plus half the widest stroke). One buffer unit is 512/256 = 2 px of a tile
-# drawn at its own zoom, and overzooming only makes it wider, so the binding
-# case is a tile rendered at native zoom with the spread fully open: 43 px, or
-# 22 units. 24 leaves a little room. pipeline/tiles.test.ts holds the two ends
-# of that arithmetic together.
-BUFFER=24
+# build.ts writes the width this build's own widest band needs (see
+# `bandReachPx` and `tileBufferUnits` in shared/lnvg.ts). The fallback is for
+# a hand-run of this stage against an older .work: enough for a bundle of 24,
+# which is one wider than the busiest corridor in Germany.
+BUFFER="$(cat "$BUILD/tile-buffer" 2>/dev/null || echo 41)"
+echo "==> tile buffer: $BUFFER"
 
 echo "==> building rail.pmtiles"
 tippecanoe \

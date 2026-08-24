@@ -33,6 +33,9 @@ GitHub Pages and rebuilt nightly.
   rather than on the station node, which is a building or a car park off to one
   side; **from z16 the map draws the node too**, as a hollow ring, once the
   difference between the two is a fact about the place rather than noise.
+  Long-distance stops and the larger Hauptbahnhöfe get their bar from **z7**,
+  four zooms before every other tier: at national scale a dot would only say a
+  station is there, and which trains stop is the thing worth the pixels.
 - **Stops that earn their zoom.** Germany's 20,830 stations are one grey smear
   at national scale, so they are ranked once in the pipeline — long-distance
   calls and the larger Hauptbahnhöfe, then interchanges, then ordinary halts,
@@ -87,6 +90,16 @@ GitHub Pages and rebuilt nightly.
   can come back. A row you have just ticked is held open until you move the map,
   even where that mode runs nowhere near the view — a toggle that deleted the
   row it was made on could not be undone.
+- **Who runs it, one operator at a time.** The operator filter is a master
+  switch over a list of checkboxes rather than a drop-down that could only ever
+  hold one name: all on to begin with, all off in a click, and any mixture in
+  between. Like the legend it is scoped to the view — the couple of dozen
+  companies whose lines are on the screen, not the three hundred that run
+  something somewhere in the country — with the number of lines each has in
+  view beside it. An operator you switch off keeps its row *and* its count, so
+  the click can be undone and the number tells you what undoing it would put
+  back. The choice is part of the URL: `?op=` for just these operators,
+  `?opoff=` for everything but.
 - **Full-screen map.** A button on the map hides the whole sidebar so the map
   fills the window — the difference between usable and unusable on a phone — and
   a second one goes to browser fullscreen. On narrow screens the sidebar is a
@@ -144,10 +157,19 @@ a consistent direction.
 
 Bundling then falls out of the way ids for free: routes sharing a corridor are
 built from the *same OSM ways*, so ways carrying an identical set of lines form
-one segment, and each line gets a perpendicular offset ordinal, centred so the
-bundle straddles its alignment. The ordinal is ranked across a whole corridor
-rather than per segment, so a line holds one slot for as long as it stays in
-that corridor. No geometric matching required.
+one segment, and each line gets a perpendicular offset ordinal — its rank among
+the lines actually on that segment, centred so the bundle straddles its
+alignment. No geometric matching required.
+
+Ranking per segment is a deliberate choice over ranking once per corridor and
+letting a line hold that slot for the corridor's length. The corridor-wide
+version moves less, but it reserves a band for every line in the corridor's
+union, including the ones absent from the stretch being drawn — so a bundle
+draws wider than the lines on it, with visible gaps where nothing runs and a
+centre that has drifted off the alignment. A reserved band is invisible, so
+nothing on screen explains either. Per-segment ranking spends the difference on
+movement instead, and movement can be drawn: where membership changes, the line
+ramps into its new band (below) rather than jumping to it.
 
 An ordinal is only a *side* once the chains carrying it agree which way they
 run, though, because `line-offset` is signed against a feature's own direction
@@ -160,6 +182,15 @@ the taper below dutifully ramped it there, drawing the seam as a bundle-wide
 braid. That was 43 of 44 slot changes on a Braunschweig-area extract, and the
 staircases they forced were half of all route features.
 
+Every slot change is then drawn as a taper: L/2 metres trimmed off the line's
+chain either side of the junction and the gap filled with short
+constant-offset features stepping across, because `line-offset` is constant
+along a feature and its rendered spread is zoom-dependent, so a diagonal baked
+into the coordinates at one zoom is wrong at every other. L scales with how far
+the line is moving and is then fitted to what those two chains can actually
+spare — a ramp that does not fit is shortened, not skipped, since a skipped
+ramp is exactly the sideways jump the taper exists to remove.
+
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.
 
@@ -169,11 +200,15 @@ moves them sideways, so a band whose slot carries it over the edge is cut there
 and the next tile — which does not hold that geometry — draws nothing in its
 place: on a corridor crossing an edge at a shallow angle, the line vanishes from
 the crossing until the track itself is clear of the edge by the whole offset,
-several hundred metres of it, ending in a round cap in open country. So every
-tile carries `--buffer=24`, 48 px of its neighbours' geometry at native zoom,
-against the 43 px the outermost band of the largest corridor can reach.
-`pipeline/tiles.test.ts` checks the two ends of that arithmetic still meet. It
-costs about a fifth of the archive.
+several hundred metres of it, ending in a round cap in open country. So `build.ts`
+measures the widest slot it emitted and writes the `--buffer` that covers it —
+one buffer unit is 2 px of a tile drawn at its own zoom — and `tiles.sh` cuts
+the tiles to that. Germany's busiest corridor carries 23 lines, whose outermost
+band reaches 78 px, so the national build cuts at 40 against the default 5; a
+Niedersachsen build fans less and pays less. `pipeline/tiles.test.ts` holds the
+two ends of that arithmetic together. It is the one real cost of drawing the
+bundle at render time rather than baking it in: on a Braunschweig-area extract
+the archive grew by a fifth.
 
 ### Station matching
 
@@ -259,6 +294,13 @@ npm run publish:data            # committed data -> public/
 
 npm run dev                     # http://localhost:5173
 ```
+
+The dev server draws the current zoom in the bottom-left corner of the map, to
+two decimals — the map is a stack of zoom thresholds (`STOP_TIERS` in
+[`shared/lnvg.ts`](shared/lnvg.ts), the dot-to-bar changeover and the closure
+tiers in [`src/style.ts`](src/style.ts)) and several of them are fractional, so
+tuning one means seeing which side of it the view is on. A built site shows the
+same readout when it is opened with `?debug`.
 
 Punctuality is refreshed separately, because its upstream files change monthly
 rather than nightly and a pass costs ~0.9 GB of range requests:
