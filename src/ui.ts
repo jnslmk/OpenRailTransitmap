@@ -359,7 +359,9 @@ export function setClosureDay(day: string) {
 // pointer over the same box, only the second keeps their keyboard focus on it.
 // ---------------------------------------------------------------------------
 
-interface OperatorRow { row: HTMLElement; box: HTMLInputElement; count: HTMLElement }
+interface OperatorRow {
+  row: HTMLElement; box: HTMLInputElement; count: HTMLElement; mark: HTMLElement;
+}
 
 let operatorList: HTMLElement | null = null;
 let operatorMaster: HTMLInputElement | null = null;
@@ -370,9 +372,24 @@ const operatorRows = new Map<string, OperatorRow>();
 /** Lines in view per operator, or null until the map has first settled. */
 let operatorsInView: Map<string, number> | null = null;
 
+/**
+ * Operator name to logo URL. Empty until the manifest has loaded, and empty
+ * for good in a checkout that has never run the pipeline - a row without a
+ * mark is a row with a name in it, which is what the panel had before.
+ */
+let operatorLogos = new Map<string, string>();
+
 export function setVisibleOperators(counts: Map<string, number>) {
   operatorsInView = counts;
   syncOperators();
+}
+
+/** Called once, when the logo manifest arrives. */
+export function setOperatorLogos(logos: Map<string, string>) {
+  operatorLogos = logos;
+  // Rows built before the manifest landed have an empty mark waiting for it.
+  for (const [name, row] of operatorRows) fillOperatorMark(row, name);
+  syncLogoAttribution();
 }
 
 function buildOperators(): HTMLElement {
@@ -419,6 +436,10 @@ function operatorRow(name: string): OperatorRow {
     syncOperators();
     fillLines();
   };
+  // The mark, in a box of its own whether or not there is one to put in it:
+  // two thirds of operators have a logo, and a column that collapsed on the
+  // other third would step the names in and out down the list.
+  const mark = el('span', 'op-mark');
   const count = el('span', 'count');
   // Text, not markup: the name is whatever an OSM `operator` tag says, and
   // this is the one label in the sidebar that does not come from strings.ts.
@@ -428,8 +449,33 @@ function operatorRow(name: string): OperatorRow {
   // that wide, so the full name goes on the title for the ones the ellipsis
   // eats.
   label.title = name;
-  row.append(box, label, count);
-  return { row, box, count };
+  row.append(box, mark, label, count);
+  const built = { row, box, count, mark };
+  fillOperatorMark(built, name);
+  return built;
+}
+
+/**
+ * Put this operator's mark in its box, if there is one.
+ *
+ * `alt` is empty on purpose: the name is right beside it in the same row, and
+ * a screen reader that read both would say every operator twice. A logo that
+ * fails to load - a manifest naming a file the build did not fetch - takes
+ * itself out of the row rather than leaving a broken-image glyph in it, and
+ * the empty box holds the column open either way.
+ */
+function fillOperatorMark(row: OperatorRow, name: string) {
+  const src = operatorLogos.get(name);
+  row.mark.innerHTML = '';
+  if (!src) return;                    // An empty box, holding the column open.
+  const img = el('img');
+  img.src = src;
+  img.alt = '';
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.onerror = () => img.remove();
+  img.onload = () => markLogosUsed();
+  row.mark.appendChild(img);
 }
 
 function syncOperators() {
@@ -606,6 +652,7 @@ function buildFooter(): HTMLElement {
     <span class="punct-attrib" hidden>${s.punctualityAttribution}</span>
     <span class="closure-attrib" hidden>${s.closureAttribution}</span>
     <span class="coach-attrib" hidden>${s.coachAttribution}</span>
+    <span class="logo-attrib" hidden>${s.logoAttribution}</span>
     <span class="routing-attrib" hidden>${s.planAttribution}</span>
     ${buildStamp()}`);
   liveAttribEl = footer.querySelector('.live-attrib');
@@ -616,6 +663,8 @@ function buildFooter(): HTMLElement {
   closureAttribEl!.hidden = !closuresUsed;
   coachAttribEl = footer.querySelector('.coach-attrib');
   coachAttribEl!.hidden = !coachUsed;
+  logoAttribEl = footer.querySelector('.logo-attrib');
+  logoAttribEl!.hidden = !logosUsed;
   routingAttribEl = footer.querySelector('.routing-attrib');
   routingAttribEl!.hidden = !routingUsed;
   return footer;
@@ -679,6 +728,26 @@ export function setCoachAttributionUsed() {
   if (coachUsed) return;
   coachUsed = true;
   if (coachAttribEl) coachAttribEl.hidden = false;
+}
+
+/**
+ * The marks in the operator panel are public-domain files from Wikimedia
+ * Commons, which asks for no attribution and gets it anyway: a reader is owed
+ * the provenance of every mark on the page, and a logo carries more of an
+ * implied claim than a line colour does. Same latch as the rest - set when a
+ * mark actually paints, not when the manifest loads.
+ */
+let logoAttribEl: HTMLElement | null = null;
+let logosUsed = false;
+
+function markLogosUsed() {
+  if (logosUsed) return;
+  logosUsed = true;
+  syncLogoAttribution();
+}
+
+function syncLogoAttribution() {
+  if (logoAttribEl) logoAttribEl.hidden = !logosUsed;
 }
 
 /**

@@ -17,7 +17,8 @@ import {
   renderChrome, renderLinePanel, renderClosurePanel, setStatus, compareLines,
   syncSheetHandle, setVisibleModes, unpinModes, setLiveAttributionUsed,
   setVisibleLines, setLinePunctuality, setPunctualityAttributionUsed,
-  setVisibleClosures, setVisibleOperators, setClosureDay, setClosureAttributionUsed,
+  setVisibleClosures, setVisibleOperators, setOperatorLogos,
+  setClosureDay, setClosureAttributionUsed,
   setCoachAttributionUsed, setRoutingAttributionUsed,
 } from './ui.ts';
 import { setPlannerPlace, restorePlannerResult, type PlannerHost } from './planner.ts';
@@ -25,6 +26,7 @@ import type { Itinerary, Leg, Place } from './routing.ts';
 import { ChromeToggleControl, labelControls, ZoomReadoutControl, DEBUG } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
+import { loadLogos } from './logos.ts';
 import { parseClosure } from './closures.ts';
 import { operatorExpression, operatorKey, operatorShown } from './operators.ts';
 import './styles.css';
@@ -905,6 +907,11 @@ async function main() {
     onFlyToStation: (lngLat) => map.flyTo({ center: lngLat, zoom: 12 }),
     searchStations: (q) => searchStations(map, q),
   });
+
+  // The operator marks, alongside the map rather than before it: the panel is
+  // complete without them and a rider watching a map draw should not wait on a
+  // manifest of logos.
+  loadLogos(BASE).then(setOperatorLogos);
 
   map.on('load', () => {
     applyFilters();

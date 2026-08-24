@@ -48,6 +48,7 @@ export interface Strings {
   closureAsOf: (day: string) => string;
   closureAttribution: string;
   coachAttribution: string;
+  logoAttribution: string;
   buildStamp: (commit: string, when: string) => string;
 
   // --- journey planner ------------------------------------------------------
@@ -191,6 +192,11 @@ const STRINGS: Strings = {
     'Construction: <a href="https://strecken-info.de">DB InfraGO strecken.info</a>',
   coachAttribution:
     'Coach: <a href="https://global.flixbus.com">FlixMobility Tech GmbH</a>',
+  // The marks are trademarks of the companies they name; the map shows them to
+  // say who runs a line and claims nothing else by it.
+  logoAttribution:
+    'Operator marks: <a href="https://commons.wikimedia.org">Wikimedia Commons</a>, '
+    + 'public domain · trademarks of their owners',
   // `commit` arrives as a link to the commit on GitHub, so this one is markup
   // rather than text. The date is dropped rather than left dangling after the
   // separator when the build has a commit but no readable date behind it.

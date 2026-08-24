@@ -223,6 +223,18 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
    others. The full name is on the row's `title`. */
 .operator-list .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* The operator's own mark, in a fixed box so the names stay in one column
+   whether or not the company behind a row has one. Contained rather than
+   cropped: these are wordmarks of wildly different proportions - a square
+   roundel next to a wordmark five times as wide - and cropping one to fit
+   would be a worse likeness than shrinking it. */
+.op-mark {
+  width: 36px; height: 18px;
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+}
+.op-mark img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
 /* --- line index ----------------------------------------------------------- */
 
 .line-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }

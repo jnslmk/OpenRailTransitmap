@@ -518,6 +518,46 @@ async function run(page) {
     eq(dimmed, 1, 'so nothing is left dimmed against a selection that is gone');
   });
 
+  await testCase('operator rows wear their operator\'s mark', async () => {
+    await goto(page, VIEWS.berlin);
+    // A deployment built before the logo pipeline has no manifest, and the
+    // panel is meant to be complete without one - so this reports rather than
+    // fails when there is nothing to draw.
+    const published = await page.evaluate(async () => {
+      const res = await fetch(new URL('operator-logos.json', location.href));
+      return res.ok ? Object.keys(await res.json()).length : 0;
+    });
+    if (!published) {
+      check(true, 'no logo manifest on this deployment - nothing to check', '');
+      return;
+    }
+
+    const marks = await page.evaluate(() => [...document.querySelectorAll('.operator-list .toggle')]
+      .map((row) => {
+        const img = row.querySelector('img');
+        return {
+          name: row.querySelector('.label').textContent,
+          src: img?.getAttribute('src') ?? null,
+          // A file that 404s decodes to nothing, which is exactly the failure
+          // a manifest naming an unfetched file would produce.
+          drawn: !!img && img.complete && img.naturalWidth > 0,
+          // The box is there either way, so the names stay in one column.
+          boxWidth: row.querySelector('.op-mark')?.getBoundingClientRect().width ?? 0,
+        };
+      }));
+
+    const withMark = marks.filter((m) => m.src);
+    check(withMark.length > 0, 'some operator in view has a mark', `${marks.length} rows`);
+    for (const mark of withMark) {
+      check(mark.drawn, `${mark.name}: its mark loaded`, mark.src ?? '');
+    }
+    const widths = new Set(marks.map((m) => Math.round(m.boxWidth)));
+    eq(widths.size, 1, 'every row reserves the same width for a mark', [...widths].join(','));
+
+    check(await page.evaluate(() => !document.querySelector('.logo-attrib')?.hidden),
+      'and Commons is credited once a mark is on screen');
+  });
+
   await testCase('the mode selection round-trips through the URL', async () => {
     await goto(page, VIEWS.berlin, '?modes=suburban,tram');
     const rows = (await legend(page)).rows;

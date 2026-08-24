@@ -99,7 +99,13 @@ GitHub Pages and rebuilt nightly.
   view beside it. An operator you switch off keeps its row *and* its count, so
   the click can be undone and the number tells you what undoing it would put
   back. The choice is part of the URL: `?op=` for just these operators,
-  `?opoff=` for everything but.
+  `?opoff=` for everything but. Most rows carry the company's own mark beside
+  the name — 227 of the 293 operators in the data, covering 93% of the lines —
+  matched to Wikidata and drawn from public-domain files on Wikimedia Commons.
+  The matching is a committed manifest rather than a build-time guess, so which
+  company each operator was taken to be arrives as a reviewable diff and is
+  corrected by hand in `data/logo-overrides.yaml`; see
+  [`pipeline/logos.ts`](pipeline/logos.ts).
 - **Full-screen map.** A button on the map hides the whole sidebar so the map
   fills the window — the difference between usable and unusable on a phone — and
   a second one goes to browser fullscreen. On narrow screens the sidebar is a
@@ -121,6 +127,7 @@ pipeline/
   extract.sh               osmium -> route relations, ways, stations
   closures.ts              DB InfraGO possessions + the history log
   coach.ts                 long-distance coach from the operators' GTFS
+  logos.ts                 operator marks from Wikidata / Wikimedia Commons
   lib/railpath.ts          route a closure onto the track it closes
   lib/orient.ts            agree which way a corridor's chains run
   lib/stopmarks.ts         lay a stop's mark across the bands that call there
@@ -273,6 +280,7 @@ npx tsx pipeline/closures.ts    # today's construction closures (optional)
 npx tsx pipeline/coach.ts       # long-distance coach network (optional)
 npx tsx pipeline/build.ts       # routes, bundling, stations
 npx tsx pipeline/fonts.ts       # glyphs (cached after the first run)
+npx tsx pipeline/logos.ts       # operator marks named by the manifest (optional)
 bash pipeline/tiles.sh          # PMTiles
 npm run publish:data            # committed data -> public/
 
@@ -292,6 +300,17 @@ rather than nightly and a pass costs ~0.9 GB of range requests:
 ```bash
 npm run build:punctuality       # ~15 min; commit the data/punctuality.json it writes
 PUNCTUALITY_MONTHS=1 npm run build:punctuality   # one month, for development
+```
+
+The operator marks are matched separately, and by hand, because matching a
+free-text OSM `operator` tag to a company is a guess that deserves a reviewer:
+the resolver rewrites `data/operator-logos.json`, and the diff says which
+company each operator was taken to be. Run it when the operator set has moved,
+and correct what it got wrong in `data/logo-overrides.yaml`:
+
+```bash
+npm run resolve:logos           # ~4 min of paced Wikidata calls; commit the manifest
+npm run build:logos             # download what the manifest names into public/logos/
 ```
 
 The closure log is refreshed on its own daily schedule rather than with the map,
