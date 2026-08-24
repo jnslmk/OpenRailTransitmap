@@ -40,9 +40,9 @@ GitHub Pages and rebuilt nightly.
   at national scale, so they are ranked once in the pipeline — long-distance
   calls and the larger Hauptbahnhöfe, then interchanges, then ordinary halts,
   then tram stops — and each rank appears at the zoom there is room for it,
-  names one step behind marks. The ranking is written into the tiles as a
-  per-feature minzoom, so a low-zoom tile carries the 400 stops it draws rather
-  than the 20,830 it does not.
+  names one step behind marks. The ranking is written into the tiles by tiling
+  each rank in a pass of its own, so a low-zoom tile carries the 400 stops it
+  draws rather than the 20,830 it does not.
 - **Click a line** to highlight it end-to-end and open a detail panel; **click a
   stop** for every line calling there.
 - **Punctuality on the line panel.** How often the line actually departs on
@@ -230,8 +230,9 @@ are plain dots on the same anchors, and the bars fade in over the changeover.
 
 ### Which stops show at which zoom
 
-Ranked in `shared/lnvg.ts` and written into the tiles as a per-feature minzoom,
-so a rank is not merely hidden below its zoom, it is not carried there:
+Ranked in `shared/lnvg.ts` and written into the tiles a rank at a time — each
+gets a tiling pass of its own, gated at its own minimum zoom — so a rank is not
+merely hidden below its zoom, it is not carried there:
 
 | rank | what it is | mark | name |
 | --- | --- | --- | --- |

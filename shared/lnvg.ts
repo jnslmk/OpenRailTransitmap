@@ -210,8 +210,8 @@ export const BUNDLE_PITCH_PX = MODE_SPECS.regional.weightPt * PT_TO_PX * 1.02;
  *
  * `mark` is the zoom the symbol appears at, `label` the zoom its name does -
  * always later, because a name costs perhaps ten times the space a mark does.
- * The pipeline writes the same table into the tiles as a per-feature minzoom,
- * so a rank-3 stop is not merely hidden at z8, it is not in the tile at all.
+ * The pipeline writes the same table into the tiles, a tiling pass per tier, so
+ * a rank-3 stop is not merely hidden at z8, it is not in the tile at all.
  */
 export interface StopTier {
   rank: number;
@@ -226,10 +226,23 @@ export const STOP_TIERS: readonly StopTier[] = [
   { rank: 3, mark: 12, label: 13.5 },
 ];
 
-/** The tier table keyed by rank, for the pipeline's per-feature minzoom. */
+/** The tier table keyed by rank. */
 export const STOP_TIER_BY_RANK: Record<number, StopTier> = Object.fromEntries(
   STOP_TIERS.map((t) => [t.rank, t]),
 );
+
+/**
+ * The zoom a tier's marks are tiled from, and the file they are written to.
+ *
+ * This pair is the whole contract between build.ts and tiles.sh: the marks are
+ * tiled one pass per tier, and each pass reads the zoom it is gated at back out
+ * of the file's own name. So the zoom has to be a whole number - it is going to
+ * be a `--minimum-zoom` - and the name has to keep matching the glob tiles.sh
+ * collects the passes with.
+ */
+export const markTileZoom = (rank: number): number => Math.floor(STOP_TIER_BY_RANK[rank].mark);
+
+export const markTileFile = (zoom: number): string => `stopmarks-z${zoom}.geojsonl`;
 
 /**
  * Which tier a stop belongs to. Deliberately built from what the map already
