@@ -9,26 +9,42 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createExpression } from '@maplibre/maplibre-gl-style-spec';
 import {
-  allOperators, drawsEveryOperator, drawsNoOperator, noOperators, operatorExpression,
-  operatorKey, operatorShown, readOperators, withOperator, writeOperators,
+  allOperators,
+  drawsEveryOperator,
+  drawsNoOperator,
+  noOperators,
+  operatorExpression,
+  operatorKey,
+  operatorShown,
+  readOperators,
+  withOperator,
+  writeOperators,
   type OperatorFilter,
 } from './operators.ts';
 
-const filter = (only: boolean, ...names: string[]): OperatorFilter =>
-  ({ only, names: new Set(names) });
+const filter = (only: boolean, ...names: string[]): OperatorFilter => ({
+  only,
+  names: new Set(names),
+});
 
 /** What MapLibre would make of the filter, for a route with this operator. */
 function drawn(f: OperatorFilter): (operator: string | undefined) => boolean {
   const expr = operatorExpression(f);
   if (!expr) return () => true;
-  const compiled = createExpression(expr as never);
+  const compiled = createExpression(expr);
   assert.equal(compiled.result, 'success', `did not compile: ${JSON.stringify(expr)}`);
-  const value = (compiled as unknown as {
-    value: { evaluate: (g: unknown, f: unknown) => unknown };
-  }).value;
-  return (operator) => value.evaluate({ zoom: 8 }, {
-    properties: operator === undefined ? {} : { operator },
-  }) === true;
+  const value = (
+    compiled as unknown as {
+      value: { evaluate: (g: unknown, f: unknown) => unknown };
+    }
+  ).value;
+  return (operator) =>
+    value.evaluate(
+      { zoom: 8 },
+      {
+        properties: operator === undefined ? {} : { operator },
+      },
+    ) === true;
 }
 
 test('no filter draws everything, including a route with no operator', () => {
@@ -76,8 +92,11 @@ test('the predicate and the map filter agree, whichever way the filter is put', 
       const f = filter(only, ...named);
       const map = drawn(f);
       for (const operator of operators) {
-        assert.equal(map(operator), operatorShown(f, operator),
-          `${only ? 'only' : 'except'} [${named}] disagreed about ${JSON.stringify(operator)}`);
+        assert.equal(
+          map(operator),
+          operatorShown(f, operator),
+          `${only ? 'only' : 'except'} [${named.join(', ')}] disagreed about ${JSON.stringify(operator)}`,
+        );
       }
     }
   }

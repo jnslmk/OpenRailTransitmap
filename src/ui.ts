@@ -4,14 +4,23 @@ import { MODES, MODE_SPECS, textOn, type Mode } from '../shared/lnvg.ts';
 import { t } from './strings.ts';
 import type { LineRecord, Registry } from './main.ts';
 import {
-  worstFirst, bands, formatMinutes, type LineScore, type PunctualityFile,
+  worstFirst,
+  bands,
+  formatMinutes,
+  type LineScore,
+  type PunctualityFile,
 } from './punctuality.ts';
 import type { Tab, ViewState } from './state.ts';
 import { renderPlanner, type PlannerHost } from './planner.ts';
 import { endMoved, formatDate, type ClosureRecord } from './closures.ts';
 import {
-  allOperators, drawsEveryOperator, drawsNoOperator, noOperators, operatorShown,
-  withOperator, type OperatorFilter,
+  allOperators,
+  drawsEveryOperator,
+  drawsNoOperator,
+  noOperators,
+  operatorShown,
+  withOperator,
+  type OperatorFilter,
 } from './operators.ts';
 
 export { compareLines };
@@ -39,8 +48,20 @@ export interface ChromeOptions {
  * falls to the end, with the number compared numerically within each group.
  */
 const REF_PREFIXES = [
-  'ICE', 'IC', 'EC', 'ECE', 'FLX', 'NJ', 'EN', 'RJ', 'TGV',
-  'RE', 'RB', 'S', 'U', 'STR',
+  'ICE',
+  'IC',
+  'EC',
+  'ECE',
+  'FLX',
+  'NJ',
+  'EN',
+  'RJ',
+  'TGV',
+  'RE',
+  'RB',
+  'S',
+  'U',
+  'STR',
 ];
 
 function refSortKey(ref: string): [number, string, number, string] {
@@ -56,15 +77,20 @@ function compareLines(a: LineRecord, b: LineRecord): number {
   const byMode = MODE_SPECS[b.mode].order - MODE_SPECS[a.mode].order;
   if (byMode !== 0) return byMode;
 
-  const ka = refSortKey(a.ref), kb = refSortKey(b.ref);
-  return ka[0] - kb[0]
-    || ka[1].localeCompare(kb[1], 'de')
-    || ka[2] - kb[2]
-    || ka[3].localeCompare(kb[3], 'de');
+  const ka = refSortKey(a.ref),
+    kb = refSortKey(b.ref);
+  return (
+    ka[0] - kb[0] ||
+    ka[1].localeCompare(kb[1], 'de') ||
+    ka[2] - kb[2] ||
+    ka[3].localeCompare(kb[3], 'de')
+  );
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K, cls?: string, html?: string,
+  tag: K,
+  cls?: string,
+  html?: string,
 ): HTMLElementTagNameMap[K] => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -114,7 +140,9 @@ function sheetHandle(): HTMLElement {
     const wantsCollapsed = dy > 0;
     if (wantsCollapsed !== collapsed) opts.onToggleSheet();
   });
-  btn.onclick = () => { if (!dragged) opts.onToggleSheet(); };
+  btn.onclick = () => {
+    if (!dragged) opts.onToggleSheet();
+  };
 
   btn.append(el('span', 'grabber'), el('span', 'sheet-label'));
   handleEl = btn;
@@ -147,7 +175,11 @@ export function syncSheetHandle(collapsed: boolean) {
 // about to be hidden disappear from under the pointer.
 // ---------------------------------------------------------------------------
 
-interface ModeRow { row: HTMLElement; box: HTMLInputElement; count: HTMLElement }
+interface ModeRow {
+  row: HTMLElement;
+  box: HTMLInputElement;
+  count: HTMLElement;
+}
 
 let modeBox: HTMLElement | null = null;
 let modeRows = new Map<Mode, ModeRow>();
@@ -244,7 +276,7 @@ function syncModes() {
     const on = opts.state.modes.has(mode);
     // Until the map has settled once there is nothing in view to count, so the
     // national total stands in.
-    const n = inView ? inView.get(mode) ?? 0 : opts.registry.counts.byMode[mode] ?? 0;
+    const n = inView ? (inView.get(mode) ?? 0) : (opts.registry.counts.byMode[mode] ?? 0);
     const visible = !on || pinnedModes.has(mode) || n > 0;
 
     row.hidden = !visible;
@@ -281,9 +313,16 @@ export function setVisibleClosures(n: number) {
 function syncClosures() {
   if (!closureCountEl) return;
   const s = t();
-  if (!opts.state.closures) { closureCountEl.textContent = ''; return; }
-  closureCountEl.textContent = closuresInView === null
-    ? '' : closuresInView ? s.closureCount(closuresInView) : s.noClosuresInView;
+  if (!opts.state.closures) {
+    closureCountEl.textContent = '';
+    return;
+  }
+  closureCountEl.textContent =
+    closuresInView === null
+      ? ''
+      : closuresInView
+        ? s.closureCount(closuresInView)
+        : s.noClosuresInView;
 }
 
 function buildClosures(): HTMLElement {
@@ -295,7 +334,10 @@ function buildClosures(): HTMLElement {
   const cb = el('input');
   cb.type = 'checkbox';
   cb.checked = opts.state.closures;
-  cb.onchange = () => { opts.onToggleClosures(cb.checked); syncClosures(); };
+  cb.onchange = () => {
+    opts.onToggleClosures(cb.checked);
+    syncClosures();
+  };
   closureCountEl = el('span', 'count');
   row.append(cb, el('span', 'label', s.showClosures), closureCountEl);
   box.appendChild(row);
@@ -360,7 +402,10 @@ export function setClosureDay(day: string) {
 // ---------------------------------------------------------------------------
 
 interface OperatorRow {
-  row: HTMLElement; box: HTMLInputElement; count: HTMLElement; mark: HTMLElement;
+  row: HTMLElement;
+  box: HTMLInputElement;
+  count: HTMLElement;
+  mark: HTMLElement;
 }
 
 let operatorList: HTMLElement | null = null;
@@ -467,7 +512,7 @@ function operatorRow(name: string): OperatorRow {
 function fillOperatorMark(row: OperatorRow, name: string) {
   const src = operatorLogos.get(name);
   row.mark.innerHTML = '';
-  if (!src) return;                    // An empty box, holding the column open.
+  if (!src) return; // An empty box, holding the column open.
   const img = el('img');
   img.src = src;
   img.alt = '';
@@ -547,7 +592,12 @@ function tabBar(): HTMLElement {
   const s = t();
   const bar = el('div', 'tabs');
   bar.setAttribute('role', 'tablist');
-  ([['explore', s.tabExplore], ['plan', s.tabPlan]] as [Tab, string][]).forEach(([tab, label]) => {
+  (
+    [
+      ['explore', s.tabExplore],
+      ['plan', s.tabPlan],
+    ] as [Tab, string][]
+  ).forEach(([tab, label]) => {
     const on = opts.state.tab === tab;
     const b = el('button', `tab${on ? ' on' : ''}`, label);
     b.type = 'button';
@@ -629,9 +679,15 @@ const REPO = 'https://github.com/jnslmk/openrailtransitmap';
 function buildStamp(): string {
   if (!__BUILD_COMMIT__) return '';
   const when = new Date(__BUILD_TIME__);
-  const time = Number.isNaN(when.getTime()) ? '' : when.toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
+  const time = Number.isNaN(when.getTime())
+    ? ''
+    : when.toLocaleString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
   const link = `<a href="${REPO}/commit/${__BUILD_COMMIT__}"><code>${__BUILD_COMMIT__}</code></a>`;
   return `<p class="build" title="${__BUILD_TIME__}">${t().buildStamp(link, time)}</p>`;
 }
@@ -644,7 +700,10 @@ function buildStamp(): string {
 function buildFooter(): HTMLElement {
   const s = t();
   const { registry } = opts;
-  const footer = el('footer', 'panel attrib', `
+  const footer = el(
+    'footer',
+    'panel attrib',
+    `
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
     <a href="${REPO}">Source on GitHub</a>
@@ -654,7 +713,8 @@ function buildFooter(): HTMLElement {
     <span class="coach-attrib" hidden>${s.coachAttribution}</span>
     <span class="logo-attrib" hidden>${s.logoAttribution}</span>
     <span class="routing-attrib" hidden>${s.planAttribution}</span>
-    ${buildStamp()}`);
+    ${buildStamp()}`,
+  );
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
   punctAttribEl = footer.querySelector('.punct-attrib');
@@ -870,7 +930,9 @@ export function renderLinePanel(line: LineRecord | null, handlers: { onClose: ()
  * be discarded rather than painted onto the wrong line.
  */
 export function setLinePunctuality(
-  lineId: string, score: LineScore | null, meta: PunctualityFile | null,
+  lineId: string,
+  score: LineScore | null,
+  meta: PunctualityFile | null,
 ) {
   const host = document.getElementById('detail')?.querySelector<HTMLElement>('.detail-punctuality');
   if (!host || host.dataset.line === lineId) return;
@@ -882,7 +944,11 @@ export function setLinePunctuality(
   const head = el('div', 'punct-head');
   head.append(
     el('h3', '', s.punctuality),
-    el('span', 'punct-window', s.punctualityWindow(meta.window.months, formatMonth(meta.window.to))),
+    el(
+      'span',
+      'punct-window',
+      s.punctualityWindow(meta.window.months, formatMonth(meta.window.to)),
+    ),
   );
   host.appendChild(head);
 
@@ -914,7 +980,10 @@ export function setLinePunctuality(
   const legend = el('div', 'punct-legend');
   for (const band of bands(score, meta.bucketEdges, meta.onTimeThresholdMin)) {
     const item = el('span', 'punct-legend-item');
-    item.append(el('span', `punct-swatch punct-band-${band.key}`), el('span', '', s.band[band.key]));
+    item.append(
+      el('span', `punct-swatch punct-band-${band.key}`),
+      el('span', '', s.band[band.key]),
+    );
     legend.appendChild(item);
   }
   host.appendChild(legend);
@@ -926,9 +995,12 @@ export function setLinePunctuality(
   const facts = el('dl', 'detail-meta');
   const mins = (v: number) => s.minutesLate(formatMinutes(v, meta.bucketEdges));
   facts.append(
-    el('dt', '', s.typicalDelay), el('dd', '', mins(aggregate.median)),
-    el('dt', '', s.oneInTen), el('dd', '', mins(aggregate.p90)),
-    el('dt', '', s.cancelRate), el('dd', '', `${(aggregate.cancelRate * 100).toFixed(1)}%`),
+    el('dt', '', s.typicalDelay),
+    el('dd', '', mins(aggregate.median)),
+    el('dt', '', s.oneInTen),
+    el('dd', '', mins(aggregate.p90)),
+    el('dt', '', s.cancelRate),
+    el('dd', '', `${(aggregate.cancelRate * 100).toFixed(1)}%`),
   );
   host.append(facts, el('p', 'punct-n muted small', s.departureCount(aggregate.n)));
 
@@ -978,9 +1050,7 @@ export function setLinePunctuality(
  * there is nothing to report but the fact that we started watching, and a row
  * reading "Rescheduled 0 times" would dress that up as a finding.
  */
-export function renderClosurePanel(
-  closure: ClosureRecord, handlers: { onClose: () => void },
-) {
+export function renderClosurePanel(closure: ClosureRecord, handlers: { onClose: () => void }) {
   const host = document.getElementById('detail')!;
   host.innerHTML = '';
   host.classList.add('open');
@@ -1059,7 +1129,9 @@ function formatMonth(ym: string): string {
   const [y, m] = ym.split('-').map(Number);
   if (!y || !m) return ym;
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en', {
-    month: 'short', year: 'numeric', timeZone: 'UTC',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
   });
 }
 

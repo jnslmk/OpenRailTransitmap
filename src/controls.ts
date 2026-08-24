@@ -9,7 +9,9 @@ import { t } from './strings.ts';
  * map and mean different things — this one hides the chrome, MapLibre's
  * fullscreen button takes over the screen.
  */
-const icon = (filled: boolean) => `<svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+const icon = (
+  filled: boolean,
+) => `<svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
   <rect x="2.75" y="4.75" width="14.5" height="10.5" rx="1.75"
         fill="none" stroke="currentColor" stroke-width="1.6"/>
   <path d="M8.25 4.75v10.5" stroke="currentColor" stroke-width="1.6"/>
@@ -98,8 +100,7 @@ export function labelControls(): void {
  * question about a real screen on a real device, and that is the build the
  * question gets asked of.
  */
-export const DEBUG = import.meta.env.DEV
-  || new URLSearchParams(location.search).has('debug');
+export const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 
 /**
  * The current zoom, printed on the map.

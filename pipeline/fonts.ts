@@ -33,12 +33,18 @@ const FONTS: { stack: string; url: string }[] = [
  * European spellings; the General Punctuation block carries the en dash used in
  * line names such as "Norddeich – Hannover".
  */
-const RANGES: [number, number][] = [[0, 255], [256, 511], [8192, 8447]];
+const RANGES: [number, number][] = [
+  [0, 255],
+  [256, 511],
+  [8192, 8447],
+];
 
 const range = (font: Buffer, start: number, end: number): Promise<Buffer> =>
   new Promise((resolve, reject) =>
     fontnik.range({ font, start, end }, (err: Error | null, buf: Buffer) =>
-      err ? reject(err) : resolve(buf)));
+      err ? reject(err) : resolve(buf),
+    ),
+  );
 
 async function main() {
   for (const { stack, url } of FONTS) {
@@ -60,4 +66,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

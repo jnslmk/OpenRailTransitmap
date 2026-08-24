@@ -99,7 +99,10 @@ export const MODE_SPECS: Record<Mode, ModeSpec> = {
   // would claim infrastructure that is not there - the same honesty the
   // closure overlay applies when it refuses to chord between operating points.
   coach: {
-    weightPt: 2.243, minzoom: 5, defaultColour: COACH_GREEN, order: 5,
+    weightPt: 2.243,
+    minzoom: 5,
+    defaultColour: COACH_GREEN,
+    order: 5,
     dash: [2.4, 1.6],
   },
 };
@@ -151,12 +154,31 @@ export function normaliseColour(raw: string | undefined): string | null {
   if (!raw) return null;
   const v = raw.trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(v)) return v;
-  if (/^#[0-9a-f]{3}$/.test(v)) return '#' + v.slice(1).split('').map((c) => c + c).join('');
+  if (/^#[0-9a-f]{3}$/.test(v))
+    return (
+      '#' +
+      v
+        .slice(1)
+        .split('')
+        .map((c) => c + c)
+        .join('')
+    );
   const named: Record<string, string> = {
-    red: '#e30513', blue: '#0069b4', green: '#4b8f46', yellow: '#fed060',
-    purple: '#951b81', violet: '#951b81', orange: '#e8720c', brown: '#8b5a2b',
-    black: '#1a1a1a', grey: '#808080', gray: '#808080', white: '#ffffff',
-    magenta: '#e6007e', cyan: '#00a5b5', pink: '#e6007e',
+    red: '#e30513',
+    blue: '#0069b4',
+    green: '#4b8f46',
+    yellow: '#fed060',
+    purple: '#951b81',
+    violet: '#951b81',
+    orange: '#e8720c',
+    brown: '#8b5a2b',
+    black: '#1a1a1a',
+    grey: '#808080',
+    gray: '#808080',
+    white: '#ffffff',
+    magenta: '#e6007e',
+    cyan: '#00a5b5',
+    pink: '#e6007e',
   };
   return named[v] ?? null;
 }
@@ -170,6 +192,94 @@ export function normaliseColour(raw: string | undefined): string | null {
  * here rather than in either of them.
  */
 export const BUNDLE_PITCH_PX = MODE_SPECS.regional.weightPt * PT_TO_PX * 1.02;
+
+/**
+ * How line weights grow with zoom, and how far a bundle fans out at each -
+ * two curves the style paints from and the tile build has to know about, so
+ * they live beside the pitch they are measured in rather than in either.
+ *
+ * The spread deliberately does *not* follow the width curve. Germany's busiest
+ * corridors carry 20+ lines; at national zoom a proportional spread turns those
+ * into wide coloured blobs that read as noise, so the offset collapses to zero
+ * below z6 and bundles stack on the true alignment, which is what the reference
+ * poster does at that scale. The bands fan out again as soon as there is room.
+ */
+export const LINE_WEIGHT_STOPS: readonly [number, number][] = [
+  [5, 0.45],
+  [8, 0.7],
+  [11, 1.0],
+  [14, 1.6],
+];
+
+export const BUNDLE_SPREAD_STOPS: readonly [number, number][] = [
+  [5, 0],
+  [6, 0.08],
+  [8, 0.4],
+  [11, 1.0],
+  [14, 1.6],
+];
+
+/** A zoom-keyed factor table, read the way MapLibre reads an `interpolate`. */
+export function factorAt(stops: readonly [number, number][], zoom: number): number {
+  if (zoom <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [z0, f0] = stops[i - 1],
+      [z1, f1] = stops[i];
+    if (zoom <= z1) return f0 + ((f1 - f0) * (zoom - z0)) / (z1 - z0);
+  }
+  return stops[stops.length - 1][1];
+}
+
+/** The bundle spread factor at a zoom, read off the same table the bands use. */
+export const spreadAt = (zoom: number): number => factorAt(BUNDLE_SPREAD_STOPS, zoom);
+
+/**
+ * How much wider the white casing under the selected line is than the line
+ * itself - the widest thing any route feature paints.
+ */
+export const HIGHLIGHT_FACTOR = 2.1;
+
+/**
+ * How far, in screen pixels, the painted edge of a route band can sit from the
+ * geometry it was built from: its `line-offset`, plus half the widest stroke
+ * drawn over it.
+ *
+ * This is what a vector tile has to be buffered by. MapLibre stencil-clips
+ * each tile's lines to the tile's own square, and only then moves them
+ * sideways, in the vertex shader. So a band whose slot carries it over the
+ * edge is cut at the edge, and the tile on the other side - which holds only
+ * its own geometry, not the stretch whose band lands there - has nothing to
+ * put in its place. A line crossing an edge at a shallow angle to the offset
+ * then loses everything from the crossing until its own geometry is this far
+ * clear of the edge, which on a nearly straight corridor is hundreds of metres
+ * of missing line ending in a round cap in open country.
+ *
+ * Giving every tile this much of its neighbours' geometry closes it: whichever
+ * tile the band lands in also holds the geometry it was offset from.
+ */
+export function bandReachPx(zoom: number, maxAbsOffset: number): number {
+  const widestPt = Math.max(...MODES.map((m) => MODE_SPECS[m].weightPt));
+  const halfStroke =
+    (widestPt * PT_TO_PX * factorAt(LINE_WEIGHT_STOPS, zoom) * HIGHLIGHT_FACTOR) / 2;
+  return Math.abs(maxAbsOffset) * BUNDLE_PITCH_PX * spreadAt(zoom) + halfStroke;
+}
+
+/**
+ * `bandReachPx` as a tippecanoe `--buffer`, for a build whose widest band sits
+ * `maxAbsOffset` pitches off its alignment.
+ *
+ * A buffer unit is a 256th of a tile, and a tile is 512 px across when drawn
+ * at its own zoom - so one unit buys 2 px there, and overzooming only makes it
+ * wider. Both curves above are flat from z14, so z14 is the widest reach any
+ * tile can be asked for however far `--extend-zooms-if-still-dropping` runs,
+ * and sizing for it covers every zoom in the archive.
+ */
+export const TILE_BUFFER_REFERENCE_ZOOM = 14;
+export const TILE_BUFFER_PX_PER_UNIT = 512 / 256;
+
+export function tileBufferUnits(maxAbsOffset: number): number {
+  return Math.ceil(bandReachPx(TILE_BUFFER_REFERENCE_ZOOM, maxAbsOffset) / TILE_BUFFER_PX_PER_UNIT);
+}
 
 /**
  * Which stops are drawn at which zoom.
@@ -188,8 +298,8 @@ export const BUNDLE_PITCH_PX = MODE_SPECS.regional.weightPt * PT_TO_PX * 1.02;
  *
  * `mark` is the zoom the symbol appears at, `label` the zoom its name does -
  * always later, because a name costs perhaps ten times the space a mark does.
- * The pipeline writes the same table into the tiles as a per-feature minzoom,
- * so a rank-3 stop is not merely hidden at z8, it is not in the tile at all.
+ * The pipeline writes the same table into the tiles, a tiling pass per tier, so
+ * a rank-3 stop is not merely hidden at z8, it is not in the tile at all.
  */
 export interface StopTier {
   rank: number;
@@ -204,9 +314,23 @@ export const STOP_TIERS: readonly StopTier[] = [
   { rank: 3, mark: 12, label: 13.5 },
 ];
 
-/** The tier table keyed by rank, for the pipeline's per-feature minzoom. */
-export const STOP_TIER_BY_RANK: Record<number, StopTier> =
-  Object.fromEntries(STOP_TIERS.map((t) => [t.rank, t]));
+/** The tier table keyed by rank. */
+export const STOP_TIER_BY_RANK: Record<number, StopTier> = Object.fromEntries(
+  STOP_TIERS.map((t) => [t.rank, t]),
+);
+
+/**
+ * The zoom a tier's marks are tiled from, and the file they are written to.
+ *
+ * This pair is the whole contract between build.ts and tiles.sh: the marks are
+ * tiled one pass per tier, and each pass reads the zoom it is gated at back out
+ * of the file's own name. So the zoom has to be a whole number - it is going to
+ * be a `--minimum-zoom` - and the name has to keep matching the glob tiles.sh
+ * collects the passes with.
+ */
+export const markTileZoom = (rank: number): number => Math.floor(STOP_TIER_BY_RANK[rank].mark);
+
+export const markTileFile = (zoom: number): string => `stopmarks-z${zoom}.geojsonl`;
 
 /**
  * Which tier a stop belongs to. Deliberately built from what the map already

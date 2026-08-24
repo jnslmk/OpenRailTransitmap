@@ -6,9 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  createExpression, validateStyleMin,
-} from '@maplibre/maplibre-gl-style-spec';
+import { createExpression, validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { STOP_TIERS, stopRank } from '../shared/lnvg.ts';
 import { buildStyle, servedByModes, STATION_FILTERS, STOP_MARK_LAYERS } from './style.ts';
 import { PILL_PITCH, PILL_THICKNESS, pillLength } from './stopmarks.ts';
@@ -23,7 +21,7 @@ const layer = (id: string) => {
 type Compiled = { evaluate: (globals: unknown, feature: unknown) => unknown };
 
 const evaluate = (value: unknown) => {
-  const compiled = createExpression(value as never);
+  const compiled = createExpression(value);
   assert.equal(compiled.result, 'success', `expression did not compile: ${JSON.stringify(value)}`);
   const expr = (compiled as unknown as { value: Compiled }).value;
   return (zoom: number, properties: Record<string, unknown>) =>
@@ -31,24 +29,33 @@ const evaluate = (value: unknown) => {
 };
 
 test('the style validates', () => {
-  assert.deepEqual(validateStyleMin(style as never).map((e) => e.message), []);
+  assert.deepEqual(
+    validateStyleMin(style as never).map((e) => e.message),
+    [],
+  );
 });
 
 test('and still validates once the mode filter is folded into it', () => {
   // What applyFilters does at runtime, which is where a bad base filter would
   // otherwise first show up - on a click, in a user's browser.
-  const filtered = structuredClone(style) as typeof style;
+  const filtered = structuredClone(style);
   const served = servedByModes(['regional', 'tram']);
   for (const l of filtered.layers) {
     const base = STATION_FILTERS[l.id];
     if (base) (l as { filter?: unknown }).filter = ['all', base, served];
   }
-  assert.deepEqual(validateStyleMin(filtered as never).map((e) => e.message), []);
+  assert.deepEqual(
+    validateStyleMin(filtered as never).map((e) => e.message),
+    [],
+  );
 });
 
 test('every layer the app reaches for by name is in the style', () => {
   for (const id of [...STOP_MARK_LAYERS, ...Object.keys(STATION_FILTERS)]) {
-    assert.ok(style.layers.some((l) => l.id === id), `${id} is missing`);
+    assert.ok(
+      style.layers.some((l) => l.id === id),
+      `${id} is missing`,
+    );
   }
 });
 
@@ -77,7 +84,7 @@ test('a bar is as long as the bands it covers', () => {
   assert.equal(pillLength(1), PILL_THICKNESS, 'one line is a round dot');
   for (const span of [2, 5, 12, 24]) {
     assert.ok(
-      Math.abs((pillLength(span) - pillLength(span - 1)) - PILL_PITCH) < 1e-9,
+      Math.abs(pillLength(span) - pillLength(span - 1) - PILL_PITCH) < 1e-9,
       `span ${span} did not grow by one band`,
     );
   }
@@ -119,7 +126,13 @@ test('and between those zooms it still lies across the lines it names', () => {
   // Outermost band ordinals a rank 0 stop might cover, worst cases first: a
   // stop at one edge of a 24-band trunk is where the drift is largest.
   for (const zoom of [6.5, 7.4, 7.99, 8.4, 9.6]) {
-    for (const [lo, hi] of [[-23, 0], [-11.5, 11.5], [0, 3], [4.5, 11.5], [-2, -2]]) {
+    for (const [lo, hi] of [
+      [-23, 0],
+      [-11.5, 11.5],
+      [0, 3],
+      [4.5, 11.5],
+      [-2, -2],
+    ]) {
       const mid = (lo + hi) / 2;
       const span = hi - lo + 1;
       const scale = size(zoom, { mid }) as number;
@@ -144,8 +157,10 @@ test('nothing changes size as a rank 0 dot becomes a rank 0 bar', () => {
   const size = evaluate(layer('stop-marks-r0').layout!['icon-size']);
   const dotWidth = 2 * (radius(7, {}) as number);
   const barThickness = (size(7, {}) as number) * PILL_THICKNESS;
-  assert.ok(Math.abs(dotWidth - barThickness) < 1e-6,
-    `dot is ${dotWidth} across, bar is ${barThickness} thick`);
+  assert.ok(
+    Math.abs(dotWidth - barThickness) < 1e-6,
+    `dot is ${dotWidth} across, bar is ${barThickness} thick`,
+  );
 });
 
 test('rank 0 changes over at z7 and the other tiers still change over at z11', () => {
@@ -170,8 +185,10 @@ test('rank 0 changes over at z7 and the other tiers still change over at z11', (
   assert.equal(rest.dotAt(11), 0);
 
   for (const rank of [2, 3]) {
-    assert.ok(!style.layers.some((l) => l.id === `stop-dots-r${rank}`),
-      `rank ${rank} is drawn as a dot, which it has never been`);
+    assert.ok(
+      !style.layers.some((l) => l.id === `stop-dots-r${rank}`),
+      `rank ${rank} is drawn as a dot, which it has never been`,
+    );
     const bars = evaluate(layer(`stop-marks-r${rank}`).paint!['icon-opacity']);
     assert.equal(bars(11, {}), 1, `rank ${rank} bars are not solid where the tier starts`);
   }
@@ -195,11 +212,12 @@ test('an important stop is placed before, and painted over, a lesser one', () =>
   // MapLibre places symbols from the top layer down, so the later a layer is
   // pushed the earlier it is placed and the higher it paints - which for once
   // wants the same order out of both.
-  const at = (rank: number) =>
-    style.layers.findIndex((l) => l.id === `stop-labels-r${rank}`);
+  const at = (rank: number) => style.layers.findIndex((l) => l.id === `stop-labels-r${rank}`);
   for (const tier of STOP_TIERS.slice(1)) {
-    assert.ok(at(tier.rank - 1) > at(tier.rank),
-      `rank ${tier.rank - 1} loses collisions to rank ${tier.rank}`);
+    assert.ok(
+      at(tier.rank - 1) > at(tier.rank),
+      `rank ${tier.rank - 1} loses collisions to rank ${tier.rank}`,
+    );
   }
 });
 
@@ -213,8 +231,10 @@ test('a name clears the bar it belongs to, however long that bar is', () => {
     for (const span of [1, 4, 12, 30]) {
       const clearance = (offset(zoom, { span }) as number) * 12;
       const halfBar = (pillLength(span) / 2) * (size(zoom, {}) as number);
-      assert.ok(clearance > halfBar,
-        `z${zoom} span ${span}: name at ${clearance}px, bar reaches ${halfBar}px`);
+      assert.ok(
+        clearance > halfBar,
+        `z${zoom} span ${span}: name at ${clearance}px, bar reaches ${halfBar}px`,
+      );
     }
   }
 });

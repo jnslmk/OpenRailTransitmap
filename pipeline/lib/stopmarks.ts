@@ -99,8 +99,7 @@ export interface MarkOptions {
 
 /** Grid cell for the station index. ~1.1 km, comfortably wider than `maxM`. */
 const CELL = 0.01;
-const cellKey = (lon: number, lat: number) =>
-  `${Math.floor(lon / CELL)}:${Math.floor(lat / CELL)}`;
+const cellKey = (lon: number, lat: number) => `${Math.floor(lon / CELL)}:${Math.floor(lat / CELL)}`;
 
 /**
  * Distance from `p` to segment `a->b`, in metres, with the projected foot.
@@ -110,13 +109,18 @@ const cellKey = (lon: number, lat: number) =>
  */
 function projectToSegment(a: Coord, b: Coord, p: Coord): { d: number; foot: Coord } {
   const kx = M_PER_DEG * Math.cos((p[1] * Math.PI) / 180);
-  const ax = a[0] * kx, ay = a[1] * M_PER_DEG;
-  const bx = b[0] * kx, by = b[1] * M_PER_DEG;
-  const px = p[0] * kx, py = p[1] * M_PER_DEG;
-  const vx = bx - ax, vy = by - ay;
+  const ax = a[0] * kx,
+    ay = a[1] * M_PER_DEG;
+  const bx = b[0] * kx,
+    by = b[1] * M_PER_DEG;
+  const px = p[0] * kx,
+    py = p[1] * M_PER_DEG;
+  const vx = bx - ax,
+    vy = by - ay;
   const len2 = vx * vx + vy * vy;
   const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len2)) : 0;
-  const fx = ax + vx * t, fy = ay + vy * t;
+  const fx = ax + vx * t,
+    fy = ay + vy * t;
   return { d: Math.hypot(px - fx, py - fy), foot: [fx / kx, fy / M_PER_DEG] };
 }
 
@@ -181,7 +185,8 @@ interface Draft {
 function crossTrackM(a: Coord, b: Coord, bearing: number): number {
   const theta = ((90 - bearing) * Math.PI) / 180;
   const kx = M_PER_DEG * Math.cos((a[1] * Math.PI) / 180);
-  const east = (b[0] - a[0]) * kx, north = (b[1] - a[1]) * M_PER_DEG;
+  const east = (b[0] - a[0]) * kx,
+    north = (b[1] - a[1]) * M_PER_DEG;
   // The corridor runs along (cos, sin); its normal is (-sin, cos).
   return Math.abs(-east * Math.sin(theta) + north * Math.cos(theta));
 }
@@ -211,17 +216,20 @@ export function buildStopMarks(
   const byLine = new Map<string, MarkStation[]>();
   for (const st of stations) {
     if (st.served.size === 0) continue;
-    const ci = Math.floor(st.coord[0] / CELL), cj = Math.floor(st.coord[1] / CELL);
+    const ci = Math.floor(st.coord[0] / CELL),
+      cj = Math.floor(st.coord[1] / CELL);
     for (let i = ci - 1; i <= ci + 1; i++) {
       for (let j = cj - 1; j <= cj + 1; j++) {
         const k = `${i}:${j}`;
         const cell = near.get(k);
-        if (cell) cell.push(st); else near.set(k, [st]);
+        if (cell) cell.push(st);
+        else near.set(k, [st]);
       }
     }
     for (const id of st.served) {
       const list = byLine.get(id);
-      if (list) list.push(st); else byLine.set(id, [st]);
+      if (list) list.push(st);
+      else byLine.set(id, [st]);
     }
   }
 
@@ -252,9 +260,7 @@ export function buildStopMarks(
         for (const st of cell) {
           if (!candidates.has(st)) continue;
           const kx = M_PER_DEG * Math.cos((st.coord[1] * Math.PI) / 180);
-          const d = Math.hypot(
-            (v[0] - st.coord[0]) * kx, (v[1] - st.coord[1]) * M_PER_DEG,
-          );
+          const d = Math.hypot((v[0] - st.coord[0]) * kx, (v[1] - st.coord[1]) * M_PER_DEG);
           if (d > maxM) continue;
           const prev = best.get(st);
           if (!prev || d < prev.d) best.set(st, { d, ci, vi });
@@ -274,7 +280,12 @@ export function buildStopMarks(
       ] as [Coord | undefined, Coord | undefined][]) {
         if (!p || !q) continue;
         const { d, foot } = projectToSegment(p, q, st.coord);
-        if (d < bestD) { bestD = d; anchor = foot; a = p; b = q; }
+        if (d < bestD) {
+          bestD = d;
+          anchor = foot;
+          a = p;
+          b = q;
+        }
       }
       if (bestD > maxM) continue;
 
@@ -301,11 +312,17 @@ export function buildStopMarks(
   const out = new Map<string, StopMark[]>();
   for (const [id, list] of drafts) {
     const groups: Draft[] = [];
-    for (const d of [...list].sort((x, y) => (y.hi - y.lo) - (x.hi - x.lo))) {
-      const host = groups.find((g) => g.bundle !== d.bundle
-        && headingDelta(g.bearing, d.bearing) <= mergeDeg
-        && crossTrackM(g.coord, d.coord, g.bearing) <= mergeCrossM);
-      if (!host) { groups.push({ ...d, lines: [...d.lines] }); continue; }
+    for (const d of [...list].sort((x, y) => y.hi - y.lo - (x.hi - x.lo))) {
+      const host = groups.find(
+        (g) =>
+          g.bundle !== d.bundle &&
+          headingDelta(g.bearing, d.bearing) <= mergeDeg &&
+          crossTrackM(g.coord, d.coord, g.bearing) <= mergeCrossM,
+      );
+      if (!host) {
+        groups.push({ ...d, lines: [...d.lines] });
+        continue;
+      }
       // A bundle stitched the other way round numbers its bands from the other
       // side, so its ordinals have to be flipped before they can be unioned.
       const [lo, hi] = isOpposed(host.bearing, d.bearing) ? [-d.hi, -d.lo] : [d.lo, d.hi];
@@ -313,14 +330,17 @@ export function buildStopMarks(
       host.hi = Math.max(host.hi, hi);
       for (const line of d.lines) if (!host.lines.includes(line)) host.lines.push(line);
     }
-    out.set(id, groups.map((g) => ({
-      station: g.station,
-      coord: g.coord,
-      bearing: g.bearing,
-      mid: (g.lo + g.hi) / 2,
-      span: Math.round(g.hi - g.lo) + 1,
-      lines: g.lines,
-    })));
+    out.set(
+      id,
+      groups.map((g) => ({
+        station: g.station,
+        coord: g.coord,
+        bearing: g.bearing,
+        mid: (g.lo + g.hi) / 2,
+        span: Math.round(g.hi - g.lo) + 1,
+        lines: g.lines,
+      })),
+    );
   }
   return out;
 }

@@ -60,8 +60,9 @@ export function loadPunctuality(base: string): Promise<PunctualityFile | null> {
 
 /** A line's stations, worst first - the order the breakdown is read in. */
 export function worstFirst(score: LineScore): [string, StationScore][] {
-  return Object.entries(score.stations)
-    .sort(([an, a], [bn, b]) => a.onTime - b.onTime || b.n - a.n || an.localeCompare(bn, 'de'));
+  return Object.entries(score.stations).sort(
+    ([an, a], [bn, b]) => a.onTime - b.onTime || b.n - a.n || an.localeCompare(bn, 'de'),
+  );
 }
 
 export interface Band {
@@ -86,9 +87,8 @@ export interface Band {
 export function bands(score: LineScore, edges: number[], threshold: number): Band[] {
   const scheduled = score.aggregate.n;
   if (!scheduled) return [];
-  const sum = (from: number, to: number) => score.hist
-    .filter((_, i) => edges[i] >= from && edges[i] < to)
-    .reduce((a, b) => a + b, 0);
+  const sum = (from: number, to: number) =>
+    score.hist.filter((_, i) => edges[i] >= from && edges[i] < to).reduce((a, b) => a + b, 0);
   const cancelled = Math.round(score.aggregate.cancelRate * scheduled);
   const all: Band[] = [
     { key: 'punctual', share: sum(0, 1) / scheduled },

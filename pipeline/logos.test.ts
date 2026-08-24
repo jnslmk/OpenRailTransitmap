@@ -7,7 +7,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  KEPT_TYPES, MAX_BYTES, licenceAllowed, logoCandidates, searchVariants, slugFor,
+  KEPT_TYPES,
+  MAX_BYTES,
+  licenceAllowed,
+  logoCandidates,
+  searchVariants,
+  slugFor,
   type WikidataEntity,
 } from './logos.ts';
 
@@ -37,8 +42,8 @@ test('an operator tag is searched under the names it might be found by', () => {
   assert.deepEqual(searchVariants('Rheinbahn AG'), ['Rheinbahn AG', 'Rheinbahn']);
   // The one operator in the registry registered with its postal address.
   assert.deepEqual(
-    searchVariants('Ilztalbahn GmbH, Färbergasse 1, 94065 Waldkirchen')
-      .includes('Ilztalbahn GmbH'), true,
+    searchVariants('Ilztalbahn GmbH, Färbergasse 1, 94065 Waldkirchen').includes('Ilztalbahn GmbH'),
+    true,
   );
   // A joint service is matched on the operator its tag leads with.
   assert.equal(searchVariants('CFL;DB Fernverkehr AG')[0], 'CFL');
@@ -78,10 +83,10 @@ test('the extension follows the file, not the name it came with', () => {
 // ---------------------------------------------------------------------------
 
 const claim = (value: string, extra: Record<string, unknown> = {}) => ({
-  mainsnak: { datavalue: { value } }, ...extra,
+  mainsnak: { datavalue: { value } },
+  ...extra,
 });
-const item = (claims: Record<string, unknown[]>): WikidataEntity =>
-  ({ claims } as WikidataEntity);
+const item = (claims: Record<string, unknown[]>): WikidataEntity => ({ claims }) as WikidataEntity;
 
 test('a retired mark is not the current one', () => {
   // CFL's item leads with the logo it wore in 1946.
@@ -128,11 +133,12 @@ test('an item with no logo claim at all yields nothing', () => {
 test('the committed manifest only names files the panel can use', async () => {
   const { readFileSync, existsSync } = await import('node:fs');
   if (!existsSync('data/operator-logos.json')) return; // A checkout without one.
-  const manifest = JSON.parse(readFileSync('data/operator-logos.json', 'utf8'));
+  const manifest = JSON.parse(readFileSync('data/operator-logos.json', 'utf8')) as Record<
+    string,
+    { qid: string; label: string; commons: string; file: string; licence: string }
+  >;
   const seen = new Map<string, string>();
-  for (const [operator, entry] of Object.entries(manifest) as [string, {
-    qid: string; label: string; commons: string; file: string; licence: string;
-  }][]) {
+  for (const [operator, entry] of Object.entries(manifest)) {
     assert.ok(licenceAllowed(entry.licence), `${operator}: ${entry.licence}`);
     assert.match(entry.qid, /^Q\d+$/, `${operator}: ${entry.qid}`);
     assert.match(entry.file, /^[a-z0-9.-]+$/, `${operator}: ${entry.file}`);
@@ -140,8 +146,10 @@ test('the committed manifest only names files the panel can use', async () => {
     // stage writes by site filename and would otherwise overwrite one with
     // the other.
     const already = seen.get(entry.file);
-    assert.ok(already === undefined || already === entry.commons,
-      `${entry.file} is claimed by both ${already} and ${entry.commons}`);
+    assert.ok(
+      already === undefined || already === entry.commons,
+      `${entry.file} is claimed by both ${already} and ${entry.commons}`,
+    );
     seen.set(entry.file, entry.commons);
   }
 });

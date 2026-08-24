@@ -30,12 +30,15 @@ let loaded: Promise<Map<string, string>> | null = null;
  */
 export function loadLogos(base: string): Promise<Map<string, string>> {
   loaded ??= fetch(`${base}operator-logos.json`)
-    .then((r) => (r.ok ? r.json() as Promise<LogoManifest> : {}))
-    .catch(() => ({} as LogoManifest))
-    .then((manifest) => new Map(
-      Object.entries(manifest)
-        .filter(([, entry]) => entry?.file)
-        .map(([operator, entry]) => [operator, `${base}logos/${entry.file}`]),
-    ));
+    .then((r) => (r.ok ? (r.json() as Promise<LogoManifest>) : {}))
+    .catch((): LogoManifest => ({}))
+    .then(
+      (manifest) =>
+        new Map(
+          Object.entries(manifest)
+            .filter(([, entry]) => entry?.file)
+            .map(([operator, entry]) => [operator, `${base}logos/${entry.file}`]),
+        ),
+    );
   return loaded;
 }

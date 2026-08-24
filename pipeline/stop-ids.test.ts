@@ -10,9 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  namesMatch, namesEqual, bestMatch, boxCandidates, stopsBox,
-} from './stop-ids.ts';
+import { namesMatch, namesEqual, bestMatch, boxCandidates, stopsBox } from './stop-ids.ts';
 
 test('accepts the same name spelled differently', () => {
   assert.ok(namesMatch('Bremen Hbf', 'Bremen Hauptbahnhof'));
@@ -57,8 +55,13 @@ test('namesEqual is equality, not plausibility', () => {
 
 // --- bestMatch ---------------------------------------------------------------
 
-const stop = (id: string, name: string, lat: number, lon: number) =>
-  ({ type: 'STOP', id, name, lat, lon });
+const stop = (id: string, name: string, lat: number, lon: number) => ({
+  type: 'STOP',
+  id,
+  name,
+  lat,
+  lon,
+});
 
 /** Metres east of a point, as a longitude offset at ~51°N. */
 const east = (lon: number, m: number) => lon + m / (111320 * Math.cos((51 * Math.PI) / 180));
@@ -67,11 +70,14 @@ test('an exact name wins over the plausible neighbours around it', () => {
   // The "Sondern" shape: three bus stops whose names contain the station's
   // name outright, and the actual station 54 m away.
   const station = { id: 'n1', name: 'Sondern', lon: 8.0, lat: 51.0 };
-  const result = bestMatch([
-    stop('bus-1', 'Sondern Kirche', 51.0, east(8.0, 218)),
-    stop('bus-2', 'Sondern Seebahnhof', 51.0, east(8.0, 126)),
-    stop('rail', 'Sondern Bf', 51.0, east(8.0, 54)),
-  ], station);
+  const result = bestMatch(
+    [
+      stop('bus-1', 'Sondern Kirche', 51.0, east(8.0, 218)),
+      stop('bus-2', 'Sondern Seebahnhof', 51.0, east(8.0, 126)),
+      stop('rail', 'Sondern Bf', 51.0, east(8.0, 54)),
+    ],
+    station,
+  );
   assert.deepEqual(result, { id: 'rail' });
 });
 
@@ -79,19 +85,22 @@ test('two exact names really are ambiguous', () => {
   // Torgau has a station and a bus stop of the same name; guessing between
   // them would show a rider departures from the wrong one.
   const station = { id: 'n2', name: 'Torgau', lon: 13.0, lat: 51.0 };
-  const result = bestMatch([
-    stop('a', 'Torgau', 51.0, east(13.0, 40)),
-    stop('b', 'Torgau', 51.0, east(13.0, 120)),
-  ], station);
+  const result = bestMatch(
+    [stop('a', 'Torgau', 51.0, east(13.0, 40)), stop('b', 'Torgau', 51.0, east(13.0, 120))],
+    station,
+  );
   assert.deepEqual(result, { ambiguous: true });
 });
 
 test('one stop published by two feeds collapses despite a town prefix', () => {
   const station = { id: 'n3', name: 'Forchheim (b Karlsruhe)', lon: 8.3, lat: 51.0 };
-  const result = bestMatch([
-    stop('de-KVV_1', 'Forchheim (b Karlsruhe)', 51.0, east(8.3, 10)),
-    stop('de-amarillo_2', 'Rheinstetten, Forchheim (b Karlsruhe)', 51.0, east(8.3, 25)),
-  ], station);
+  const result = bestMatch(
+    [
+      stop('de-KVV_1', 'Forchheim (b Karlsruhe)', 51.0, east(8.3, 10)),
+      stop('de-amarillo_2', 'Rheinstetten, Forchheim (b Karlsruhe)', 51.0, east(8.3, 25)),
+    ],
+    station,
+  );
   // Same stop, two feeds: one id, not a decline.
   assert.deepEqual(result, { id: 'de-KVV_1' });
 });
@@ -111,8 +120,12 @@ test('nothing within range is a negative, not a guess', () => {
 // coordinates are the ones in .work/extract/stations.geojsonseq.
 
 /** One `/map/stops` element, as the endpoint spells it. */
-const mapStop = (stopId: string, name: string, lat: number, lon: number) =>
-  ({ stopId, name, lat, lon });
+const mapStop = (stopId: string, name: string, lat: number, lon: number) => ({
+  stopId,
+  name,
+  lat,
+  lon,
+});
 
 test('the sweep response is reshaped into what bestMatch reads', () => {
   // /map/stops calls the id `stopId` and has no `type` field at all, where the
@@ -120,7 +133,13 @@ test('the sweep response is reshaped into what bestMatch reads', () => {
   // discards anything not typed 'STOP', so an unreshaped sweep result would
   // match nothing whatsoever.
   const [c] = boxCandidates([
-    { stopId: 'de-DELFI_de:06439:11318', name: 'Idstein Bahnhof', lat: 50.21599197387695, lon: 8.257540702819824, modes: ['REGIONAL_RAIL'] },
+    {
+      stopId: 'de-DELFI_de:06439:11318',
+      name: 'Idstein Bahnhof',
+      lat: 50.21599197387695,
+      lon: 8.257540702819824,
+      modes: ['REGIONAL_RAIL'],
+    },
   ]);
   assert.equal(c.id, 'de-DELFI_de:06439:11318');
   assert.equal(c.type, 'STOP');
@@ -139,7 +158,9 @@ test('the box covers the whole match radius in every direction', () => {
   assert.ok(minLon < station.lon && station.lon < maxLon);
   // 500 m of latitude is ~0.00449°; 500 m of longitude at 50°N is ~0.00699°.
   assert.ok(Math.abs((station.lat - minLat) * 111320 - 500) < 1);
-  assert.ok(Math.abs((station.lon - minLon) * 111320 * Math.cos((50.2159384 * Math.PI) / 180) - 500) < 1);
+  assert.ok(
+    Math.abs((station.lon - minLon) * 111320 * Math.cos((50.2159384 * Math.PI) / 180) - 500) < 1,
+  );
 });
 
 test('the sweep never sees the unserved record that ties the geocoder up', () => {
@@ -155,9 +176,12 @@ test('the sweep never sees the unserved record that ties the geocoder up', () =>
   // /map/stops does not return such records at any box size, while /geocode
   // does. So the box below, the observed 500 m sweep, holds one stop.
   const station = { id: 'n6', name: 'Rammingen (Württ)', lon: 10.1909194, lat: 48.5124141 };
-  const result = bestMatch(boxCandidates([
-    mapStop('de-DELFI_de:08425:2261', 'Rammingen Bahnhof', 48.512489318847656, 10.19048023223877),
-  ]), station);
+  const result = bestMatch(
+    boxCandidates([
+      mapStop('de-DELFI_de:08425:2261', 'Rammingen Bahnhof', 48.512489318847656, 10.19048023223877),
+    ]),
+    station,
+  );
   assert.deepEqual(result, { id: 'de-DELFI_de:08425:2261' });
 });
 
@@ -169,12 +193,35 @@ test('the sweep picks the station out of the bus stops sharing its village name'
   // the three "Lette, ..." bus stops that merely start the same way are
   // rejected on the name, not the distance.
   const station = { id: 'n7', name: 'Lette (Kr Coesfeld)', lon: 7.1868406, lat: 51.8926972 };
-  const result = bestMatch(boxCandidates([
-    mapStop('de-DELFI_de:05558:17295:0:1', 'Lette, Ortsmitte', 51.8969841003418, 7.1919121742248535),
-    mapStop('de-DELFI_de:05558:17298:0:1', 'Lette, Grundschule', 51.894187927246094, 7.184967994689941),
-    mapStop('de-DELFI_de:05558:17318:0:1', 'Lette, Busbahnhof', 51.89448928833008, 7.189846038818359),
-    mapStop('de-DELFI_de:05558:19113', 'Lette (Kreis COE), Bahnhof', 51.892696380615234, 7.186934947967529),
-  ]), station);
+  const result = bestMatch(
+    boxCandidates([
+      mapStop(
+        'de-DELFI_de:05558:17295:0:1',
+        'Lette, Ortsmitte',
+        51.8969841003418,
+        7.1919121742248535,
+      ),
+      mapStop(
+        'de-DELFI_de:05558:17298:0:1',
+        'Lette, Grundschule',
+        51.894187927246094,
+        7.184967994689941,
+      ),
+      mapStop(
+        'de-DELFI_de:05558:17318:0:1',
+        'Lette, Busbahnhof',
+        51.89448928833008,
+        7.189846038818359,
+      ),
+      mapStop(
+        'de-DELFI_de:05558:19113',
+        'Lette (Kreis COE), Bahnhof',
+        51.892696380615234,
+        7.186934947967529,
+      ),
+    ]),
+    station,
+  );
   assert.deepEqual(result, { id: 'de-DELFI_de:05558:19113' });
 });
 
@@ -186,16 +233,59 @@ test('the exact-name tier still settles a busy box', () => {
   // over a whole neighbourhood's worth of candidates rather than a geocoder's
   // ten best.
   const station = { id: 'n8', name: 'Dresden-Neustadt', lon: 13.7405404, lat: 51.0658669 };
-  const result = bestMatch(boxCandidates([
-    mapStop('de-DELFI_de:14612:241:1:1', 'Dresden Lößnitzstraße', 51.06947326660156, 13.73808765411377),
-    mapStop('eu-flixbus_dcbb7943-9603-11e6-9066-549f350fcb0c', 'Dresden Neustadt station (Hansastraße)', 51.066375732421875, 13.739383697509766),
-    mapStop('de-DELFI_de:14612:16_G', 'Dresden Bahnhof Neustadt', 51.06589889526367, 13.740700721740723),
-    mapStop('de-DELFI_de:14612:17:1:3', 'Dresden Anton-/Leipziger Str.', 51.06260299682617, 13.736048698425293),
-    mapStop('de-DELFI_de:14612:13:1:1', 'Dresden Albertplatz', 51.06277847290039, 13.746065139770508),
-    mapStop('de-DELFI_de:14612:260:1:1', 'Dresden Dammweg', 51.06827163696289, 13.745355606079102),
-    mapStop('de-DELFI_de:14612:199:0:1', 'Dresden Eisenbahnstraße', 51.064849853515625, 13.737800598144531),
-    mapStop('eu-flixbus_eaab22b0-cdc3-43eb-8b7a-cd507f3c40ba', 'Dresden Neustadt station (Dr.-Friedrich-Wolf-Straße)', 51.06544876098633, 13.742239952087402),
-  ]), station);
+  const result = bestMatch(
+    boxCandidates([
+      mapStop(
+        'de-DELFI_de:14612:241:1:1',
+        'Dresden Lößnitzstraße',
+        51.06947326660156,
+        13.73808765411377,
+      ),
+      mapStop(
+        'eu-flixbus_dcbb7943-9603-11e6-9066-549f350fcb0c',
+        'Dresden Neustadt station (Hansastraße)',
+        51.066375732421875,
+        13.739383697509766,
+      ),
+      mapStop(
+        'de-DELFI_de:14612:16_G',
+        'Dresden Bahnhof Neustadt',
+        51.06589889526367,
+        13.740700721740723,
+      ),
+      mapStop(
+        'de-DELFI_de:14612:17:1:3',
+        'Dresden Anton-/Leipziger Str.',
+        51.06260299682617,
+        13.736048698425293,
+      ),
+      mapStop(
+        'de-DELFI_de:14612:13:1:1',
+        'Dresden Albertplatz',
+        51.06277847290039,
+        13.746065139770508,
+      ),
+      mapStop(
+        'de-DELFI_de:14612:260:1:1',
+        'Dresden Dammweg',
+        51.06827163696289,
+        13.745355606079102,
+      ),
+      mapStop(
+        'de-DELFI_de:14612:199:0:1',
+        'Dresden Eisenbahnstraße',
+        51.064849853515625,
+        13.737800598144531,
+      ),
+      mapStop(
+        'eu-flixbus_eaab22b0-cdc3-43eb-8b7a-cd507f3c40ba',
+        'Dresden Neustadt station (Dr.-Friedrich-Wolf-Straße)',
+        51.06544876098633,
+        13.742239952087402,
+      ),
+    ]),
+    station,
+  );
   assert.deepEqual(result, { id: 'de-DELFI_de:14612:16_G' });
 });
 
@@ -212,14 +302,37 @@ test('an ungrouped sweep would resolve a rail station to a bus bay', () => {
   // deletes exactly the rail half and leaves a bus bay to win.
   const station = { id: 'n9', name: 'Idstein (Taunus)', lon: 8.2575508, lat: 50.2159384 };
   const ungrouped = [
-    { ...mapStop('de-DELFI_de:06439:18719:1:1', 'Idstein Eichenweg', 50.211467999999996, 8.260076999999999) },
-    { ...mapStop('de-DELFI_de:06439:11318:7:7', 'Idstein Bahnhof', 50.21577500000001, 8.257615), parentId: 'de-DELFI_de:06439:11318' },
-    { ...mapStop('de-DELFI_de:06439:11318:6:8', 'Idstein Bahnhof', 50.215794, 8.257446000000002), parentId: 'de-DELFI_de:06439:11318' },
-    { ...mapStop('de-DELFI_de:06439:11318:6:6', 'Idstein Bahnhof', 50.215794, 8.257446000000002), parentId: 'de-DELFI_de:06439:11318' },
+    {
+      ...mapStop(
+        'de-DELFI_de:06439:18719:1:1',
+        'Idstein Eichenweg',
+        50.211467999999996,
+        8.260076999999999,
+      ),
+    },
+    {
+      ...mapStop('de-DELFI_de:06439:11318:7:7', 'Idstein Bahnhof', 50.21577500000001, 8.257615),
+      parentId: 'de-DELFI_de:06439:11318',
+    },
+    {
+      ...mapStop('de-DELFI_de:06439:11318:6:8', 'Idstein Bahnhof', 50.215794, 8.257446000000002),
+      parentId: 'de-DELFI_de:06439:11318',
+    },
+    {
+      ...mapStop('de-DELFI_de:06439:11318:6:6', 'Idstein Bahnhof', 50.215794, 8.257446000000002),
+      parentId: 'de-DELFI_de:06439:11318',
+    },
     { ...mapStop('de-DELFI_de:06439:11318:4:4', 'Idstein Bahnhof', 50.217052, 8.257637) },
     { ...mapStop('de-DELFI_de:06439:11318:3:3', 'Idstein Bahnhof', 50.217, 8.257652) },
     { ...mapStop('de-DELFI_de:06439:11318:2:2', 'Idstein Bahnhof', 50.216879999999996, 8.257667) },
-    { ...mapStop('de-DELFI_de:06439:11318:1:1', 'Idstein Bahnhof', 50.217079999999996, 8.257594000000001) },
+    {
+      ...mapStop(
+        'de-DELFI_de:06439:11318:1:1',
+        'Idstein Bahnhof',
+        50.217079999999996,
+        8.257594000000001,
+      ),
+    },
   ];
   const withoutParents = ungrouped.filter((s) => !('parentId' in s));
   assert.deepEqual(
@@ -229,16 +342,33 @@ test('an ungrouped sweep would resolve a rail station to a bus bay', () => {
 
   // Grouped, the same box returns the station-level id the cache is made of.
   const grouped = [
-    mapStop('de-DELFI_de:06439:18209:1:1', 'Idstein Im Güldenstück', 50.218074798583984, 8.260114669799805),
-    mapStop('de-DELFI_de:06439:18719:1:1', 'Idstein Eichenweg', 50.21146774291992, 8.260077476501465),
-    mapStop('de-DELFI_de:06439:18710:1:1', 'Idstein Wiesbadener Straße', 50.21775436401367, 8.26219367980957),
+    mapStop(
+      'de-DELFI_de:06439:18209:1:1',
+      'Idstein Im Güldenstück',
+      50.218074798583984,
+      8.260114669799805,
+    ),
+    mapStop(
+      'de-DELFI_de:06439:18719:1:1',
+      'Idstein Eichenweg',
+      50.21146774291992,
+      8.260077476501465,
+    ),
+    mapStop(
+      'de-DELFI_de:06439:18710:1:1',
+      'Idstein Wiesbadener Straße',
+      50.21775436401367,
+      8.26219367980957,
+    ),
     mapStop('de-DELFI_de:06439:11318', 'Idstein Bahnhof', 50.21599197387695, 8.257540702819824),
-    mapStop('de-DELFI_de:06439:18707:1:1', 'Idstein Am Bahndamm', 50.21392059326172, 8.258651733398438),
+    mapStop(
+      'de-DELFI_de:06439:18707:1:1',
+      'Idstein Am Bahndamm',
+      50.21392059326172,
+      8.258651733398438,
+    ),
   ];
-  assert.deepEqual(
-    bestMatch(boxCandidates(grouped), station),
-    { id: 'de-DELFI_de:06439:11318' },
-  );
+  assert.deepEqual(bestMatch(boxCandidates(grouped), station), { id: 'de-DELFI_de:06439:11318' });
 });
 
 test('the box corners bring in stops past 500 m, and the distance filter drops them', () => {
@@ -248,10 +378,26 @@ test('the box corners bring in stops past 500 m, and the distance filter drops t
   // is contained in each - so the distance check is the only thing that can
   // reject them, which is what makes this worth asserting.
   const station = { id: 'n10', name: 'Korntal', lon: 9.1214162, lat: 48.8265137 };
-  assert.equal(bestMatch(boxCandidates([
-    mapStop('de-DELFI_de:08118:2626:0:3', 'Korntal Bergstraße', 48.8298225402832, 9.126882553100586),
-    mapStop('de-DELFI_de:08118:2632:0:3', 'Korntal Hauffstraße', 48.82984161376953, 9.116641998291016),
-  ]), station), null);
+  assert.equal(
+    bestMatch(
+      boxCandidates([
+        mapStop(
+          'de-DELFI_de:08118:2626:0:3',
+          'Korntal Bergstraße',
+          48.8298225402832,
+          9.126882553100586,
+        ),
+        mapStop(
+          'de-DELFI_de:08118:2632:0:3',
+          'Korntal Hauffstraße',
+          48.82984161376953,
+          9.116641998291016,
+        ),
+      ]),
+      station,
+    ),
+    null,
+  );
 });
 
 test('a sweep can be legitimately ambiguous, and that verdict is now final', () => {
@@ -268,13 +414,53 @@ test('a sweep can be legitimately ambiguous, and that verdict is now final', () 
   // requested. The station stays re-probeable rather than being handed a
   // confident id by a search that never saw the rival.
   const station = { id: 'n11', name: 'Korntal', lon: 9.1214162, lat: 48.8265137 };
-  assert.deepEqual(bestMatch(boxCandidates([
-    mapStop('de-DELFI_de:08118:7603', 'Korntal', 48.8264045715332, 9.121097564697266),
-    mapStop('de-DELFI_de:08111:2630:0:3', 'Greutterstraße', 48.82299041748047, 9.120981216430664),
-    mapStop('de-DELFI_de:08118:2631:1:3', 'Korntal Bf (Warthstr.)', 48.827579498291016, 9.121170043945312),
-    mapStop('de-DELFI_de:08118:2626:0:3', 'Korntal Bergstraße', 48.8298225402832, 9.126882553100586),
-    mapStop('de-DELFI_de:08118:2632:0:3', 'Korntal Hauffstraße', 48.82984161376953, 9.116641998291016),
-    mapStop('de-DELFI_de:08118:2627:0:3', 'Korntal Stadthalle', 48.8297233581543, 9.120001792907715),
-    mapStop('de-DELFI_de:08118:2628:0:3', 'Korntal Tachenbergstraße', 48.826297760009766, 9.124367713928223),
-  ]), station), { ambiguous: true });
+  assert.deepEqual(
+    bestMatch(
+      boxCandidates([
+        mapStop('de-DELFI_de:08118:7603', 'Korntal', 48.8264045715332, 9.121097564697266),
+        mapStop(
+          'de-DELFI_de:08111:2630:0:3',
+          'Greutterstraße',
+          48.82299041748047,
+          9.120981216430664,
+        ),
+        mapStop(
+          'de-DELFI_de:08118:2631:1:3',
+          'Korntal Bf (Warthstr.)',
+          48.827579498291016,
+          // Real coordinate from the fixture feed; round-trips exactly
+          // (Number(x).toString() === '9.121170043945312'), a known false
+          // positive for this rule.
+          // eslint-disable-next-line no-loss-of-precision
+          9.121170043945312,
+        ),
+        mapStop(
+          'de-DELFI_de:08118:2626:0:3',
+          'Korntal Bergstraße',
+          48.8298225402832,
+          9.126882553100586,
+        ),
+        mapStop(
+          'de-DELFI_de:08118:2632:0:3',
+          'Korntal Hauffstraße',
+          48.82984161376953,
+          9.116641998291016,
+        ),
+        mapStop(
+          'de-DELFI_de:08118:2627:0:3',
+          'Korntal Stadthalle',
+          48.8297233581543,
+          9.120001792907715,
+        ),
+        mapStop(
+          'de-DELFI_de:08118:2628:0:3',
+          'Korntal Tachenbergstraße',
+          48.826297760009766,
+          9.124367713928223,
+        ),
+      ]),
+      station,
+    ),
+    { ambiguous: true },
+  );
 });

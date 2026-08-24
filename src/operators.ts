@@ -44,7 +44,8 @@ export function operatorShown(f: OperatorFilter, operator: string): boolean {
 export function withOperator(f: OperatorFilter, operator: string, on: boolean): OperatorFilter {
   const names = new Set(f.names);
   // In an allow-list, "on" means listed; in a deny-list it means not listed.
-  if (on === f.only) names.add(operator); else names.delete(operator);
+  if (on === f.only) names.add(operator);
+  else names.delete(operator);
   return { only: f.only, names };
 }
 
@@ -57,7 +58,12 @@ export function withOperator(f: OperatorFilter, operator: string, on: boolean): 
 const SEP = '~';
 
 const split = (raw: string): Set<string> =>
-  new Set(raw.split(SEP).map((s) => s.trim()).filter(Boolean));
+  new Set(
+    raw
+      .split(SEP)
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
 
 /**
  * Read the filter off a query string.
@@ -100,7 +106,10 @@ export const operatorKey = (f: OperatorFilter): string =>
  */
 export function operatorExpression(f: OperatorFilter): ExpressionSpecification | null {
   if (drawsEveryOperator(f)) return null;
-  const named: ExpressionSpecification =
-    ['in', ['to-string', ['get', 'operator']], ['literal', [...f.names]]];
+  const named: ExpressionSpecification = [
+    'in',
+    ['to-string', ['get', 'operator']],
+    ['literal', [...f.names]],
+  ];
   return f.only ? named : ['!', named];
 }

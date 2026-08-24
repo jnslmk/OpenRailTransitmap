@@ -53,8 +53,15 @@ export { LiveDataError };
  * the planner start from whatever the map is currently showing.
  */
 export type TransitMode =
-  | 'HIGHSPEED_RAIL' | 'LONG_DISTANCE' | 'REGIONAL_RAIL' | 'SUBURBAN'
-  | 'SUBWAY' | 'TRAM' | 'BUS' | 'COACH' | 'FERRY';
+  | 'HIGHSPEED_RAIL'
+  | 'LONG_DISTANCE'
+  | 'REGIONAL_RAIL'
+  | 'SUBURBAN'
+  | 'SUBWAY'
+  | 'TRAM'
+  | 'BUS'
+  | 'COACH'
+  | 'FERRY';
 
 /** The chips the Plan panel offers, in the order it offers them. */
 export const MODE_GROUPS: { key: string; label: string; modes: TransitMode[] }[] = [
@@ -74,9 +81,21 @@ export const ALL_TRANSIT_MODES: TransitMode[] = MODE_GROUPS.flatMap((g) => g.mod
  * requested. Same trap `live.ts` documents for `/stoptimes`.
  */
 const TRANSIT_RESPONSE_MODES = new Set([
-  'HIGHSPEED_RAIL', 'LONG_DISTANCE', 'NIGHT_RAIL', 'REGIONAL_FAST_RAIL', 'REGIONAL_RAIL',
-  'SUBURBAN', 'METRO', 'SUBWAY', 'TRAM', 'BUS', 'COACH', 'FERRY', 'AIRPLANE',
-  'RAIL', 'TRANSIT',
+  'HIGHSPEED_RAIL',
+  'LONG_DISTANCE',
+  'NIGHT_RAIL',
+  'REGIONAL_FAST_RAIL',
+  'REGIONAL_RAIL',
+  'SUBURBAN',
+  'METRO',
+  'SUBWAY',
+  'TRAM',
+  'BUS',
+  'COACH',
+  'FERRY',
+  'AIRPLANE',
+  'RAIL',
+  'TRANSIT',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -103,7 +122,11 @@ export function placeFromLonLat(lon: number, lat: number, name: string): Place {
   return { name, lat, lon, stopId: null, area: '', kind: 'PLACE' };
 }
 
-interface RawArea { name?: string; adminLevel?: number; default?: boolean }
+interface RawArea {
+  name?: string;
+  adminLevel?: number;
+  default?: boolean;
+}
 
 interface RawGeocode {
   type?: string;
@@ -143,11 +166,16 @@ function toPlace(raw: RawGeocode): Place | null {
 export async function geocode(text: string, signal: AbortSignal, limit = 8): Promise<Place[]> {
   if (!text.trim()) return [];
   const raw = await request<RawGeocode[]>('/geocode', { text, language: 'de' }, signal);
-  return (Array.isArray(raw) ? raw : []).map(toPlace).filter((p): p is Place => !!p).slice(0, limit);
+  return (Array.isArray(raw) ? raw : [])
+    .map(toPlace)
+    .filter((p): p is Place => !!p)
+    .slice(0, limit);
 }
 
 export async function reverseGeocode(
-  lon: number, lat: number, signal: AbortSignal,
+  lon: number,
+  lat: number,
+  signal: AbortSignal,
 ): Promise<Place | null> {
   const raw = await request<RawGeocode[]>('/reverse-geocode', { place: `${lat},${lon}` }, signal);
   const list = (Array.isArray(raw) ? raw : []).map(toPlace).filter((p): p is Place => !!p);
@@ -279,7 +307,7 @@ export function decodePolyline(encoded: string, precision = 7): [number, number]
   let i = 0;
 
   while (i < encoded.length) {
-    let value = 0;
+    let value: number;
     for (let k = 0; k < 2; k++) {
       let shift = 0;
       let result = 0;
@@ -290,14 +318,18 @@ export function decodePolyline(encoded: string, precision = 7): [number, number]
         shift += 5;
       } while (byte >= 0x20 && i < encoded.length);
       value = result & 1 ? ~(result >> 1) : result >> 1;
-      if (k === 0) lat += value; else lon += value;
+      if (k === 0) lat += value;
+      else lon += value;
     }
     out.push([lon / factor, lat / factor]);
   }
   return out;
 }
 
-interface RawGeometry { points?: string; precision?: number }
+interface RawGeometry {
+  points?: string;
+  precision?: number;
+}
 
 interface RawLegPlace {
   name?: string;
@@ -407,9 +439,7 @@ function toItinerary(raw: RawItinerary, index: number): Itinerary | null {
   if (!start || !end) return null;
 
   const legs = (raw.legs ?? []).map(toLeg);
-  const bikeSeconds = legs
-    .filter((l) => BIKE_MODES.has(l.mode))
-    .reduce((n, l) => n + l.seconds, 0);
+  const bikeSeconds = legs.filter((l) => BIKE_MODES.has(l.mode)).reduce((n, l) => n + l.seconds, 0);
 
   return {
     // Stable within one result set, which is all the UI needs it for: it keys
@@ -466,11 +496,15 @@ const PLAN_CACHE_MAX = 24;
 
 function cacheKey(q: PlanQuery): string {
   return JSON.stringify([
-    placeParam(q.from), placeParam(q.to),
+    placeParam(q.from),
+    placeParam(q.to),
     // To the quarter hour: "leave now" moves every second, and re-planning
     // because a clock ticked is exactly the load Transitous asked us not to add.
     Math.floor(q.time.getTime() / 900_000),
-    q.arriveBy, [...q.modes].sort(), q.bike.maxRideSeconds, q.bike.carriage,
+    q.arriveBy,
+    [...q.modes].sort(),
+    q.bike.maxRideSeconds,
+    q.bike.carriage,
     q.pageCursor ?? '',
   ]);
 }
@@ -482,9 +516,7 @@ export async function plan(q: PlanQuery, signal: AbortSignal): Promise<PlanResul
 
   const data = await request<RawPlanResponse>('/plan', planParams(q), signal);
 
-  const itineraries = (data.itineraries ?? [])
-    .map(toItinerary)
-    .filter((i): i is Itinerary => !!i);
+  const itineraries = (data.itineraries ?? []).map(toItinerary).filter((i): i is Itinerary => !!i);
 
   // MOTIS returns the cycle-the-whole-way options in a separate array. They are
   // real answers to "how do I get there" and belong in the same list - but at
@@ -496,8 +528,9 @@ export async function plan(q: PlanQuery, signal: AbortSignal): Promise<PlanResul
     .filter((i): i is Itinerary => !!i);
 
   const result: PlanResult = {
-    itineraries: [...itineraries, ...direct].sort((a, b) =>
-      Number(a.direct) - Number(b.direct) || a.start.getTime() - b.start.getTime()),
+    itineraries: [...itineraries, ...direct].sort(
+      (a, b) => Number(a.direct) - Number(b.direct) || a.start.getTime() - b.start.getTime(),
+    ),
     earlierCursor: data.previousPageCursor ?? null,
     laterCursor: data.nextPageCursor ?? null,
   };

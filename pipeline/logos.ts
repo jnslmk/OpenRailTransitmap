@@ -82,13 +82,14 @@ const LABEL_LANGUAGES = 'de|en|nl|fr|pl|cs|da|it';
 export const MAX_BYTES = 250_000;
 
 /** What the panel can put in an `<img>`. Commons also holds TIFF and PDF. */
-export const KEPT_TYPES = [
-  'image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif',
-];
+export const KEPT_TYPES = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
 const EXTENSIONS: Record<string, string> = {
-  'image/svg+xml': 'svg', 'image/png': 'png', 'image/jpeg': 'jpg',
-  'image/webp': 'webp', 'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
 };
 
 /** Commons licence short names this map is prepared to ship. See the header. */
@@ -124,8 +125,11 @@ export function slugFor(commons: string, mime: string): string {
   const dot = commons.lastIndexOf('.');
   const stem = dot > 0 ? commons.slice(0, dot) : commons;
   const ascii = stem
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/ß/g, 'ss').replace(/Ø/gi, 'o').replace(/Ł/gi, 'l')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ß/g, 'ss')
+    .replace(/Ø/gi, 'o')
+    .replace(/Ł/gi, 'l')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
@@ -155,7 +159,10 @@ export function slugFor(commons: string, mime: string): string {
 export function searchVariants(raw: string): string[] {
   const first = raw.split(';')[0].trim();
   const noAddress = first.replace(/,.*$/, '').trim();
-  const noBrackets = noAddress.replace(/\s*[([][^)\]]*[)\]]\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  const noBrackets = noAddress
+    .replace(/\s*[([][^)\]]*[)\]]\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const noLegalForm = noBrackets
     .replace(/\b(GmbH|mbH|AG|KG|SE|e\.?\s?V\.?|Co\.?KG|Co\.?|&)\b/gi, ' ')
     .replace(/\s+/g, ' ')
@@ -188,8 +195,9 @@ export function logoCandidates(entity: WikidataEntity): string[] {
       return typeof c.mainsnak?.datavalue?.value === 'string';
     });
     // Wikidata's own ranking first, then the rest in the order the item lists.
-    for (const claim of [...usable].sort((a, b) =>
-      Number(b.rank === 'preferred') - Number(a.rank === 'preferred'))) {
+    for (const claim of [...usable].sort(
+      (a, b) => Number(b.rank === 'preferred') - Number(a.rank === 'preferred'),
+    )) {
       const value = claim.mainsnak?.datavalue?.value;
       if (typeof value === 'string' && !out.includes(value)) out.push(value);
     }
@@ -245,10 +253,12 @@ async function getJson(url: string): Promise<Record<string, unknown> | null> {
     await sleep(PACE);
     try {
       const res = await fetch(url, { headers: { 'User-Agent': UA, accept: 'application/json' } });
-      if (res.ok) return await res.json() as Record<string, unknown>;
+      if (res.ok) return (await res.json()) as Record<string, unknown>;
       const after = Number(res.headers.get('retry-after'));
       if (Number.isFinite(after) && after > 0) await sleep(Math.min(after, 30) * 1000);
-    } catch { /* fall through to the backoff */ }
+    } catch {
+      /* fall through to the backoff */
+    }
     await sleep(800 * (attempt + 1));
   }
   return null;
@@ -269,7 +279,9 @@ async function getBinary(url: string): Promise<Buffer | null> {
       if (res.ok) return Buffer.from(await res.arrayBuffer());
       const after = Number(res.headers.get('retry-after'));
       if (Number.isFinite(after) && after > 0) await sleep(Math.min(after, 30) * 1000);
-    } catch { /* fall through to the backoff */ }
+    } catch {
+      /* fall through to the backoff */
+    }
     await sleep(800 * (attempt + 1));
   }
   return null;
@@ -286,12 +298,14 @@ interface Overrides {
 
 function readOverrides(): Overrides {
   if (!existsSync(OVERRIDES_PATH)) return { operators: {} };
-  const parsed = parseYaml(readFileSync(OVERRIDES_PATH, 'utf8')) ?? {};
-  return { operators: parsed.operators ?? {} };
+  const parsed = parseYaml(readFileSync(OVERRIDES_PATH, 'utf8')) as Partial<Overrides> | null;
+  return { operators: parsed?.operators ?? {} };
 }
 
 function operatorsFromRegistry(): string[] {
-  const registry = JSON.parse(readFileSync(`${DATA}/lines.json`, 'utf8'));
+  const registry = JSON.parse(readFileSync(`${DATA}/lines.json`, 'utf8')) as {
+    lines: { operator?: string }[];
+  };
   const seen = new Set<string>();
   for (const line of registry.lines) if (line.operator) seen.add(line.operator);
   return [...seen].sort((a, b) => a.localeCompare(b, 'de'));
@@ -310,10 +324,11 @@ async function searchItems(name: string): Promise<string[]> {
   const found: string[] = [];
   for (const variant of searchVariants(name)) {
     for (const language of ['de', 'en']) {
-      const url = 'https://www.wikidata.org/w/api.php?action=wbsearchentities'
-        + `&search=${encodeURIComponent(variant)}&language=${language}&uselang=${language}`
-        + '&type=item&limit=3&format=json';
-      const body = await getJson(url) as { search?: { id: string }[] } | null;
+      const url =
+        'https://www.wikidata.org/w/api.php?action=wbsearchentities' +
+        `&search=${encodeURIComponent(variant)}&language=${language}&uselang=${language}` +
+        '&type=item&limit=3&format=json';
+      const body = (await getJson(url)) as { search?: { id: string }[] } | null;
       for (const hit of body?.search ?? []) found.push(hit.id);
     }
     if (found.length >= 6) break;
@@ -325,28 +340,49 @@ async function fetchEntities(ids: string[]): Promise<Map<string, WikidataEntity>
   const out = new Map<string, WikidataEntity>();
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50);
-    const url = 'https://www.wikidata.org/w/api.php?action=wbgetentities'
-      + `&ids=${batch.join('|')}&props=claims|labels|descriptions&languages=${LABEL_LANGUAGES}`
-      + '&format=json';
-    const body = await getJson(url) as { entities?: Record<string, WikidataEntity> } | null;
+    const url =
+      'https://www.wikidata.org/w/api.php?action=wbgetentities' +
+      `&ids=${batch.join('|')}&props=claims|labels|descriptions&languages=${LABEL_LANGUAGES}` +
+      '&format=json';
+    const body = (await getJson(url)) as { entities?: Record<string, WikidataEntity> } | null;
     for (const [id, entity] of Object.entries(body?.entities ?? {})) out.set(id, entity);
   }
   return out;
 }
 
-interface CommonsFile { mime: string; size: number; licence: string }
+interface CommonsFile {
+  mime: string;
+  size: number;
+  licence: string;
+}
 
 async function fetchCommonsMeta(files: string[]): Promise<Map<string, CommonsFile>> {
   const out = new Map<string, CommonsFile>();
   for (let i = 0; i < files.length; i += 25) {
-    const titles = files.slice(i, i + 25).map((f) => `File:${f}`).join('|');
-    const url = 'https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo'
-      + `&iiprop=extmetadata|size|mime&titles=${encodeURIComponent(titles)}&format=json`;
-    const body = await getJson(url) as {
-      query?: { pages?: Record<string, {
-        title: string; missing?: string;
-        imageinfo?: [{ mime: string; size: number; extmetadata?: { LicenseShortName?: { value: string } } }];
-      }> };
+    const titles = files
+      .slice(i, i + 25)
+      .map((f) => `File:${f}`)
+      .join('|');
+    const url =
+      'https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo' +
+      `&iiprop=extmetadata|size|mime&titles=${encodeURIComponent(titles)}&format=json`;
+    const body = (await getJson(url)) as {
+      query?: {
+        pages?: Record<
+          string,
+          {
+            title: string;
+            missing?: string;
+            imageinfo?: [
+              {
+                mime: string;
+                size: number;
+                extmetadata?: { LicenseShortName?: { value: string } };
+              },
+            ];
+          }
+        >;
+      };
     } | null;
     for (const page of Object.values(body?.query?.pages ?? {})) {
       const info = page.imageinfo?.[0];
@@ -371,7 +407,10 @@ async function resolve(): Promise<void> {
   const candidates = new Map<string, string[]>();
   for (const [i, name] of operators.entries()) {
     const forced = overrides.operators[name];
-    if (forced === 'none') { candidates.set(name, []); continue; }
+    if (forced === 'none') {
+      candidates.set(name, []);
+      continue;
+    }
     candidates.set(name, forced ? [forced] : await searchItems(name));
     if ((i + 1) % 50 === 0) console.log(`    searched ${i + 1}/${operators.length}`);
   }
@@ -389,9 +428,9 @@ async function resolve(): Promise<void> {
     offered.set(name, list);
   }
 
-  const meta = await fetchCommonsMeta(
-    [...new Set([...offered.values()].flat().map((o) => o.commons))],
-  );
+  const meta = await fetchCommonsMeta([
+    ...new Set([...offered.values()].flat().map((o) => o.commons)),
+  ]);
 
   /** Why this file cannot ship, or null if it can. See the licensing note. */
   const refuse = (commons: string): string | null => {
@@ -409,7 +448,10 @@ async function resolve(): Promise<void> {
     const reasons: string[] = [];
     for (const { qid, commons } of list) {
       const why = refuse(commons);
-      if (why) { reasons.push(`${commons} (${why})`); continue; }
+      if (why) {
+        reasons.push(`${commons} (${why})`);
+        continue;
+      }
       manifest[name] = {
         qid,
         label: labelOf(entities.get(qid)) ?? qid,
@@ -431,12 +473,16 @@ async function resolve(): Promise<void> {
   writeFileSync(MANIFEST_PATH, `${JSON.stringify(sorted, null, 1)}\n`);
 
   const files = new Set(Object.values(sorted).map((e) => e.file));
-  console.log(`==> ${Object.keys(sorted).length}/${operators.length} operators matched, `
-    + `${files.size} distinct files`);
+  console.log(
+    `==> ${Object.keys(sorted).length}/${operators.length} operators matched, ` +
+      `${files.size} distinct files`,
+  );
   for (const line of refused) console.log(`    refused ${line}`);
   const missing = operators.filter((o) => !sorted[o]);
-  console.log(`==> no logo for ${missing.length}: ${missing.slice(0, 12).join(', ')}`
-    + (missing.length > 12 ? ', …' : ''));
+  console.log(
+    `==> no logo for ${missing.length}: ${missing.slice(0, 12).join(', ')}` +
+      (missing.length > 12 ? ', …' : ''),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -448,8 +494,8 @@ async function download(): Promise<void> {
     console.log('==> no logo manifest; skipping (run `npm run resolve:logos` to make one)');
     return;
   }
-  const manifest: Manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-  const files = new Map<string, string>();       // site filename -> Commons filename
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as Manifest;
+  const files = new Map<string, string>(); // site filename -> Commons filename
   for (const entry of Object.values(manifest)) files.set(entry.file, entry.commons);
 
   mkdirSync(CACHE, { recursive: true });
@@ -460,7 +506,9 @@ async function download(): Promise<void> {
     if (!files.has(stale)) rmSync(`${OUT}/${stale}`);
   }
 
-  let fetched = 0, cached = 0, failed = 0;
+  let fetched = 0,
+    cached = 0,
+    failed = 0;
   for (const [file, commons] of files) {
     const cache = `${CACHE}/${file}`;
     if (!existsSync(cache)) {
@@ -468,7 +516,11 @@ async function download(): Promise<void> {
       // the API and lets Commons serve it from its own CDN.
       const url = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(commons)}`;
       const body = await getBinary(url);
-      if (!body) { console.log(`    failed ${commons}`); failed++; continue; }
+      if (!body) {
+        console.log(`    failed ${commons}`);
+        failed++;
+        continue;
+      }
       writeFileSync(cache, body);
       fetched++;
     } else cached++;
@@ -481,5 +533,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const main = process.argv.includes('--resolve') ? resolve : download;
   // Soft failure: the map is complete without logos, and neither Wikidata nor
   // Commons being down is a reason to fail a build of a rail map.
-  main().catch((err) => { console.error(`==> logos: ${err}`); process.exitCode = 0; });
+  main().catch((err) => {
+    console.error(`==> logos: ${err}`);
+    process.exitCode = 0;
+  });
 }
