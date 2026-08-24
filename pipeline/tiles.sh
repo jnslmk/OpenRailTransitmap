@@ -35,9 +35,9 @@ fi
 # draws below z16, only what the search box reads and what a stop off its own
 # corridor falls back to.
 
-# How much of a neighbouring tile's geometry every tile carries, in 256ths of
-# a tile. tippecanoe's default 5 is sized for geometry that is drawn where it
-# lies; a route band is not. MapLibre stencil-clips each tile's lines to the
+# How much of a neighbouring tile's geometry the pass below carries, in 256ths
+# of a tile. tippecanoe's default 5 is sized for geometry that is drawn where
+# it lies; a route band is not. MapLibre stencil-clips each tile's lines to the
 # tile's own square and only then moves them sideways, so a band whose slot
 # carries it over the edge is cut there, and the tile on the other side - which
 # holds its own geometry, not the stretch whose band lands there - has nothing
@@ -49,7 +49,10 @@ fi
 # build.ts writes the width this build's own widest band needs (see
 # `bandReachPx` and `tileBufferUnits` in shared/lnvg.ts). The fallback is for
 # a hand-run of this stage against an older .work: enough for a bundle of 24,
-# which is one wider than the busiest corridor in Germany.
+# which is one wider than the busiest corridor in Germany. The stop-mark passes
+# further down keep the default - a mark is a symbol, drawn from its anchor in
+# screen space rather than clipped to the tile square, so it has nothing to
+# lose at an edge.
 BUFFER="$(cat "$BUILD/tile-buffer" 2>/dev/null || echo 41)"
 echo "==> tile buffer: $BUFFER"
 
