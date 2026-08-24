@@ -20,7 +20,8 @@ import { parse as parseYaml } from 'yaml';
 import { writeFeatures } from './lib/write.ts';
 import { resolveStopIds } from './stop-ids.ts';
 import {
-  MODE_SPECS, STOP_TIER_BY_RANK, fallbackColour, normaliseColour, stopRank, type Mode,
+  MODE_SPECS, fallbackColour, markTileFile, markTileZoom, normaliseColour, stopRank,
+  type Mode,
 } from '../shared/lnvg.ts';
 import {
   chainWays, collapseParallelTracks, endpointKey, type Coord,
@@ -1194,9 +1195,6 @@ async function main() {
         coachOnly: f.properties.coachOnly,
         primary: m === widest ? 1 : 0,
       },
-      // The tier table, written into the tiles: a tram stop is not merely
-      // hidden at z8, it is not carried at z8 at all.
-      tippecanoe: { minzoom: Math.floor(STOP_TIER_BY_RANK[rank].mark) },
     }));
   });
 
@@ -1226,7 +1224,24 @@ async function main() {
   // --- write ----------------------------------------------------------------
   await writeFeatures(`${OUT}/routes.geojsonl`, features);
   await writeFeatures(`${OUT}/stations.geojsonl`, stationFeatures);
-  await writeFeatures(`${OUT}/stopmarks.geojsonl`, markFeatures);
+
+  // The marks go out one file per tier, keyed by the zoom that tier appears at,
+  // because that zoom is the only thing tippecanoe will let us say per *pass*
+  // and not per feature. A tram stop is then not merely hidden at z8, it is not
+  // carried at z8 at all - which is what the per-feature `tippecanoe.minzoom`
+  // stamp used to do, until it turned out to take the rest of the tile's marks
+  // with it. See pipeline/tiles.sh for what happens to these files.
+  const marksByZoom = new Map<number, typeof markFeatures>();
+  for (const f of markFeatures) {
+    const z = markTileZoom(f.properties.rank);
+    const bucket = marksByZoom.get(z);
+    if (bucket) bucket.push(f);
+    else marksByZoom.set(z, [f]);
+  }
+  for (const [z, marks] of [...marksByZoom].sort((a, b) => a[0] - b[0])) {
+    await writeFeatures(`${OUT}/${markTileFile(z)}`, marks);
+    console.log(`==> ${marks.length} station marks from z${z}`);
+  }
   await writeClosures(railWays);
 
   // The committed registry: small, diffable, and the thing a human reviews when

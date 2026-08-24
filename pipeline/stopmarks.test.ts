@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { buildStopMarks, type MarkBundle, type MarkStation } from './lib/stopmarks.ts';
 import type { Coord } from './lib/track.ts';
 import { slotOffset } from './lib/taper.ts';
+import { STOP_TIERS, markTileFile, markTileZoom } from '../shared/lnvg.ts';
 
 /**
  * A bundle with the slots `build.ts` would give it. Real bundles can have gaps
@@ -150,4 +151,19 @@ test('two alignments side by side stay two bars, however alike their heading', (
   const list = marks.get('n1')!;
   assert.equal(list.length, 2);
   assert.deepEqual(list.map((m) => m.lines).flat().sort(), ['re', 's1']);
+});
+
+test('every tier tiles at a whole zoom, in a file tiles.sh will find', () => {
+  // The marks are tiled a pass per tier, and each pass reads its own
+  // `--minimum-zoom` back out of the file name build.ts wrote (pipeline
+  // /tiles.sh). A fractional `mark` would put a fractional zoom in the name and
+  // fail the pass; a renamed file would be collected by no glob at all, which
+  // is quieter and worse - the marks would simply not be in the map.
+  const glob = /^stopmarks-z\d+\.geojsonl$/;
+  for (const tier of STOP_TIERS) {
+    const z = markTileZoom(tier.rank);
+    assert.equal(z, Math.trunc(z), `rank ${tier.rank} tiles at a fractional zoom`);
+    assert.ok(z <= tier.mark, `rank ${tier.rank} would be tiled later than it is drawn`);
+    assert.match(markTileFile(z), glob);
+  }
 });
