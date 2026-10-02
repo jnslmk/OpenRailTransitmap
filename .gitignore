@@ -12,3 +12,10 @@ public/operator-logos.json
 
 # implement-review run ledgers
 .implement-review/
+
+# Impeccable: share project configuration, not local/session artifacts.
+.impeccable/*
+!.impeccable/config.json
+!.impeccable/live/
+.impeccable/live/*
+!.impeccable/live/config.json
