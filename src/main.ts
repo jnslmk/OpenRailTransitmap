@@ -257,6 +257,7 @@ async function main() {
       );
     }
     map.setPaintProperty('route-badges', 'text-opacity', routeOpacity());
+    applyStationFilters();
     // A closure or a station owns the column while it is open: repainting the
     // line panel under it would be a second answer to the same click.
     if (shownClosure || shownStation) return;
@@ -369,6 +370,17 @@ async function main() {
     persist();
   }
 
+  function applyStationFilters() {
+    const served = servedByModes([...state.modes]);
+    // Match complete comma-delimited ids, so RB4 cannot also match RB47.
+    const selected = state.selected
+      ? ['in', `,${state.selected},`, ['concat', ',', ['get', 'lines'], ',']]
+      : true;
+    for (const [id, base] of Object.entries(STATION_FILTERS)) {
+      map.setFilter(id, ['all', base, served, selected] as never);
+    }
+  }
+
   function applyFilters() {
     for (const mode of MODES) {
       const on = state.modes.has(mode);
@@ -392,13 +404,7 @@ async function main() {
       map.setFilter(`route-${mode}`, (byOperator ? ['all', isMode, byOperator] : isMode) as never);
     }
 
-    // Stations follow the mode filter too. Without this the stop dots and their
-    // names stayed put when a mode was switched off, so switching one off often
-    // looked as though nothing had happened at all.
-    const served = servedByModes([...state.modes]);
-    for (const [id, base] of Object.entries(STATION_FILTERS)) {
-      map.setFilter(id, ['all', base, served] as never);
-    }
+    applyStationFilters();
 
     // Not refreshLegend() here: the layers have changed but nothing has been
     // drawn yet, so a query now returns the old frame. Drop the guard instead

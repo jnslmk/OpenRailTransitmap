@@ -339,6 +339,62 @@ async function run(page) {
     },
   );
 
+  await testCase('a selected connection hides other stops and Back restores them', async () => {
+    await goto(page, '#12.70/52.2760/10.5320', '', PHONE);
+    const stops = () =>
+      page.evaluate(() => {
+        const m = window.__map;
+        const layers = m
+          .getStyle()
+          .layers.filter((l) => l.id.startsWith('stop-') || l.id === 'station-positions')
+          .map((l) => l.id);
+        return m.queryRenderedFeatures({ layers }).map((f) => ({
+          key: JSON.stringify([f.geometry.coordinates, f.properties.lines, f.properties.bearing]),
+          lines: f.properties.lines.split(','),
+        }));
+      });
+    const keys = (features) => [...new Set(features.map((f) => f.key))].sort();
+    const line = 'regional|vrb|rb47';
+    const before = await stops();
+    const connected = before.filter((f) => f.lines.includes(line));
+    check(connected.length > 0, 'RB47 has stops in this view');
+    check(
+      before.some((f) => !f.lines.includes(line)),
+      'other connections have stops here too',
+    );
+
+    await page.fill('#sidebar input[type="search"]', 'RB47');
+    await page.locator('#sidebar .results .line-row').filter({ hasText: 'Braunschweig' }).click();
+    await settle(page);
+    const selected = await stops();
+    eq(
+      selected.filter((f) => !f.lines.includes(line)).length,
+      0,
+      'no stop belonging only to another connection is rendered',
+    );
+    eq(JSON.stringify(keys(selected)), JSON.stringify(keys(connected)), 'connected stops remain');
+
+    await page.click('#detail .inspector-back');
+    await settle(page);
+    eq(
+      JSON.stringify(keys(await stops())),
+      JSON.stringify(keys(before)),
+      'Back restores all stops',
+    );
+
+    await goto(page, '#12.70/52.2760/10.5320', `?ui=peek&line=${encodeURIComponent(line)}`, PHONE);
+    const linked = await stops();
+    check(
+      linked.some((f) => f.lines.includes(line)),
+      'a shared selection keeps connected stops',
+    );
+    eq(
+      linked.filter((f) => !f.lines.includes(line)).length,
+      0,
+      'a shared selection also hides unrelated stops',
+    );
+  });
+
   // --- the active-filter summary -------------------------------------------
 
   await testCase('the filter summary names the modes held back and resets', async () => {

@@ -1531,6 +1531,10 @@ body.chrome-hidden #map {
 .plan-suggestion:hover {
   background: var(--ground);
 }
+.plan-suggestion.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  box-shadow: inset 3px 0 var(--accent);
+}
 .plan-suggestion-name {
   display: block;
   font-size: 13px;

@@ -38,6 +38,23 @@ test('city searches prefer their main railway station without replacing specific
   assert.equal(preferred.name, 'Berlin Hbf');
   assert.equal(preferred.stopId, 'hbf');
 
+  const braunschweigAreas = [{ name: 'Braunschweig', adminLevel: 8, default: true }];
+  const braunschweig = { ...city, name: 'Braunschweig', areas: braunschweigAreas };
+  const braunschweigHbf = {
+    ...main,
+    name: 'Braunschweig Hbf',
+    id: 'braunschweig-hbf',
+    areas: braunschweigAreas,
+  };
+  response = [braunschweig, { ...braunschweigHbf, areas, id: 'other-city' }, braunschweigHbf];
+  const [partialCity] = await geocode('  bRaUnScH  ', signal, 1);
+  assert.equal(partialCity.name, 'Braunschweig Hbf');
+  assert.equal(partialCity.stopId, braunschweigHbf.id);
+  assert.equal(partialCity.kind, 'STOP');
+
+  response = [city, main];
+  assert.equal((await geocode('Berlin Ostbahnhof', signal))[0].kind, 'PLACE');
+
   response = [city, stop];
   assert.equal((await geocode('Berlin', signal))[0].stopId, 'ostbf');
 
@@ -46,8 +63,14 @@ test('city searches prefer their main railway station without replacing specific
 
   response = [stop, main];
   assert.equal((await geocode('Berlin Ostbahnhof', signal))[0].stopId, 'ostbf');
+  assert.equal((await geocode('Berlin Ost', signal))[0].stopId, 'ostbf');
 
   const address = { ...city, type: 'ADDRESS', name: 'Berlin, Invalidenstraße 1' };
   response = [address, main];
   assert.equal((await geocode(address.name, signal))[0].kind, 'ADDRESS');
+  assert.equal((await geocode('Berlin, Invaliden', signal))[0].kind, 'ADDRESS');
+
+  const poi = { ...city, category: 'tourism', name: 'Berlin Museum' };
+  response = [poi, main];
+  assert.equal((await geocode('Berlin', signal))[0].name, poi.name);
 });

@@ -5,6 +5,7 @@
  *   node e2e/planner.mjs --url http://127.0.0.1:5173/     # a local dev server
  *   node e2e/planner.mjs --headed                         # watch it run
  *   node e2e/planner.mjs --relay-api                      # see below
+ *   node e2e/planner.mjs --autocomplete-only              # deterministic keyboard regression
  *
  * The planner is the one part of this app that cannot be checked from the
  * tiles: it is a live conversation with Transitous, and the shapes it returns
@@ -31,6 +32,7 @@ const flag = (name, fallback) => {
 const BASE = flag('url', 'https://jnslmk.github.io/OpenRailTransitmap/').replace(/\/?$/, '/');
 const HEADED = args.includes('--headed');
 const RELAY = args.includes('--relay-api');
+const AUTOCOMPLETE_ONLY = args.includes('--autocomplete-only');
 
 /**
  * A village in the Aller valley, and Hannover Hbf.
@@ -78,6 +80,231 @@ const ready = (page) => page.waitForSelector('body.ready', { timeout: 40000 });
 // ---------------------------------------------------------------------------
 // Cases
 // ---------------------------------------------------------------------------
+
+async function autocomplete(page) {
+  await testCase('autocomplete highlights and commits the current keyboard choice', async () => {
+    const from = '.plan-field input[name="from"]';
+    const to = '.plan-field input[name="to"]';
+    const area = [{ name: 'Braunschweig', adminLevel: 8, default: true }];
+    const places = [
+      { type: 'PLACE', category: 'place_city', name: 'Braunschweig', lat: 52.26, lon: 10.52 },
+      {
+        type: 'STOP',
+        id: 'hbf',
+        name: 'Braunschweig Hbf',
+        lat: 52.25,
+        lon: 10.54,
+        modes: ['REGIONAL_RAIL'],
+      },
+      ...Array.from({ length: 5 }, (_, i) => ({
+        type: 'STOP',
+        id: `bus-${i}`,
+        name: `Braunschweig Bus ${i}`,
+        lat: 52.26,
+        lon: 10.52,
+        modes: ['BUS'],
+      })),
+      { type: 'ADDRESS', name: 'Braunschweig Schloss 1', lat: 52.26, lon: 10.52 },
+    ].map((place) => ({ ...place, areas: area, country: 'DE' }));
+    const address = (name) => ({ type: 'ADDRESS', name, lat: 52.26, lon: 10.52 });
+    const gates = new Map();
+    const hold = (text) => {
+      let release;
+      const response = new Promise((resolve) => {
+        release = resolve;
+      });
+      gates.set(text, { response, release });
+      const request = page.waitForRequest(
+        (request) => new URL(request.url()).searchParams.get('text') === text,
+        { timeout: 5000 },
+      );
+      return { request, release };
+    };
+    const routeHandler = async (route) => {
+      const text = new URL(route.request().url()).searchParams.get('text');
+      const gate = gates.get(text);
+      if (gate) await gate.response;
+      const body = text === 'Braunsch' ? places : [address(`${text} 1`), address(`${text} 2`)];
+      // A superseded query can already have been aborted by the browser.
+      await route.fulfill({ json: body }).catch(() => {});
+    };
+    await page.route('**/api/v1/geocode?**', routeHandler);
+    const active = async (field, name) => {
+      await page.waitForFunction(
+        ({ field, name }) => {
+          const input = document.querySelector(field);
+          const row = document.getElementById(input?.getAttribute('aria-activedescendant'));
+          return row?.querySelector('.plan-suggestion-name')?.textContent === name;
+        },
+        { field, name },
+      );
+      const state = await page.$eval(field, (input) => {
+        const list = document.getElementById(input.getAttribute('aria-controls'));
+        const row = document.getElementById(input.getAttribute('aria-activedescendant'));
+        const bounds = row.getBoundingClientRect();
+        const viewport = list.getBoundingClientRect();
+        return {
+          expanded: input.getAttribute('aria-expanded'),
+          listRole: list.getAttribute('role'),
+          optionRole: row.getAttribute('role'),
+          selected: row.getAttribute('aria-selected'),
+          count: list.querySelectorAll('[aria-selected="true"]').length,
+          highlighted: row.classList.contains('is-active'),
+          visible: bounds.top >= viewport.top && bounds.bottom <= viewport.bottom,
+          focused: document.activeElement === input,
+        };
+      });
+      eq(state.expanded, 'true', `${name}: combobox is expanded`);
+      eq(state.listRole, 'listbox', `${name}: controls its listbox`);
+      eq(state.optionRole, 'option', `${name}: active descendant is an option`);
+      eq(state.selected, 'true', `${name}: active option is selected`);
+      eq(state.count, 1, `${name}: only one option is selected`);
+      check(
+        state.highlighted && state.visible && state.focused,
+        `${name}: highlighted, visible, input focused`,
+        JSON.stringify(state),
+      );
+    };
+    const chosen = async (field, name) => {
+      await page.waitForFunction(
+        ({ field, name }) => document.querySelector(field)?.value === name,
+        { field, name },
+      );
+      eq(await page.getAttribute(field, 'aria-expanded'), 'false', `${name}: list closed`);
+      eq(
+        await page.getAttribute(field, 'aria-activedescendant'),
+        null,
+        `${name}: no stale active descendant`,
+      );
+      check(
+        await page.$eval(field, (input) => document.activeElement === input),
+        `${name}: focus survives form redraw`,
+      );
+    };
+    try {
+      await page.goto(`${BASE}?tab=plan`, { waitUntil: 'load' });
+      await ready(page);
+      const controls = await page.$$eval('.plan-field input', (inputs) =>
+        inputs.map((input) => ({
+          role: input.getAttribute('role'),
+          controls: input.getAttribute('aria-controls'),
+          expanded: input.getAttribute('aria-expanded'),
+        })),
+      );
+      check(
+        controls.every((input) => input.role === 'combobox' && input.expanded === 'false'),
+        'both fields start as closed comboboxes',
+      );
+      check(
+        controls[0].controls !== controls[1].controls,
+        'the two fields control independent lists',
+      );
+      await page.fill(to, 'Braunsch');
+      await active(to, 'Braunschweig Hbf');
+      eq(
+        await page.getAttribute(from, 'aria-expanded'),
+        'false',
+        'destination suggestions do not expand origin',
+      );
+      const names = await page.$$eval('#plan-to-suggestions .plan-suggestion-name', (rows) =>
+        rows.map((row) => row.textContent),
+      );
+      check(
+        names.includes('Braunschweig') && names.includes('Braunschweig Schloss 1'),
+        'city and address remain available',
+      );
+      await page.press(to, 'ArrowDown');
+      await active(to, 'Braunschweig');
+      await page.press(to, 'ArrowUp');
+      await active(to, 'Braunschweig Hbf');
+      await page.press(to, 'ArrowUp');
+      await active(to, 'Braunschweig Schloss 1');
+      await page.press(to, 'ArrowDown');
+      await active(to, 'Braunschweig Hbf');
+      await page.press(to, 'Enter');
+      await chosen(to, 'Braunschweig Hbf');
+      await page.keyboard.type('x');
+      eq(
+        await page.inputValue(to),
+        'Braunschweig Hbfx',
+        'typing continues in destination after selection',
+      );
+
+      // Start with no committed destination so selecting origin does not plan.
+      await page.goto(`${BASE}?tab=plan`, { waitUntil: 'load' });
+      await ready(page);
+      await page.fill(from, 'Braunsch');
+      await active(from, 'Braunschweig Hbf');
+      eq(
+        await page.getAttribute(to, 'aria-expanded'),
+        'false',
+        'origin suggestions do not expand destination',
+      );
+      await page.press(from, 'ArrowDown');
+      await active(from, 'Braunschweig');
+      await page.press(from, 'Enter');
+      await chosen(from, 'Braunschweig');
+      await page.fill(from, 'Schloss');
+      eq(
+        await page.getAttribute(from, 'aria-activedescendant'),
+        null,
+        'typing immediately clears stale active option',
+      );
+      await active(from, 'Schloss 1');
+      await page.click('#plan-from-option-1');
+      await chosen(from, 'Schloss 2');
+      await page.fill(from, 'Braunsch');
+      await page.press(from, 'Enter');
+      await chosen(from, 'Braunschweig Hbf');
+
+      const early = hold('Frueh');
+      await page.fill(from, 'Frueh');
+      await early.request;
+      await page.press(from, 'Enter');
+      early.release();
+      await chosen(from, 'Frueh 1');
+
+      const old = hold('Alt');
+      await page.fill(from, 'Alt');
+      await page.press(from, 'Enter');
+      await old.request;
+      await page.fill(from, 'Schloss');
+      old.release();
+      await active(from, 'Schloss 1');
+      eq(
+        await page.inputValue(from),
+        'Schloss',
+        'new query cancels pending Enter and ignores stale response',
+      );
+      await page.press(from, 'ArrowDown');
+      await active(from, 'Schloss 2');
+      await page.press(from, 'Enter');
+      await chosen(from, 'Schloss 2');
+
+      const cancelled = hold('Abbruch');
+      await page.fill(from, 'Abbruch');
+      await page.press(from, 'Enter');
+      await cancelled.request;
+      await page.press(from, 'Escape');
+      cancelled.release();
+      await page.waitForTimeout(450);
+      eq(await page.inputValue(from), 'Abbruch', 'Escape cancels pending selection');
+      eq(
+        await page.getAttribute(from, 'aria-expanded'),
+        'false',
+        'Escape keeps suggestions closed',
+      );
+      eq(
+        await page.getAttribute(from, 'aria-activedescendant'),
+        null,
+        'Escape clears active descendant',
+      );
+    } finally {
+      for (const gate of gates.values()) gate.release();
+      await page.unroute('**/api/v1/geocode?**', routeHandler);
+    }
+  });
+}
 
 async function run(page) {
   let navigatorLanguage = '';
@@ -274,7 +501,8 @@ const page = await context.newPage();
 page.on('pageerror', (err) => console.error('[page error]', err.message));
 
 console.log(`planner e2e against ${BASE}${RELAY ? ' (API relayed through Node)' : ''}\n`);
-await run(page);
+await autocomplete(page);
+if (!AUTOCOMPLETE_ONLY) await run(page);
 await browser.close();
 
 let failed = 0;

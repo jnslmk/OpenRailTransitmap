@@ -84,10 +84,12 @@ GitHub Pages and rebuilt nightly.
   ferry — with one control that is the point of the whole thing, *how far will
   you ride at each end?* Slide it from "no bike" to 90 minutes and the answer
   changes from the station down the road to any station in the county.
-  Entering a city name and pressing Enter selects its main railway station
-  (for example, Braunschweig Hbf or Berlin Hbf), when one is available; specific
-  station names and addresses retain their own matches. The selected field stays
-  focused after Enter, so typing can continue without clicking it again.
+  Typing a city name or its beginning highlights its main railway station
+  (for example, `Braunsch` offers Braunschweig Hbf), when one is available;
+  specific station names and addresses retain their own matches. Up/Down arrows
+  move the highlighted suggestion, and Enter selects it directly—even if the
+  search is still loading. The selected field stays focused after Enter, so
+  typing can continue without clicking it again.
   The chosen journey draws on the map in the map's own colours — an RE8 leg painted
   as the map paints RE8 — with bike and walk legs dashed and the rest of the
   network dimmed behind it. Bike carriage is reported honestly: German feeds
@@ -97,6 +99,8 @@ GitHub Pages and rebuilt nightly.
   [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Search, mode and operator filters**, and deep-linkable URLs that restore
   position, filters and selection.
+  Selecting a connection hides stops it does not serve; clearing the selection
+  restores them, respecting the active mode filters.
 - **A legend of what is actually on screen.** Only modes with lines in the
   current view get a row, and the number beside each is how many of them are in
   view — not a national total that says nothing about where you are looking.

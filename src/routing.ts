@@ -176,7 +176,7 @@ export async function geocode(text: string, signal: AbortSignal, limit = 8): Pro
   if (
     city?.type === 'PLACE' &&
     /^(place_|city$|town$|village$|hamlet$)/.test(city.category ?? '') &&
-    city.name?.toLocaleLowerCase('de') === text.trim().toLocaleLowerCase('de')
+    city.name?.toLocaleLowerCase('de').startsWith(text.trim().toLocaleLowerCase('de'))
   ) {
     const stations = results.filter(
       (p) =>

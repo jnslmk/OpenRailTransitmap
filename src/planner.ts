@@ -298,21 +298,47 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   input.setAttribute('aria-label', which === 'from' ? s.planFrom : s.planTo);
   input.value = fieldText[which] ?? current?.name ?? '';
   input.autocomplete = 'off';
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('aria-controls', `plan-${which}-suggestions`);
 
   const list = el('div', 'plan-suggestions');
+  list.id = `plan-${which}-suggestions`;
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-label', input.placeholder);
   box.append(input, list);
 
   let timer: number | undefined;
   let ac: AbortController | null = null;
-  /** What the list is offering right now, so Enter can take the first of it. */
   let offered: Place[] = [];
+  let active = -1;
   /** An Enter that arrived before the geocoder answered, to honour when it does. */
   let takeFirst = false;
 
   const close = () => {
+    window.clearTimeout(timer);
+    ac?.abort();
+    ac = null;
+    takeFirst = false;
+    active = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
     list.innerHTML = '';
     list.classList.remove('open');
     offered = [];
+  };
+
+  const activate = (index: number) => {
+    active = index;
+    for (let i = 0; i < list.children.length; i++) {
+      const row = list.children[i];
+      row.classList.toggle('is-active', i === active);
+      row.setAttribute('aria-selected', String(i === active));
+    }
+    const row = list.children[active];
+    input.setAttribute('aria-activedescendant', row.id);
+    row.scrollIntoView({ block: 'nearest' });
   };
 
   function choose(place: Place) {
@@ -321,6 +347,7 @@ function placeField(which: 'from' | 'to'): HTMLElement {
     fieldText[which] = place.name;
     input.value = place.name;
     close();
+    input.focus({ preventScroll: true });
     host.persist();
     // Both ends known is the moment a search is worth making unasked; it is
     // the one place this module plans without an explicit submit, and it
@@ -330,16 +357,21 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   }
 
   function search(text: string): void {
+    if (!input.isConnected) return;
     ac?.abort();
     ac = new AbortController();
     const signal = ac.signal;
     offered = [];
+    active = -1;
+    input.removeAttribute('aria-activedescendant');
+    input.setAttribute('aria-expanded', 'true');
     list.classList.add('open');
     list.innerHTML = '';
     list.appendChild(el('p', 'muted', s.planSearching));
     geocode(text, signal)
       .then((places) => {
-        if (signal.aborted) return;
+        if (signal.aborted || !input.isConnected) return;
+        ac = null;
         list.innerHTML = '';
         if (!places.length) {
           takeFirst = false;
@@ -347,22 +379,28 @@ function placeField(which: 'from' | 'to'): HTMLElement {
           return;
         }
         offered = places;
-        for (const p of places) {
+        for (const [index, p] of places.entries()) {
           const row = el('button', 'plan-suggestion');
           row.type = 'button';
+          row.id = `plan-${which}-option-${index}`;
+          row.setAttribute('role', 'option');
+          row.tabIndex = -1;
+          row.onmousedown = (e) => e.preventDefault();
           row.append(el('span', 'plan-suggestion-name', p.name));
           if (p.area) row.append(el('span', 'plan-suggestion-area', p.area));
           if (p.kind === 'STOP') row.classList.add('is-stop');
           row.onclick = () => choose(p);
           list.appendChild(row);
         }
+        activate(0);
         if (takeFirst) {
           takeFirst = false;
           choose(places[0]);
         }
       })
       .catch(() => {
-        if (signal.aborted) return;
+        if (signal.aborted || !input.isConnected) return;
+        ac = null;
         takeFirst = false;
         list.innerHTML = '';
         list.appendChild(el('p', 'muted', s.planFailed));
@@ -370,44 +408,48 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   }
 
   input.oninput = () => {
-    window.clearTimeout(timer);
-    ac?.abort();
     close();
-    // Whatever an earlier Enter was waiting for, this keystroke is no longer it.
-    takeFirst = false;
     const text = input.value;
     fieldText[which] = text;
-    if (text.trim().length < 2) {
-      close();
-      return;
-    }
+    if (text.trim().length < 2) return;
     timer = window.setTimeout(() => search(text), 350);
   };
 
   /**
-   * Enter takes the first suggestion: city queries put their railway station
-   * first, while specific stations and addresses keep the geocoder's ranking.
+   * Enter takes the highlighted suggestion, initially the geocoder's best hit.
    *
    * If nothing is on offer yet the request has not been made or not come back:
    * rather than swallow the key, the debounce is skipped, the search goes out
    * at once, and the choice is made when it lands. So Enter never does nothing.
    */
   input.onkeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && offered.length) {
+      e.preventDefault();
+      activate((active + (e.key === 'ArrowDown' ? 1 : -1) + offered.length) % offered.length);
+      return;
+    }
     if (e.key !== 'Enter') return;
     e.preventDefault();
     if (offered.length) {
-      choose(offered[0]);
+      choose(offered[active]);
       return;
     }
     if (input.value.trim().length < 2) return;
     window.clearTimeout(timer);
     takeFirst = true;
-    search(input.value);
+    if (!ac) search(input.value);
   };
 
-  // A blur that lands on a suggestion must not close the list before the click
-  // registers, so the close is deferred by one frame.
-  input.onblur = () => window.setTimeout(close, 150);
+  // A blur that lands on a suggestion must not close the list before the click.
+  input.onblur = () =>
+    window.setTimeout(() => {
+      if (document.activeElement !== input) close();
+    }, 150);
   return box;
 }
 
