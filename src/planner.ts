@@ -101,6 +101,17 @@ let status: 'idle' | 'loading' | 'error' | 'empty' = 'idle';
 let statusDetail = '';
 let inFlight: AbortController | null = null;
 
+/**
+ * What is currently in each place field, including text the rider has typed but
+ * not chosen from the suggestions.
+ *
+ * `redraw` rebuilds the form, and a field that fell back to the committed place
+ * would silently eat whatever was being typed in it - most visibly when one end
+ * is seeded from a station on the map while the other is half-written. The
+ * committed `Place` is the fallback, not the source of truth for the field.
+ */
+const fieldText: Record<'from' | 'to', string | null> = { from: null, to: null };
+
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
   cls?: string,
@@ -284,7 +295,7 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   input.type = 'text';
   input.placeholder = which === 'from' ? s.planFrom : s.planTo;
   input.setAttribute('aria-label', which === 'from' ? s.planFrom : s.planTo);
-  input.value = current?.name ?? '';
+  input.value = fieldText[which] ?? current?.name ?? '';
   input.autocomplete = 'off';
 
   const list = el('div', 'plan-suggestions');
@@ -306,6 +317,7 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   function choose(place: Place) {
     if (which === 'from') state.from = place;
     else state.to = place;
+    fieldText[which] = place.name;
     input.value = place.name;
     close();
     host.persist();
@@ -361,6 +373,7 @@ function placeField(which: 'from' | 'to'): HTMLElement {
     // Whatever an earlier Enter was waiting for, this keystroke is no longer it.
     takeFirst = false;
     const text = input.value;
+    fieldText[which] = text;
     if (text.trim().length < 2) {
       close();
       return;
@@ -416,6 +429,7 @@ function buildForm(): HTMLElement {
   swap.textContent = '⇅';
   swap.onclick = () => {
     [state.from, state.to] = [state.to, state.from];
+    [fieldText.from, fieldText.to] = [fieldText.to, fieldText.from];
     host.persist();
     if (state.from && state.to) query();
     else redraw();
@@ -838,6 +852,7 @@ export function setPlannerPlace(which: 'from' | 'to', place: Place): void {
   if (!host) return;
   if (which === 'from') host.state.from = place;
   else host.state.to = place;
+  fieldText[which] = place.name;
   host.persist();
   if (host.state.from && host.state.to) query();
   else redraw();

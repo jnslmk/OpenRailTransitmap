@@ -135,6 +135,12 @@ async function goto(page, hash, query = '') {
   // The first idle is the one that counts what is in view; before it the legend
   // is still showing national totals.
   await settle(page, 0);
+  // The modes and operators live behind a native disclosure now, and a closed
+  // one renders neither: a row read as invisible would make every count a lie.
+  // Opening it is one real action on the summary, which is what a reader does.
+  if (!(await page.evaluate(() => !!document.querySelector('details.filter-disclosure')?.open))) {
+    await page.click('details.filter-disclosure > summary');
+  }
 }
 
 /** Jump to a view without a reload, so filter state survives. */
@@ -593,7 +599,10 @@ async function run(page) {
     // fails when there is nothing to draw.
     const published = await page.evaluate(async () => {
       const res = await fetch(new URL('operator-logos.json', location.href));
-      return res.ok ? Object.keys(await res.json()).length : 0;
+      // A dev server answers a missing manifest with the page itself and a 200,
+      // so the content type is what says whether there is a manifest at all.
+      if (!res.ok || !/json/i.test(res.headers.get('content-type') ?? '')) return 0;
+      return Object.keys(await res.json()).length;
     });
     if (!published) {
       check(true, 'no logo manifest on this deployment - nothing to check', '');

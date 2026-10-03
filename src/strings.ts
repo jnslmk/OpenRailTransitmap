@@ -32,6 +32,21 @@ export interface Strings {
   collapsePanel: string;
   expandPanel: string;
   panelPeek: string;
+  sheetPlan: string;
+  back: string;
+  expandReading: string;
+  reducePanel: string;
+  filters: string;
+  allFilters: string;
+  modesOff: (names: string) => string;
+  operatorsOff: (n: number) => string;
+  operatorsAllOff: string;
+  closuresOff: string;
+  details: string;
+  loadingPunctuality: string;
+  uicRef: string;
+  stopRef: string;
+  punctualityUnavailable: string;
   fullscreen: string;
   exitFullscreen: string;
   locate: string;
@@ -188,6 +203,25 @@ const STRINGS: Strings = {
   collapsePanel: 'Collapse panel',
   expandPanel: 'Expand panel',
   panelPeek: 'Search, filters and lines',
+  sheetPlan: 'Journey planner',
+  back: 'Back',
+  // The sheet-size buttons say what they will do to the sheet, not which state
+  // it is in: one expands to reading size, the other brings it back to working.
+  expandReading: 'Expand',
+  reducePanel: 'Reduce',
+  filters: 'Filters',
+  allFilters: 'All modes, all operators, closures on',
+  modesOff: (names) => `${names} off`,
+  operatorsOff: (n) => `${n} operator${n === 1 ? '' : 's'} off`,
+  operatorsAllOff: 'All operators off',
+  closuresOff: 'Closures off',
+  details: 'Details',
+  loadingPunctuality: 'Loading punctuality…',
+  uicRef: 'UIC',
+  stopRef: 'Stop ID',
+  // Said instead of going quiet: a score file that failed to load is a fact
+  // about the panel, and an empty section reads as "nothing to say".
+  punctualityUnavailable: 'Punctuality record unavailable',
   fullscreen: 'Fullscreen',
   exitFullscreen: 'Exit fullscreen',
   locate: 'Show my location',

@@ -116,11 +116,13 @@ GitHub Pages and rebuilt nightly.
   company each operator was taken to be arrives as a reviewable diff and is
   corrected by hand in `data/logo-overrides.yaml`; see
   [`pipeline/logos.ts`](pipeline/logos.ts).
-- **Full-screen map.** A button on the map hides the whole sidebar so the map
-  fills the window — the difference between usable and unusable on a phone — and
-  a second one goes to browser fullscreen. On narrow screens the sidebar is a
-  bottom sheet that folds to its handle by tap or drag, for a big map that still
-  has search one tap away. Both states are part of the URL (`?ui=map`, `?ui=peek`).
+- **Full-screen map and a contextual inspector.** Hide the browse workspace to
+  give the map the window, or open a line, station or closure in the adjacent
+  evidence inspector while the map stays visible. On phones the map sits above
+  one sheet: its handle peeks the workspace, Expand opens it for reading, and
+  selected evidence takes the same sheet slot. Back restores the browse or
+  planning context. The shared layout and sheet size are URL state (`?ui=map`,
+  `?ui=peek`, `?ui=expanded`).
 - **Own location**, with an accuracy circle and continuous tracking, and a
   compass that puts the map back to north after an accidental twist.
 - **The OpenStreetMap standard raster underneath**, heavily desaturated and

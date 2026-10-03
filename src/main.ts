@@ -1,6 +1,5 @@
 import maplibregl, {
   Map as MLMap,
-  Popup,
   type GeoJSONSource,
   type MapGeoJSONFeature,
   type ExpressionSpecification,
@@ -26,6 +25,8 @@ import {
   renderChrome,
   renderLinePanel,
   renderClosurePanel,
+  renderStationPanel,
+  type StationRecord,
   setStatus,
   compareLines,
   syncSheetHandle,
@@ -114,22 +115,51 @@ async function main() {
   map.addControl(chromeToggle, 'top-left');
 
   let lastVisible: ChromeMode = state.chrome === 'hidden' ? 'full' : state.chrome;
+  /**
+   * The sheet size a selection interrupted. Map-only, and the folded peek, are
+   * states the reader chose; opening a panel folds the slot out just enough to
+   * be usable, and Back puts it back the way it was found - unless they changed
+   * the size themselves in the meantime, which is what `setChrome` clearing
+   * this records.
+   */
+  let chromeBeforeSelection: ChromeMode | null = null;
 
   function applyChromeClasses() {
     document.body.classList.toggle('chrome-hidden', state.chrome === 'hidden');
     document.body.classList.toggle('sheet-collapsed', state.chrome === 'peek');
+    document.body.classList.toggle('sheet-expanded', state.chrome === 'expanded');
   }
 
   function setChrome(mode: ChromeMode) {
+    if (state.chrome === mode) return;
+    // Any deliberate size change voids a pending Back restore.
+    chromeBeforeSelection = null;
     state.chrome = mode;
     if (mode !== 'hidden') lastVisible = mode;
     applyChromeClasses();
     chromeToggle.sync();
-    syncSheetHandle(mode === 'peek');
-    // The sidebar is a flex sibling, so folding it changes the canvas size.
+    syncSheetHandle(mode);
+    // The sheet and the inspector both change the canvas box.
     map.resize();
     persist();
   }
+
+  /**
+   * Re-measure the canvas whenever its box moves, not only when the window
+   * does: opening the inspector takes a desktop grid column, and the sheet
+   * takes a phone row. `--app-height` follows the visual viewport so an open
+   * keyboard shrinks the workspace instead of hiding the map behind it.
+   */
+  function syncGeometry() {
+    const height = window.visualViewport?.height;
+    if (height) document.documentElement.style.setProperty('--app-height', `${height}px`);
+    map.resize();
+  }
+  new ResizeObserver(() => map.resize()).observe(map.getContainer());
+  window.visualViewport?.addEventListener('resize', syncGeometry);
+  window.visualViewport?.addEventListener('scroll', syncGeometry);
+  window.addEventListener('resize', syncGeometry);
+  syncGeometry();
 
   const geolocate = new maplibregl.GeolocateControl({
     positionOptions: { enableHighAccuracy: true },
@@ -259,6 +289,9 @@ async function main() {
       );
     }
     map.setPaintProperty('route-badges', 'text-opacity', routeOpacity());
+    // A closure or a station owns the column while it is open: repainting the
+    // line panel under it would be a second answer to the same click.
+    if (shownClosure || shownStation) return;
     const line = state.selected ? (byId.get(state.selected) ?? null) : null;
     renderLinePanel(line, { onClose: () => select(null) });
     if (line) showPunctuality(line.id);
@@ -326,6 +359,37 @@ async function main() {
    * slot empty or hand it back to a line that was never deselected.
    */
   let shownClosure: string | null = null;
+  /**
+   * The station the inspector is showing, if any. Same role as `shownClosure`:
+   * one of the three can own the column, and closing has to know which.
+   */
+  let shownStation: StationRecord | null = null;
+
+  /**
+   * Bring the chrome back within reach of a fresh selection.
+   *
+   * Map-only hides the inspector at every width, so a selection made there has
+   * to reopen the chrome or it lands where nobody can see it. On a phone the
+   * sheet comes back to the peek - controls and a summary naming what was
+   * picked, one tap from opening - rather than unfolding the whole panel over
+   * the map the reader asked to see; on a desktop the rail and the column come
+   * back together, because that layout shows both at once. Back folds it away
+   * again.
+   */
+  function revealSheet() {
+    if (state.chrome !== 'hidden') return;
+    const before = state.chrome;
+    setChrome(window.matchMedia('(max-width: 820px)').matches ? 'peek' : lastVisible);
+    chromeBeforeSelection = before;
+  }
+
+  /** Fold the sheet back to how the selection found it, if the reader has not moved it since. */
+  function restoreSheet() {
+    if (chromeBeforeSelection === null) return;
+    const mode = chromeBeforeSelection;
+    chromeBeforeSelection = null;
+    setChrome(mode);
+  }
 
   /**
    * The construction overlay is one visibility switch across all six of its
@@ -480,7 +544,14 @@ async function main() {
 
   function select(id: string | null) {
     state.selected = id;
+    // One selection at a time: a line takes the column from a closure or a
+    // station rather than stacking under it.
+    shownClosure = null;
+    shownStation = null;
+    supersedeDepartures();
     applySelection();
+    if (id) revealSheet();
+    else restoreSheet();
     persist();
   }
 
@@ -685,20 +756,20 @@ async function main() {
 
   const routeLayers = MODES.map((m) => `route-${m}`);
   const STATION_LAYERS = [...STOP_MARK_LAYERS, 'station-positions'];
-  const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-  // A slow departures response must never paint into a popup that has moved
+  // A slow departures response must never paint into a board that has moved
   // on: `liveToken` identifies the request that is currently allowed to
-  // write, and is bumped whenever the popup closes or another station is
-  // clicked, which also aborts whatever was still in flight.
+  // write, and is bumped whenever the inspector moves off the station, which
+  // also aborts whatever was still in flight.
   let liveController: AbortController | null = null;
   let liveToken = 0;
 
-  popup.on('close', () => {
+  /** Anything that takes the inspector away from a station ends its board. */
+  function supersedeDepartures() {
     liveController?.abort();
     liveController = null;
     liveToken++;
-  });
+  }
 
   /**
    * Hit-test order is station, then closure, then route, and it follows how
@@ -717,7 +788,7 @@ async function main() {
     const hits = map.queryRenderedFeatures(e.point, { layers: clickable() });
     const station = hits.find((f) => STATION_LAYERS.includes(f.layer.id));
     if (station) {
-      showStation(station);
+      openStation(stationOf(station));
       return;
     }
 
@@ -729,7 +800,6 @@ async function main() {
 
     // Only now is a bare click on the map a change of line selection - and a
     // click on nothing at all clears it, as it always has.
-    closeClosure();
     const route = hits.find((f) => routeLayers.includes(f.layer.id));
     select(route ? String(route.properties.line) : null);
   });
@@ -740,18 +810,26 @@ async function main() {
   });
 
   function showClosure(f: MapGeoJSONFeature) {
-    if (state.selected) select(null);
     const record = parseClosure(f.properties, f.geometry.type === 'Point');
+    const hadSelection = state.selected !== null;
+    state.selected = null;
+    shownStation = null;
     shownClosure = record.id;
+    supersedeDepartures();
+    if (hadSelection) applySelection();
     renderClosurePanel(record, { onClose: closeClosure });
+    revealSheet();
+    persist();
   }
 
   function closeClosure() {
     if (!shownClosure) return;
     shownClosure = null;
+    supersedeDepartures();
     // Re-rendering the (empty) line panel is what closes the slot, and it also
     // restores a line panel if one is somehow still selected.
     applySelection();
+    restoreSheet();
   }
 
   /**
@@ -764,145 +842,127 @@ async function main() {
    * on screen, so the station it belongs to is in one of them. If it somehow is
    * not, the mark's own properties are a working subset.
    */
-  function stationOf(f: MapGeoJSONFeature): {
-    p: Record<string, string>;
-    at: [number, number];
-  } {
+  function stationOf(f: MapGeoJSONFeature): StationRecord {
     const mark = (f.geometry as GeoJSON.Point).coordinates as [number, number];
     const props = f.properties as Record<string, string>;
     const id = props.station;
-    if (!id) return { p: props, at: mark };
+    if (!id) return stationRecord(props, mark, byId);
     const [hit] = map.querySourceFeatures('rail', {
       sourceLayer: 'stations',
       filter: ['==', ['get', 'id'], id],
     });
-    if (!hit) return { p: props, at: mark };
-    return {
-      p: hit.properties,
+    if (!hit) return stationRecord(props, mark, byId);
+    return stationRecord(
+      hit.properties,
       // The station's own position, not the mark's, for anything that is about
       // the place rather than about the symbol - a journey planned from here
       // starts at the station, however far along the corridor its bar sits.
-      at: (hit.geometry as GeoJSON.Point).coordinates as [number, number],
+      (hit.geometry as GeoJSON.Point).coordinates as [number, number],
+      byId,
+    );
+  }
+
+  /**
+   * Open a station in the inspector: fly to it, then fill the same column a
+   * line or a closure would use. `revealSheet` brings a map-only phone back to
+   * the peek, so the panel it just built is one tap from being read.
+   */
+  function openStation(station: StationRecord) {
+    const sameStation =
+      shownStation &&
+      (station.id
+        ? station.id === shownStation.id
+        : !shownStation.id &&
+          station.name === shownStation.name &&
+          station.at[0] === shownStation.at[0] &&
+          station.at[1] === shownStation.at[1]);
+    if (!sameStation) supersedeDepartures();
+
+    const hadSelection = state.selected !== null;
+    state.selected = null;
+    shownClosure = null;
+    shownStation = station;
+    if (hadSelection) applySelection();
+    map.flyTo({ center: station.at, zoom: Math.max(map.getZoom(), 12) });
+    renderStationPanel(station, {
+      onClose: closeStation,
+      onLine: (id) => select(id),
+      onDirections: (dir, st) => planFrom(st, dir),
+      loadDepartures: (container) => loadDepartures(container, station),
+    });
+    revealSheet();
+    persist();
+  }
+
+  function closeStation() {
+    if (!shownStation) return;
+    shownStation = null;
+    supersedeDepartures();
+    // Re-rendering the (empty) line panel is what closes the slot.
+    applySelection();
+    restoreSheet();
+  }
+
+  /**
+   * Hand a station to the planner as one end of a journey.
+   *
+   * The reader has asked to plan, so when this returns the planner has to be
+   * usable. On a phone the slot shows the rail or the evidence and never both,
+   * so the station panel gives it up; on a desktop the two sit side by side and
+   * the evidence stays where it is. The size is settled after `select(null)`
+   * because that also resolves what a Back would put the sheet back to, and this
+   * request outranks it: a folded or map-only sheet comes back to working size,
+   * while `expanded` is left alone because it is already readable.
+   */
+  function planFrom(station: StationRecord, dir: 'from' | 'to') {
+    if (window.matchMedia('(max-width: 820px)').matches) select(null);
+    state.tab = 'plan';
+    renderChrome.rerender();
+    if (state.chrome === 'hidden' || state.chrome === 'peek') setChrome('full');
+    const place: Place = {
+      name: station.name,
+      lat: station.at[1],
+      lon: station.at[0],
+      // The resolved MOTIS id where the pipeline found one, so the router plans
+      // from the stop itself rather than from a point near it.
+      stopId: station.stopId || null,
+      area: '',
+      kind: station.stopId ? 'STOP' : 'PLACE',
     };
+    setPlannerPlace(dir, place);
+    // Focus follows the reader to the field they just filled, rather than
+    // staying on the search row or the badge the Plan tab has just hidden.
+    const fields = document.querySelectorAll<HTMLInputElement>('.plan-root .plan-field input');
+    fields[dir === 'from' ? 0 : 1]?.focus();
+    persist();
   }
 
-  function showStation(f: MapGeoJSONFeature) {
-    const { p, at } = stationOf(f);
-    const served = String(p.lines ?? '')
-      .split(',')
-      .filter(Boolean)
-      .map((id) => byId.get(id))
-      .filter((l): l is LineRecord => !!l)
-      .sort(compareLines);
-
-    const badges = served
-      .map(
-        (l) =>
-          `<button class="badge" data-line="${l.id}" style="background:${l.colour};color:${textOn(l.colour)}" title="${l.name}">${l.ref}</button>`,
-      )
-      .join('');
-
-    // Departure badges are painted from the lines this station serves, so a
-    // board sitting under the "lines serving this station" row uses the same
-    // colour for the same line - the feed's own colour is only a fallback for
-    // services the map does not draw (see Departure.colour).
-    const stationColours = new Map(served.map((l) => [lineKey(l.ref), l.colour]));
-    const colourOf = (d: Departure) => stationColours.get(lineKey(d.line)) ?? d.colour;
-
-    const stopId = String(p.stopId ?? '');
-
-    // Whatever departures request was in flight belongs to the popup that is
-    // about to be replaced, whether or not the new station has its own
-    // stopId - a click on a plain station must still cancel a slow fetch
-    // from the previous one.
+  /** Fetches and renders the departure board into an already-open inspector. */
+  function loadDepartures(container: HTMLElement, station: StationRecord) {
+    // Each board supersedes the last: a slow response for a station the reader
+    // has already left must not paint under the one they are looking at now.
+    // `liveToken` identifies the request currently allowed to write.
     liveController?.abort();
-    liveController = null;
-    liveToken++;
-
-    const geom = f.geometry as GeoJSON.Point;
-    popup
-      .setLngLat(geom.coordinates as [number, number])
-      .setHTML(
-        `
-        <div class="pop">
-          <strong>${p.name}</strong>
-          ${p.uic_ref ? `<span class="uic">UIC ${p.uic_ref}</span>` : ''}
-          <div class="pop-lines-label">${t().servedBy}</div>
-          <div class="pop-lines">${badges || '—'}</div>
-          <div class="pop-actions">
-            <button class="pop-action" data-dir="from">${t().planDirectionsFrom}</button>
-            <button class="pop-action" data-dir="to">${t().planDirectionsTo}</button>
-          </div>
-          ${stopId ? '<div class="pop-live"></div>' : ''}
-        </div>`,
-      )
-      .addTo(map);
-
-    popup
-      .getElement()
-      ?.querySelectorAll<HTMLElement>('.badge')
-      .forEach((el) => {
-        el.onclick = () => {
-          select(el.dataset.line!);
-          popup.remove();
-        };
-      });
-
-    // Turning a station you are looking at into one end of a journey is the
-    // whole reason the planner lives inside the map rather than beside it.
-    popup
-      .getElement()
-      ?.querySelectorAll<HTMLElement>('.pop-action')
-      .forEach((el) => {
-        el.onclick = () => {
-          const [lon, lat] = at;
-          const place: Place = {
-            name: String(p.name ?? ''),
-            lat,
-            lon,
-            // The resolved MOTIS id where the pipeline found one, so the router
-            // plans from the stop itself rather than from a point near it.
-            stopId: stopId || null,
-            area: '',
-            kind: stopId ? 'STOP' : 'PLACE',
-          };
-          popup.remove();
-          if (state.chrome === 'hidden') setChrome(lastVisible);
-          state.tab = 'plan';
-          // Renders the Plan tab, which is what gives `setPlannerPlace` a host.
-          renderChrome.rerender();
-          setPlannerPlace(el.dataset.dir === 'to' ? 'to' : 'from', place);
-          persist();
-        };
-      });
-
-    // A station with no resolved stopId (most of them, until the pipeline
-    // ships one) shows exactly what it always has - no departures section.
-    const liveEl = stopId ? popup.getElement()?.querySelector<HTMLElement>('.pop-live') : null;
-    if (liveEl) loadDepartures(liveEl, stopId, colourOf);
-  }
-
-  /** Fetches and renders the departure board into an already-open popup. */
-  function loadDepartures(
-    container: HTMLElement,
-    stopId: string,
-    colourOf: (d: Departure) => string | null,
-  ) {
-    // showStation already bumped liveToken and cleared liveController just
-    // above, synchronously, so this read sees that same generation.
-    const token = liveToken;
+    const token = ++liveToken;
     const controller = new AbortController();
     liveController = controller;
     // The API has no timeout of its own; abort a request that never
-    // resolves rather than leave the popup loading forever.
+    // resolves rather than leave the board loading forever.
     const timer = window.setTimeout(() => controller.abort(), 8000);
+
+    // Departure badges are painted from the lines this station serves, so a
+    // board under the "lines serving this station" row uses the same colour for
+    // the same line - the feed's own colour is only a fallback for services the
+    // map does not draw (see Departure.colour).
+    const stationColours = new Map(station.lines.map((l) => [lineKey(l.ref), l.colour]));
+    const colourOf = (d: Departure) => stationColours.get(lineKey(d.line)) ?? d.colour;
 
     container.innerHTML = departuresSection(`<p class="muted">${t().loadingDepartures}</p>`);
 
-    fetchDepartures(stopId, controller.signal)
+    fetchDepartures(station.stopId, controller.signal)
       .then((departures) => {
         window.clearTimeout(timer);
-        if (token !== liveToken) return; // superseded - popup has moved on
+        if (token !== liveToken) return; // superseded - the inspector has moved on
         // Built before marking anything "used": if a malformed entry makes
         // departureRow throw, this rejects and falls to .catch below instead
         // of crediting Transitous for a board that never actually rendered.
@@ -915,7 +975,7 @@ async function main() {
       .catch((err: unknown) => {
         window.clearTimeout(timer);
         if (token !== liveToken) return;
-        // Quiet degrade either way - the popup works without departures,
+        // Quiet degrade either way - the inspector works without departures,
         // plus a brief note, no retry. But only a LiveDataError (a bad
         // status, a network failure, an unparseable body - see live.ts) or
         // our own timeout abort is an *expected* reason for this to fail.
@@ -991,14 +1051,14 @@ async function main() {
       state.closures = on;
       applyClosures();
     },
-    onToggleSheet: () => setChrome(state.chrome === 'peek' ? 'full' : 'peek'),
+    onSheetMode: (mode) => setChrome(mode),
     onSelect: (id) => {
       select(id);
       const l = byId.get(id);
       if (l) setStatus(`${l.ref} — ${l.name}`);
     },
-    onFlyToStation: (lngLat) => map.flyTo({ center: lngLat, zoom: 12 }),
-    searchStations: (q) => searchStations(map, q),
+    onOpenStation: (station) => openStation(station),
+    searchStations: (q) => searchStations(map, q, byId),
   });
 
   // The operator marks, alongside the map rather than before it: the panel is
@@ -1061,7 +1121,7 @@ async function main() {
  * avoids shipping a separate index. It therefore only finds stations within the
  * current viewport's loaded tiles - the UI says so when nothing matches.
  */
-function searchStations(map: MLMap, query: string) {
+function searchStations(map: MLMap, query: string, byId: Map<string, LineRecord>): StationRecord[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
   const seen = new Set<string>();
@@ -1074,10 +1134,42 @@ function searchStations(map: MLMap, query: string) {
       return true;
     })
     .slice(0, 8)
-    .map((f) => ({
-      name: String(f.properties.name),
-      lngLat: (f.geometry as GeoJSON.Point).coordinates as [number, number],
-    }));
+    .map((f) =>
+      stationRecord(
+        f.properties as Record<string, string>,
+        (f.geometry as GeoJSON.Point).coordinates as [number, number],
+        byId,
+      ),
+    );
+}
+
+/**
+ * A station's tile properties as the inspector needs them.
+ *
+ * A stop mark carries only what drawing it takes - the run of lines that bar
+ * covers, and the name - so this is also called with a station source feature
+ * read back out of a loaded tile. The line ids resolve against the registry,
+ * which is what turns them into badges; an id the registry does not know is
+ * dropped rather than rendered as a blank chip.
+ */
+function stationRecord(
+  p: Record<string, string>,
+  at: [number, number],
+  byId: Map<string, LineRecord>,
+): StationRecord {
+  return {
+    id: String(p.station ?? p.id ?? ''),
+    name: String(p.name ?? ''),
+    uicRef: String(p.uic_ref ?? ''),
+    stopId: String(p.stopId ?? ''),
+    at,
+    lines: String(p.lines ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map((id) => byId.get(id))
+      .filter((l): l is LineRecord => !!l)
+      .sort(compareLines),
+  };
 }
 
 function departuresSection(bodyHtml: string): string {

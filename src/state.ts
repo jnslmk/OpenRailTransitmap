@@ -7,7 +7,7 @@
  *   ?op=DB Regio~erixx      only these operators (empty: none of them)
  *   ?opoff=DB Regio         every operator except these
  *   ?closures=0             construction overlay off
- *   ?ui=map|peek            sidebar hidden / collapsed to its handle
+ *   ?ui=map|peek|expanded   sidebar hidden / folded / reading size
  *   ?tab=plan               the journey planner rather than the line index
  *   ?from= / ?to=           the planner's two ends (see `encodePlace`)
  *   ?at= / ?arrive=1        depart-at / arrive-by, absent meaning "leave now"
@@ -22,11 +22,15 @@ import { MODE_GROUPS, type Place } from './routing.ts';
 import { BIKE_STEPS, defaultPlannerState, type PlannerState } from './planner.ts';
 
 /**
- * How much of the chrome is showing. `peek` only differs from `full` in the
- * narrow layout, where the sidebar is a bottom sheet that collapses to its
- * handle; `hidden` drops it entirely at any width.
+ * How much of the chrome is showing, on a phone and off it.
+ *
+ * `full` is the working sheet, `peek` folds both content bodies away to the
+ * shared handle and summary, `expanded` gives the sheet the screen for reading
+ * long evidence, and `hidden` drops the chrome entirely for map-only viewing.
+ * Only `peek` and `expanded` change anything in the narrow layout, where the
+ * sheet exists; `hidden` applies at every width.
  */
-export type ChromeMode = 'full' | 'peek' | 'hidden';
+export type ChromeMode = 'full' | 'peek' | 'expanded' | 'hidden';
 
 /** Which half of the sidebar is showing. The map underneath is the same either way. */
 export type Tab = 'explore' | 'plan';
@@ -138,7 +142,14 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     modes: modes.size ? modes : new Set<Mode>(MODES),
     operators: readOperators(q),
     closures: q.get('closures') !== '0',
-    chrome: q.get('ui') === 'map' ? 'hidden' : q.get('ui') === 'peek' ? 'peek' : 'full',
+    chrome:
+      q.get('ui') === 'map'
+        ? 'hidden'
+        : q.get('ui') === 'peek'
+          ? 'peek'
+          : q.get('ui') === 'expanded'
+            ? 'expanded'
+            : 'full',
     tab: q.get('tab') === 'plan' ? 'plan' : 'explore',
     plan,
   };
@@ -153,6 +164,7 @@ export function writeState(s: ViewState) {
   if (!s.closures) q.set('closures', '0');
   if (s.chrome === 'hidden') q.set('ui', 'map');
   if (s.chrome === 'peek') q.set('ui', 'peek');
+  if (s.chrome === 'expanded') q.set('ui', 'expanded');
 
   if (s.tab === 'plan') q.set('tab', 'plan');
   const p = s.plan;

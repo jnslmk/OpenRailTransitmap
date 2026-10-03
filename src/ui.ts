@@ -10,7 +10,7 @@ import {
   type LineScore,
   type PunctualityFile,
 } from './punctuality.ts';
-import type { Tab, ViewState } from './state.ts';
+import type { ChromeMode, Tab, ViewState } from './state.ts';
 import { renderPlanner, type PlannerHost } from './planner.ts';
 import {
   endMoved,
@@ -38,12 +38,29 @@ export interface ChromeOptions {
   onToggleMode: (mode: Mode, on: boolean) => void;
   onOperators: (filter: OperatorFilter) => void;
   onToggleClosures: (on: boolean) => void;
-  onToggleSheet: () => void;
+  /** Ask for a different sheet size: peek, working, reading or map-only. */
+  onSheetMode: (mode: ChromeMode) => void;
   onSelect: (lineId: string) => void;
-  onFlyToStation: (lngLat: [number, number]) => void;
-  searchStations: (q: string) => { name: string; lngLat: [number, number] }[];
+  /** Fly to a station and open its inspector. */
+  onOpenStation: (station: StationRecord) => void;
+  searchStations: (q: string) => StationRecord[];
   onTab: (tab: Tab) => void;
   plannerHost: PlannerHost;
+}
+
+/**
+ * A station as both the map's hit test and the search can describe it: what it
+ * is called, how to write a link to it, where it is, and the lines that call.
+ * Built in main.ts from the tiles, rendered here, so the inspector never has to
+ * look a line up in the registry itself.
+ */
+export interface StationRecord {
+  id: string;
+  name: string;
+  uicRef: string;
+  stopId: string;
+  at: [number, number];
+  lines: LineRecord[];
 }
 
 /**
@@ -94,35 +111,104 @@ function compareLines(a: LineRecord, b: LineRecord): number {
   );
 }
 
+/**
+ * Build an element.
+ *
+ * The third argument is text, never markup. Almost every label in this file
+ * comes from a tile or a feed - a station name, an operator name, a line ref,
+ * a UIC - and a shared boundary that escapes by default is the only kind that
+ * stays escaped as callers change. The two places that genuinely need markup
+ * (the legend keys and the footer credits) set `innerHTML` themselves, on
+ * strings this file owns.
+ */
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
   cls?: string,
-  html?: string,
+  text?: string,
 ): HTMLElementTagNameMap[K] => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
-  if (html !== undefined) n.innerHTML = html;
+  if (text !== undefined) n.textContent = text;
   return n;
 };
 
 let opts: ChromeOptions;
 
+/**
+ * What the inspector is currently showing, so the sheet's handle can name it
+ * rather than calling every selection "search, filters and lines".
+ */
+let inspectorTitle: string | null = null;
+/** Where focus goes when the inspector closes: whatever opened it. */
+let returnFocus: HTMLElement | null = null;
+/**
+ * The workspace body's scroll offset while the inspector covers it.
+ *
+ * On a phone the rail and the inspector share one slot and the rail is hidden
+ * while a panel is open, which resets a hidden scroll container's offset. The
+ * reader's place in the browse list or the planner is part of the context Back
+ * is supposed to restore, so it is put back explicitly. On a desktop nothing is
+ * hidden and nothing is saved, so a scroll the reader made with the panel open
+ * is left alone.
+ */
+let workspaceScroll: number | null = null;
+/**
+ * What the inspector is showing, as `kind:id`, so a repaint of the same thing
+ * is a no-op. `applySelection` runs on every tab switch, filter change and
+ * drawn itinerary; rebuilding the panel each time would put the reader's scroll
+ * and their place in a long evidence list back to the top for no reason.
+ */
+let shownKey: string | null = null;
+/**
+ * The one close owner. Every panel's Back and × call through this, so a caller
+ * that repaints the same selection only has to re-point the handler rather than
+ * rebuild the buttons.
+ */
+let inspectorClose: (() => void) | null = null;
+
 export function renderChrome(o: ChromeOptions) {
   opts = o;
-  draw();
+  mountSheetControls();
+  buildSidebar();
+  renderChrome.rerender();
 }
 
-renderChrome.rerender = () => draw();
+/**
+ * Refresh only what a context switch changes: which half of the workspace is
+ * showing, the filter summary and the sheet's own label.
+ *
+ * The bodies themselves are mounted once and never rebuilt. That is what lets
+ * an open filter disclosure, a search query, a half-typed journey and a scroll
+ * position all survive selecting a line, and what makes closing a selection
+ * unable to move the reader's place in the workspace.
+ */
+renderChrome.rerender = () => syncChrome();
+
+function syncChrome() {
+  syncTab();
+  syncFilterSummary();
+  syncSheetSummary();
+}
 
 // ---------------------------------------------------------------------------
-// Bottom-sheet handle
+// Sheet controls
 //
-// In the narrow layout the sidebar is a sheet under the map. The handle
-// collapses it to a strip so the map gets the screen without losing the way
-// back — the map's own toggle hides the chrome entirely, this only folds it.
+// On a phone the workspace and the inspector share one content slot under the
+// map, and these controls are the only part of it that stays put: a handle that
+// folds the slot to a summary and a button that takes it to reading size.
+// Mounted once, outside the sidebar, so a fold never redraws what it folds.
 // ---------------------------------------------------------------------------
 
 let handleEl: HTMLButtonElement | null = null;
+let expandEl: HTMLButtonElement | null = null;
+
+function mountSheetControls() {
+  const host = document.querySelector<HTMLElement>('.sheet-controls');
+  if (!host || host.dataset.mounted) return;
+  host.dataset.mounted = '1';
+  host.append(sheetHandle(), sheetExpand());
+  syncSheetHandle(opts.state.chrome);
+}
 
 function sheetHandle(): HTMLElement {
   const btn = el('button', 'sheet-handle');
@@ -143,29 +229,61 @@ function sheetHandle(): HTMLElement {
     const dy = e.clientY - startY;
     if (Math.abs(dy) < 24) return;
     dragged = true;
-    const collapsed = opts.state.chrome === 'peek';
-    const wantsCollapsed = dy > 0;
-    if (wantsCollapsed !== collapsed) opts.onToggleSheet();
+    // Up asks for more room, down for less: the gesture names the direction,
+    // so the sheet takes the nearest state that way.
+    opts.onSheetMode(dy < 0 ? 'expanded' : 'peek');
   });
   btn.onclick = () => {
-    if (!dragged) opts.onToggleSheet();
+    if (dragged) return;
+    opts.onSheetMode(opts.state.chrome === 'full' ? 'peek' : 'full');
   };
 
   btn.append(el('span', 'grabber'), el('span', 'sheet-label'));
   handleEl = btn;
-  syncSheetHandle(opts.state.chrome === 'peek');
   return btn;
 }
 
-/** Update the handle in place; redrawing the sidebar for a fold is wasteful. */
-export function syncSheetHandle(collapsed: boolean) {
+/** The explicit way between working and reading size, beside the handle. */
+function sheetExpand(): HTMLElement {
+  const btn = el('button', 'sheet-expand');
+  btn.type = 'button';
+  btn.onclick = () => opts.onSheetMode(opts.state.chrome === 'expanded' ? 'full' : 'expanded');
+  expandEl = btn;
+  return btn;
+}
+
+/**
+ * Update the sheet controls in place; redrawing the sheet for a fold is
+ * wasteful, and on the narrow layout it is the one thing that must never
+ * flicker.
+ */
+export function syncSheetHandle(mode: ChromeMode) {
+  const s = t();
+  if (expandEl) {
+    const expanded = mode === 'expanded';
+    const label = expanded ? s.reducePanel : s.expandReading;
+    expandEl.textContent = label;
+    expandEl.setAttribute('aria-label', label);
+    expandEl.setAttribute('aria-pressed', String(expanded));
+  }
+  syncSheetSummary();
+}
+
+/**
+ * What the slot is showing, as the handle's visible label and as half of its
+ * accessible name - the other half being what tapping it will do, so a screen
+ * reader hears both what is folded away and how to open it.
+ */
+function syncSheetSummary() {
   if (!handleEl) return;
   const s = t();
-  const label = collapsed ? s.expandPanel : s.collapsePanel;
-  handleEl.title = label;
-  handleEl.setAttribute('aria-label', label);
-  handleEl.setAttribute('aria-expanded', String(!collapsed));
-  handleEl.querySelector('.sheet-label')!.textContent = collapsed ? s.panelPeek : '';
+  const summary = inspectorTitle ?? (opts.state.tab === 'plan' ? s.sheetPlan : s.panelPeek);
+  const action = opts.state.chrome === 'peek' ? s.expandPanel : s.collapsePanel;
+  const text = handleEl.querySelector('.sheet-label');
+  if (text) text.textContent = summary;
+  handleEl.title = action;
+  handleEl.setAttribute('aria-label', `${summary} \u2014 ${action}`);
+  handleEl.setAttribute('aria-expanded', String(opts.state.chrome !== 'peek'));
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +344,19 @@ export function unpinModes() {
   pinnedModes.clear();
 }
 
+/**
+ * A key, folded away until it is asked for. Native `<details>` so it is
+ * labelled, keyboard-operable and remembered by the browser without a line of
+ * script - and so opening filters never turns the sidebar into a wall of
+ * symbols before the reader has seen a single line.
+ */
+function legendDisclosure(body: HTMLElement, label: string): HTMLElement {
+  const details = el('details', 'legend-disclosure');
+  details.appendChild(el('summary', '', label));
+  details.appendChild(body);
+  return details;
+}
+
 function buildModes(): HTMLElement {
   const s = t();
   const box = el('div', 'panel');
@@ -261,13 +392,15 @@ function buildModes(): HTMLElement {
   // Stop symbology, matching the map: a bar laid across the lines that call,
   // so its length is the answer and not decoration. The third row is the one
   // worth spelling out - a gap in a bar is a line that does not stop.
+  // Its own disclosure, because a key is only wanted by the reader who is
+  // already puzzled by a mark.
   const legend = el('div', 'legend');
   legend.innerHTML = `
     <div class="legend-row"><span class="stopmark"><i></i></span>${s.stopOne}</div>
     <div class="legend-row"><span class="stopmark"><i class="wide"></i></span>${s.stopShared}</div>
     <div class="legend-row"><span class="stopmark"><i class="upper"></i><i class="lower"></i>
       </span>${s.stopSkipped}</div>`;
-  box.appendChild(legend);
+  box.appendChild(legendDisclosure(legend, s.legend));
 
   modeBox = box;
   syncModes();
@@ -276,6 +409,7 @@ function buildModes(): HTMLElement {
 
 function syncModes() {
   if (!modeBox) return;
+  syncFilterSummary();
 
   let shown = 0;
   for (const mode of MODES) {
@@ -318,18 +452,17 @@ export function setVisibleClosures(n: number) {
 }
 
 function syncClosures() {
-  if (!closureCountEl) return;
-  const s = t();
-  if (!opts.state.closures) {
-    closureCountEl.textContent = '';
-    return;
-  }
-  closureCountEl.textContent =
-    closuresInView === null
+  if (closureCountEl) {
+    const s = t();
+    closureCountEl.textContent = !opts.state.closures
       ? ''
-      : closuresInView
-        ? s.closureCount(closuresInView)
-        : s.noClosuresInView;
+      : closuresInView === null
+        ? ''
+        : closuresInView
+          ? s.closureCount(closuresInView)
+          : s.noClosuresInView;
+  }
+  syncFilterSummary();
 }
 
 function buildClosures(): HTMLElement {
@@ -358,7 +491,7 @@ function buildClosures(): HTMLElement {
     <div class="legend-row"><span class="hazard single"></span>${s.closureLegendSingle}</div>
     <div class="legend-row"><span class="hazard minor"></span>${s.closureLegendMinor}</div>
     <div class="legend-row"><span class="hazard-bands"><i></i><i></i><i></i></span>${s.closureLegendBands}</div>`;
-  box.appendChild(legend);
+  box.appendChild(legendDisclosure(legend, s.legend));
 
   // Said once, in the sidebar, rather than on every panel: the overlay is the
   // plan as it stood when the tiles were built, not a live picture.
@@ -536,6 +669,7 @@ function fillOperatorMark(row: OperatorRow, name: string) {
 }
 
 function syncOperators() {
+  syncFilterSummary();
   if (!operatorList || !operatorMaster || !operatorCount || !operatorEmpty) return;
   const filter = opts.state.operators;
   const counts = operatorsInView;
@@ -580,25 +714,11 @@ function syncOperators() {
   operatorEmpty.hidden = !counts || names.length > 0;
 }
 
-/**
- * Explore and Plan share the sidebar, so every reference the Explore half keeps
- * into the DOM has to be dropped when the Plan half replaces it. Each `sync*`
- * already no-ops on a null, which turns "the legend is not on screen" from a
- * crash into nothing happening - which is what it should be.
- */
-function clearExploreRefs() {
-  modeBox = null;
-  modeRows = new Map();
-  emptyNote = null;
-  closureCountEl = null;
-  closureDayEl = null;
-  operatorList = null;
-  operatorMaster = null;
-  operatorCount = null;
-  operatorEmpty = null;
-  operatorRows.clear();
-  lineList = null;
-}
+let exploreBody: HTMLElement | null = null;
+let planRoot: HTMLElement | null = null;
+let searchBoxEl: HTMLElement | null = null;
+let filterDisclosure: HTMLDetailsElement | null = null;
+let filterSummaryEl: HTMLElement | null = null;
 
 function tabBar(): HTMLElement {
   const s = t();
@@ -613,6 +733,7 @@ function tabBar(): HTMLElement {
     const on = opts.state.tab === tab;
     const b = el('button', `tab${on ? ' on' : ''}`, label);
     b.type = 'button';
+    b.dataset.tab = tab;
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(on));
     b.onclick = () => opts.onTab(tab);
@@ -621,32 +742,33 @@ function tabBar(): HTMLElement {
   return bar;
 }
 
-function draw() {
-  const { state } = opts;
+/**
+ * Build the workspace once.
+ *
+ * Explore and Plan are two bodies inside one shell, both mounted and only one
+ * shown: the planner's half-typed journey and result list are as much the
+ * reader's work as a search query is, and rebuilding either on a tab switch
+ * would throw them away. The head - tabs, search, filters - is shared, and the
+ * filter summary is what keeps a restriction visible when the disclosure that
+ * set it is closed.
+ */
+function buildSidebar() {
   const s = t();
   const root = document.getElementById('sidebar')!;
   root.innerHTML = '';
 
-  root.appendChild(sheetHandle());
-  root.appendChild(tabBar());
-
-  if (state.tab === 'plan') {
-    clearExploreRefs();
-    const box = el('div', 'plan-root');
-    root.appendChild(box);
-    renderPlanner(box, opts.plannerHost);
-    root.appendChild(buildFooter());
-    return;
-  }
+  const head = el('div', 'workspace-head');
+  head.appendChild(tabBar());
 
   // --- search ---------------------------------------------------------------
   const searchBox = el('div', 'panel');
   const input = el('input', 'search');
   input.type = 'search';
   input.placeholder = s.search;
+  input.setAttribute('aria-label', s.search);
   const results = el('div', 'results');
   searchBox.append(input, results);
-  root.appendChild(searchBox);
+  searchBoxEl = searchBox;
 
   let timer: number | undefined;
   input.oninput = () => {
@@ -654,24 +776,101 @@ function draw() {
     timer = window.setTimeout(() => runSearch(input.value, results), 120);
   };
 
-  // --- modes / legend -------------------------------------------------------
-  root.appendChild(buildModes());
+  head.append(searchBox, buildFilters());
 
-  // --- construction ---------------------------------------------------------
-  root.appendChild(buildClosures());
+  // --- body -----------------------------------------------------------------
+  const body = el('div', 'workspace-body');
 
-  // --- operators ------------------------------------------------------------
-  root.appendChild(buildOperators());
-
-  // --- line index -----------------------------------------------------------
+  exploreBody = el('div', 'explore-body');
   const linesBox = el('div', 'panel');
   linesBox.appendChild(el('h2', '', s.lines));
   lineList = el('div', 'line-list');
   fillLines();
   linesBox.appendChild(lineList);
-  root.appendChild(linesBox);
+  exploreBody.appendChild(linesBox);
 
-  root.appendChild(buildFooter());
+  planRoot = el('div', 'plan-root');
+  renderPlanner(planRoot, opts.plannerHost);
+
+  body.append(exploreBody, planRoot, buildFooter());
+  root.append(head, body);
+  syncTab();
+}
+
+/** Show the half of the workspace the state names; the other is left mounted. */
+function syncTab() {
+  const plan = opts.state.tab === 'plan';
+  document.querySelectorAll<HTMLButtonElement>('.tabs .tab').forEach((button) => {
+    const on = button.dataset.tab === opts.state.tab;
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-selected', String(on));
+  });
+  if (exploreBody) exploreBody.hidden = plan;
+  if (planRoot) planRoot.hidden = !plan;
+  if (searchBoxEl) searchBoxEl.hidden = plan;
+  if (filterDisclosure) filterDisclosure.hidden = plan;
+}
+
+/**
+ * The filter toolbar: one summary line that always states what is being held
+ * back, and a native disclosure holding the switches themselves. Closed by
+ * default, so the browse list is the first thing under the search box rather
+ * than a wall of modes and operators the reader has not asked about.
+ */
+function buildFilters(): HTMLElement {
+  const s = t();
+  const details = el('details', 'filter-disclosure');
+  const summary = el('summary');
+  summary.append(el('span', '', s.filters), el('span', 'filter-summary'));
+  filterSummaryEl = summary.querySelector<HTMLElement>('.filter-summary');
+
+  const content = el('div', 'filter-content');
+  content.append(buildModes(), buildClosures(), buildOperators());
+  details.append(summary, content);
+  filterDisclosure = details;
+
+  // On a phone the head can only hold so much before the body disappears
+  // behind it, so opening the filters takes the sheet to reading size. They
+  // exist to be used, and a switch the reader then has to hunt for is worse
+  // than a sheet that is briefly taller than they asked for; the handle, a
+  // drag down and the Reduce button all bring it back.
+  details.addEventListener('toggle', () => {
+    if (!details.open || opts.state.chrome === 'expanded') return;
+    if (window.matchMedia('(max-width: 820px)').matches) opts.onSheetMode('expanded');
+  });
+
+  syncFilterSummary();
+  return details;
+}
+
+/**
+ * What the current filters are actually holding back.
+ *
+ * Not a count of what is left - a count is the one thing a reader cannot check
+ * against what they are looking at. Modes are named, because there are six and
+ * half of them fit; operators are counted, because the list can run to three
+ * hundred and the disclosure is one tap away; closures are named because the
+ * switch hides a whole layer of the map. When nothing is filtered the line
+ * says so, so its presence never reads as a restriction.
+ */
+function syncFilterSummary() {
+  if (!filterSummaryEl) return;
+  const s = t();
+  const parts: string[] = [];
+
+  const off = MODES.filter((m) => !opts.state.modes.has(m)).map((m) => s[m]);
+  if (off.length) parts.push(s.modesOff(off.join(', ')));
+
+  // The set names every operator the reader has deliberately moved, whichever
+  // way round the filter is stated - so its size is the honest count of what
+  // they have restricted, view or no view.
+  const filter = opts.state.operators;
+  if (drawsNoOperator(filter)) parts.push(s.operatorsAllOff);
+  else if (!drawsEveryOperator(filter)) parts.push(s.operatorsOff(filter.names.size));
+
+  if (!opts.state.closures) parts.push(s.closuresOff);
+
+  filterSummaryEl.textContent = parts.join(' \u00b7 ') || s.allFilters;
 }
 
 const REPO = 'https://github.com/jnslmk/openrailtransitmap';
@@ -712,10 +911,10 @@ function buildStamp(): string {
 function buildFooter(): HTMLElement {
   const s = t();
   const { registry } = opts;
-  const footer = el(
-    'footer',
-    'panel attrib',
-    `
+  const footer = el('footer', 'panel attrib');
+  // The credits are the one place that is markup rather than text: links and
+  // the build stamp, built from strings and constants this file owns.
+  footer.innerHTML = `
     <p class="meta">${s.lineCount(registry.counts.lines)} · ${s.stationCount(registry.counts.stations)}</p>
     <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors · ODbL<br>
     <a href="${REPO}">Source on GitHub</a>
@@ -725,8 +924,7 @@ function buildFooter(): HTMLElement {
     <span class="coach-attrib" hidden>${s.coachAttribution}</span>
     <span class="logo-attrib" hidden>${s.logoAttribution}</span>
     <span class="routing-attrib" hidden>${s.planAttribution}</span>
-    ${buildStamp()}`,
-  );
+    ${buildStamp()}`;
   liveAttribEl = footer.querySelector('.live-attrib');
   liveAttribEl!.hidden = !liveDataUsed;
   punctAttribEl = footer.querySelector('.punct-attrib');
@@ -878,9 +1076,12 @@ function runSearch(query: string, container: HTMLElement) {
     .slice(0, 6);
   for (const l of lines) container.appendChild(lineRow(l));
 
+  // A station result opens the station in the inspector and flies to it: the
+  // panel is where its lines, departures and planner links live, and centring
+  // the map alone would answer half the question.
   for (const st of opts.searchStations(query)) {
     const row = el('button', 'line-row');
-    row.onclick = () => opts.onFlyToStation(st.lngLat);
+    row.onclick = () => opts.onOpenStation(st);
     row.append(el('span', 'dot'), el('span', 'line-name', st.name));
     container.appendChild(row);
   }
@@ -891,55 +1092,168 @@ function runSearch(query: string, container: HTMLElement) {
 }
 
 // ---------------------------------------------------------------------------
-// Line detail panel
+// Inspector
+//
+// The right-hand column on a desktop and the content slot on a phone, holding
+// whatever is selected: a line, a station or a closure. Identity sits in the
+// sticky head, the evidence scrolls under it, and metadata folds away at the
+// bottom. All three open through the same shell, so Back always means the same
+// thing and only ever one of them owns the column.
 // ---------------------------------------------------------------------------
 
-export function renderLinePanel(line: LineRecord | null, handlers: { onClose: () => void }) {
+/**
+ * Open the inspector on a selection. `identity` is the head's title row - a
+ * badge and a name - and `title` the same thing as one line of plain text, for
+ * the sheet's handle on a phone.
+ *
+ * The element holding focus before this opens is remembered as the place Back
+ * should return to, but only when it lives outside the panel about to be
+ * replaced: a close must never land on something the reader cannot see.
+ */
+function openInspector(title: string, identity: HTMLElement[]): HTMLElement {
   const host = document.getElementById('detail')!;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && !host.contains(active)) returnFocus = active;
+  // Only a fresh open has a scroll offset worth keeping; a second panel
+  // replacing the first on a phone reads an already-hidden body.
+  if (!host.classList.contains('open') && window.matchMedia('(max-width: 820px)').matches) {
+    workspaceScroll = document.querySelector<HTMLElement>('.workspace-body')?.scrollTop ?? null;
+  }
+
   host.innerHTML = '';
-  host.classList.toggle('open', !!line);
-  if (!line) return;
+  host.classList.add('open');
+  inspectorTitle = title;
+  syncSheetSummary();
 
   const s = t();
-  const head = el('div', 'detail-head');
-  const badge = el('span', 'badge big', line.ref);
-  badge.style.background = line.colour;
-  badge.style.color = textOn(line.colour);
-  head.append(badge, el('div', 'detail-title', line.name || line.ref));
+  const head = el('div', 'inspector-head');
+  const back = el('button', 'inspector-back');
+  back.type = 'button';
+  const chevron = el('span', 'back-chevron');
+  chevron.innerHTML =
+    '<svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="m12 5-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  back.append(chevron, el('span', '', s.back));
+  back.onclick = () => inspectorClose?.();
 
-  const close = el('button', 'close', '×');
+  const row = el('div', 'detail-head');
+  row.append(...identity);
+  const close = el('button', 'close');
+  close.innerHTML =
+    '<svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  close.type = 'button';
   close.title = s.close;
-  close.onclick = handlers.onClose;
-  head.appendChild(close);
-  host.appendChild(head);
+  close.setAttribute('aria-label', s.close);
+  close.onclick = () => inspectorClose?.();
+  row.appendChild(close);
 
-  const rows: [string, string][] = [
-    [s.modes, s[line.mode]],
-    [s.operator, line.operator || '—'],
-    [s.network, line.network || '—'],
-    [s.stations, String(line.stops)],
-  ];
-  const table = el('dl', 'detail-meta');
-  for (const [k, v] of rows) {
-    table.append(el('dt', '', k), el('dd', '', v));
-  }
-  host.appendChild(table);
-  // Filled in by setLinePunctuality once the score file has loaded. Empty
-  // until then rather than showing a spinner: the panel's own content is
-  // already on screen and complete, and a placeholder for a section that may
-  // turn out not to exist for this line is worse than a section that appears.
-  host.appendChild(el('div', 'detail-punctuality'));
+  head.append(back, row);
+  const body = el('div', 'inspector-body');
+  host.append(head, body);
+  return body;
 }
 
 /**
- * Add the punctuality section to the open line panel, or leave it empty when
- * this line has no score.
+ * Close the inspector and hand focus back to whatever opened it.
+ *
+ * Called on every empty re-render, so it no-ops unless the panel is actually
+ * open - otherwise merely repainting the map would move the reader's focus.
+ */
+function closeInspector() {
+  const host = document.getElementById('detail')!;
+  inspectorTitle = null;
+  shownKey = null;
+  inspectorClose = null;
+  syncSheetSummary();
+  if (!host.classList.contains('open')) return;
+  host.classList.remove('open');
+  host.innerHTML = '';
+  const target = returnFocus;
+  returnFocus = null;
+  // The rail is rendered again by the class removal above, so its offset can
+  // be put back before focus is handed over.
+  if (workspaceScroll !== null) {
+    const body = document.querySelector<HTMLElement>('.workspace-body');
+    if (body) body.scrollTop = workspaceScroll;
+    workspaceScroll = null;
+  }
+  if (target && target.isConnected && target.getClientRects().length) target.focus();
+  else focusWorkspace();
+}
+
+/**
+ * Where focus goes when the thing that opened the inspector is gone - a line's
+ * row can be filtered off the map while its panel is open. Never a source the
+ * reader cannot see: the sheet handle when the sheet is showing, the map
+ * otherwise.
+ */
+function focusWorkspace() {
+  if (handleEl && handleEl.getClientRects().length) {
+    handleEl.focus();
+    return;
+  }
+  document.querySelector<HTMLElement>('#map canvas')?.focus();
+}
+
+/**
+ * Metadata, folded into a native disclosure after the evidence: factual, and
+ * only wanted by the reader who is checking a claim rather than reading the
+ * answer.
+ */
+function metaDisclosure(rows: [string, string][]): HTMLElement {
+  const details = el('details', 'meta-disclosure');
+  details.appendChild(el('summary', '', t().details));
+  const table = el('dl', 'detail-meta');
+  for (const [k, v] of rows) table.append(el('dt', '', k), el('dd', '', v));
+  details.appendChild(table);
+  return details;
+}
+
+export function renderLinePanel(line: LineRecord | null, handlers: { onClose: () => void }) {
+  inspectorClose = handlers.onClose;
+  if (!line) {
+    closeInspector();
+    return;
+  }
+  // Already showing this line: keep the panel, its scroll and its focus.
+  const key = `line:${line.id}`;
+  if (key === shownKey) return;
+
+  const s = t();
+  const badge = el('span', 'badge big', line.ref);
+  badge.style.background = line.colour;
+  badge.style.color = textOn(line.colour);
+  const title = el('div', 'detail-title', line.name || line.ref);
+  const body = openInspector(`${line.ref} \u2014 ${line.name || line.ref}`, [badge, title]);
+  shownKey = key;
+
+  // Evidence before metadata: the reader came for how the line runs, not for
+  // which network filed it. The section states the wait rather than sitting
+  // empty, so "still loading" and "nothing to show" cannot read the same.
+  const punct = el('div', 'detail-punctuality');
+  punct.dataset.line = line.id;
+  punct.appendChild(el('p', 'muted small', s.loadingPunctuality));
+  body.appendChild(punct);
+
+  body.appendChild(
+    metaDisclosure([
+      [s.modes, s[line.mode]],
+      [s.operator, line.operator || '\u2014'],
+      [s.network, line.network || '\u2014'],
+      [s.stations, String(line.stops)],
+    ]),
+  );
+}
+
+/**
+ * Add the punctuality section to the open line panel, or state plainly that
+ * there is none.
  *
  * A line is unscored for ordinary reasons - it is a tram, it runs too rarely
  * to measure, DB publishes no realtime at the stations it calls at - so the
- * absence is stated once, plainly, and not explained away. `line` is passed
- * back in so a score arriving after the rider has selected something else can
- * be discarded rather than painted onto the wrong line.
+ * absence is stated once, plainly, and not explained away. `lineId` is checked
+ * against the panel's own record so a score arriving after the rider has
+ * selected something else can be discarded rather than painted onto the wrong
+ * line.
  */
 export function setLinePunctuality(
   lineId: string,
@@ -947,12 +1261,17 @@ export function setLinePunctuality(
   meta: PunctualityFile | null,
 ) {
   const host = document.getElementById('detail')?.querySelector<HTMLElement>('.detail-punctuality');
-  if (!host || host.dataset.line === lineId) return;
-  host.dataset.line = lineId;
+  if (!host || host.dataset.line !== lineId || host.dataset.filled === lineId) return;
+  host.dataset.filled = lineId;
   host.innerHTML = '';
-  if (!meta) return; // No score file at all - say nothing, not "no data".
 
   const s = t();
+  if (!meta) {
+    // A missing or unreadable score file is a fact about the panel, not
+    // silence: an empty section reads as "nothing to report".
+    host.appendChild(el('p', 'muted small', s.punctualityUnavailable));
+    return;
+  }
   const head = el('div', 'punct-head');
   head.append(
     el('h3', '', s.punctuality),
@@ -1057,29 +1376,26 @@ export function setLinePunctuality(
  * only one of the two can be the answer to "what did I just click".
  *
  * It leads with the effect rather than with the works, because "Line closed" is
- * the fact a reader is after and "Points renewal" is why. The history section
- * only appears once the log has something to say: on a closure first seen today
+ * the fact a reader is after and "Points renewal" is why. Effect and span are
+ * the evidence; the works, the line and the hours are metadata, folded away
+ * behind the same disclosure the other panels use. The history section only
+ * appears once the log has something to say: on a closure first seen today
  * there is nothing to report but the fact that we started watching, and a row
  * reading "Rescheduled 0 times" would dress that up as a finding.
  */
 export function renderClosurePanel(closure: ClosureRecord, handlers: { onClose: () => void }) {
-  const host = document.getElementById('detail')!;
-  host.innerHTML = '';
-  host.classList.add('open');
+  inspectorClose = handlers.onClose;
+  const key = `closure:${closure.id}`;
+  if (key === shownKey) return;
 
   const s = t();
-  const head = el('div', 'detail-head');
   const badge = el('span', `badge big hazard-badge effect-${closure.effect}`, '\u26A0');
-  head.append(badge, el('div', 'detail-title', s.closureEffect[closure.effect]));
+  const title = el('div', 'detail-title', s.closureEffect[closure.effect]);
+  const body = openInspector(s.closureEffect[closure.effect], [badge, title]);
+  shownKey = key;
 
-  const close = el('button', 'close', '\u00d7');
-  close.title = s.close;
-  close.onclick = handlers.onClose;
-  head.appendChild(close);
-  host.appendChild(head);
-
-  host.appendChild(el('p', 'closure-section', closure.section));
-  host.appendChild(closureSpan(closure));
+  body.appendChild(el('p', 'closure-section', closure.section));
+  body.appendChild(closureSpan(closure));
 
   const rows: [string, string][] = [
     [s.closureWorks, closure.works || '\u2014'],
@@ -1092,13 +1408,10 @@ export function renderClosurePanel(closure: ClosureRecord, handlers: { onClose: 
     rows.push([s.closureTrack, s.closureDirection[closure.direction]]);
   }
   rows.push([s.closureHours, closure.hours || s.closureAllDay]);
+  body.appendChild(metaDisclosure(rows));
 
-  const table = el('dl', 'detail-meta');
-  for (const [k, v] of rows) table.append(el('dt', '', k), el('dd', '', v));
-  host.appendChild(table);
-
-  host.appendChild(closureHistory(closure));
-  host.appendChild(closureLinks(closure));
+  body.appendChild(closureHistory(closure));
+  body.appendChild(closureLinks(closure));
 }
 
 /**
@@ -1320,4 +1633,92 @@ export function setStatus(message: string) {
   node.textContent = message;
   node.classList.add('show');
   window.setTimeout(() => node.classList.remove('show'), 2400);
+}
+
+// ---------------------------------------------------------------------------
+// Station panel
+// ---------------------------------------------------------------------------
+
+export interface StationHandlers {
+  onClose: () => void;
+  /** A badge was clicked: select that line. */
+  onLine: (lineId: string) => void;
+  /** "Directions from/to here": hand this end to the planner. */
+  onDirections: (dir: 'from' | 'to', station: StationRecord) => void;
+  /**
+   * Fill the board. main.ts owns the request, its abort generation and its
+   * late-response guards; this only provides the container and the frame around
+   * it.
+   */
+  loadDepartures: (container: HTMLElement) => void;
+}
+
+/**
+ * The inspector for a station.
+ *
+ * Identity first, then what serves it, then what is about to leave it. The
+ * departure board is the evidence and states its own loading, empty and error
+ * cases; the station's own codes are metadata and fold away. Line badges are
+ * the same buttons the map has always opened a line from, and the two action
+ * buttons are the reason the planner lives inside the map rather than beside
+ * it.
+ *
+ * Every piece of text here is inserted as text, not markup: the name is an OSM
+ * tag and the departures come from an external API, so neither is trusted to be
+ * HTML.
+ */
+export function renderStationPanel(station: StationRecord, handlers: StationHandlers) {
+  inspectorClose = handlers.onClose;
+  // A station with no id is keyed by where it is as well as what it is called:
+  // two places can share a name, and reusing one's board under the other's
+  // heading would be evidence for the wrong station.
+  const key = station.id
+    ? `station:${station.id}`
+    : `station:${station.name}@${station.at[0]},${station.at[1]}`;
+  if (key === shownKey) return;
+
+  const s = t();
+  const title = el('div', 'detail-title', station.name);
+  const body = openInspector(station.name, [title]);
+  shownKey = key;
+
+  body.appendChild(el('div', 'pop-lines-label', s.servedBy));
+  const badges = el('div', 'pop-lines');
+  if (station.lines.length) {
+    for (const line of station.lines) {
+      const badge = el('button', 'badge', line.ref);
+      badge.type = 'button';
+      badge.style.background = line.colour;
+      badge.style.color = textOn(line.colour);
+      badge.title = line.name || line.ref;
+      badge.onclick = () => handlers.onLine(line.id);
+      badges.appendChild(badge);
+    }
+  } else {
+    badges.textContent = '\u2014';
+  }
+  body.appendChild(badges);
+
+  const actions = el('div', 'pop-actions');
+  const action = (dir: 'from' | 'to', label: string) => {
+    const b = el('button', 'pop-action', label);
+    b.type = 'button';
+    b.onclick = () => handlers.onDirections(dir, station);
+    return b;
+  };
+  actions.append(action('from', s.planDirectionsFrom), action('to', s.planDirectionsTo));
+  body.appendChild(actions);
+
+  // A station with no resolved stopId has no board to show, and a labelled
+  // empty section would be a claim about a station rather than about the data.
+  if (station.stopId) {
+    const live = el('div', 'pop-live');
+    body.appendChild(live);
+    handlers.loadDepartures(live);
+  }
+
+  const rows: [string, string][] = [];
+  if (station.uicRef) rows.push([s.uicRef, station.uicRef]);
+  if (station.stopId) rows.push([s.stopRef, station.stopId]);
+  if (rows.length) body.appendChild(metaDisclosure(rows));
 }
