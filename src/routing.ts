@@ -130,11 +130,14 @@ interface RawArea {
 
 interface RawGeocode {
   type?: string;
+  category?: string;
   name?: string;
   id?: string;
   lat?: number;
   lon?: number;
   areas?: RawArea[];
+  country?: string;
+  modes?: string[];
 }
 
 /**
@@ -166,7 +169,35 @@ function toPlace(raw: RawGeocode): Place | null {
 export async function geocode(text: string, signal: AbortSignal, limit = 8): Promise<Place[]> {
   if (!text.trim()) return [];
   const raw = await request<RawGeocode[]>('/geocode', { text, language: 'de' }, signal);
-  return (Array.isArray(raw) ? raw : [])
+  const results = Array.isArray(raw) ? raw : [];
+  const city = results[0];
+  // A city centre is a geocoder's best hit, but not a rail journey's best end.
+  // Keep explicit stations, addresses and POIs in the provider's order.
+  if (
+    city?.type === 'PLACE' &&
+    /^(place_|city$|town$|village$|hamlet$)/.test(city.category ?? '') &&
+    city.name?.toLocaleLowerCase('de') === text.trim().toLocaleLowerCase('de')
+  ) {
+    const stations = results.filter(
+      (p) =>
+        p.type === 'STOP' &&
+        p.id &&
+        p.country === city.country &&
+        areaName(p.areas) === areaName(city.areas) &&
+        p.modes?.some((mode) =>
+          ['HIGHSPEED_RAIL', 'LONG_DISTANCE', 'REGIONAL_RAIL', 'SUBURBAN', 'NIGHT_RAIL'].includes(
+            mode,
+          ),
+        ),
+    );
+    const preferred =
+      stations.find((p) => /\b(hbf|hauptbahnhof)\b/i.test(p.name ?? '')) ?? stations[0];
+    if (preferred) {
+      results.splice(results.indexOf(preferred), 1);
+      results.unshift(preferred);
+    }
+  }
+  return results
     .map(toPlace)
     .filter((p): p is Place => !!p)
     .slice(0, limit);

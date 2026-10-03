@@ -83,8 +83,12 @@ GitHub Pages and rebuilt nightly.
   are and where you are going, and get itineraries over rail, bus, coach and
   ferry — with one control that is the point of the whole thing, *how far will
   you ride at each end?* Slide it from "no bike" to 90 minutes and the answer
-  changes from the station down the road to any station in the county. The
-  chosen journey draws on the map in the map's own colours — an RE8 leg painted
+  changes from the station down the road to any station in the county.
+  Entering a city name and pressing Enter selects its main railway station
+  (for example, Braunschweig Hbf or Berlin Hbf), when one is available; specific
+  station names and addresses retain their own matches. The selected field stays
+  focused after Enter, so typing can continue without clicking it again.
+  The chosen journey draws on the map in the map's own colours — an RE8 leg painted
   as the map paints RE8 — with bike and walk legs dashed and the rest of the
   network dimmed behind it. Bike carriage is reported honestly: German feeds
   mostly do not publish it, and the panel says so rather than inventing a

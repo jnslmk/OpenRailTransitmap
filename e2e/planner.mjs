@@ -120,6 +120,13 @@ async function run(page) {
       .waitForSelector('.plan-suggestions.open', { state: 'detached', timeout: 5000 })
       .catch(() => {});
     eq(await page.inputValue(from), first, 'the field holds the first suggestion');
+    check(
+      await page.$eval(from, (input) => document.activeElement === input),
+      'Enter keeps the origin field focused',
+    );
+    await page.keyboard.type('x');
+    eq(await page.inputValue(from), `${first}x`, 'typing continues without clicking the field');
+    await page.keyboard.press('Backspace');
   });
 
   await testCase("a departure has a day and a clock, in the browser's locale", async () => {

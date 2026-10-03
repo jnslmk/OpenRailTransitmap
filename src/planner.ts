@@ -293,6 +293,7 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   const box = el('div', 'plan-field');
   const input = el('input', 'search');
   input.type = 'text';
+  input.name = which;
   input.placeholder = which === 'from' ? s.planFrom : s.planTo;
   input.setAttribute('aria-label', which === 'from' ? s.planFrom : s.planTo);
   input.value = fieldText[which] ?? current?.name ?? '';
@@ -370,6 +371,8 @@ function placeField(which: 'from' | 'to'): HTMLElement {
 
   input.oninput = () => {
     window.clearTimeout(timer);
+    ac?.abort();
+    close();
     // Whatever an earlier Enter was waiting for, this keystroke is no longer it.
     takeFirst = false;
     const text = input.value;
@@ -382,9 +385,8 @@ function placeField(which: 'from' | 'to'): HTMLElement {
   };
 
   /**
-   * Enter takes the first suggestion, because typing a station name and
-   * pressing return is a rider saying "that one" - and the top hit is what the
-   * geocoder ranked as that one.
+   * Enter takes the first suggestion: city queries put their railway station
+   * first, while specific stations and addresses keep the geocoder's ranking.
    *
    * If nothing is on offer yet the request has not been made or not come back:
    * rather than swallow the key, the debounce is skipped, the search goes out
@@ -833,8 +835,15 @@ let mount: HTMLElement | null = null;
 
 function redraw(): void {
   if (!mount) return;
+  const focused = mount.querySelector<HTMLInputElement>('.plan-field input:focus');
   mount.innerHTML = '';
   mount.append(buildForm(), buildResults());
+  // Selection and arriving route results rebuild the form without ending typing.
+  if (focused) {
+    const input = mount.querySelector<HTMLInputElement>(`input[name="${focused.name}"]`);
+    input?.focus({ preventScroll: true });
+    if (input) input.setSelectionRange(focused.selectionStart, focused.selectionEnd);
+  }
 }
 
 export function renderPlanner(container: HTMLElement, h: PlannerHost): void {
