@@ -75,6 +75,24 @@ export const MODE_GROUPS: { key: string; label: string; modes: TransitMode[] }[]
 export const ALL_TRANSIT_MODES: TransitMode[] = MODE_GROUPS.flatMap((g) => g.modes);
 
 /**
+ * The fare presets the Plan panel offers, and the modes each may route on.
+ *
+ * Both are "what a ticket covers decides what the router may use": ICE, IC/EC
+ * and FlixTrain come back as `HIGHSPEED_RAIL`/`LONG_DISTANCE`, FlixBus as
+ * `COACH`, and none of those carry a Deutschland-Ticket - so leaving the modes
+ * out is the whole filter, measured against the Transitous API. The two differ
+ * in whether the city networks ride along: `regional` is trains only,
+ * `ticket` is everything the Deutschland-Ticket is valid on. `any` is not a
+ * set - it means the mode chips decide.
+ */
+export type FareFilter = 'any' | 'regional' | 'ticket';
+
+export const FARE_MODES: Record<Exclude<FareFilter, 'any'>, TransitMode[]> = {
+  regional: ['REGIONAL_RAIL', 'SUBURBAN'],
+  ticket: ['REGIONAL_RAIL', 'SUBURBAN', 'SUBWAY', 'TRAM', 'BUS', 'FERRY'],
+};
+
+/**
  * Response-side modes that count as a transit leg. The request and response
  * vocabularies do not line up - asking for `SUBURBAN` yields legs whose mode
  * reads `METRO` - so this is matched as a set, never by equality with what was

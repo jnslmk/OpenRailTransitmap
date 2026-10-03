@@ -33,12 +33,14 @@ import {
   geocode,
   plan,
   MODE_GROUPS,
+  FARE_MODES,
   ALL_TRANSIT_MODES,
   type Place,
   type PlanResult,
   type Itinerary,
   type Leg,
   type TransitMode,
+  type FareFilter,
 } from './routing.ts';
 import { journeyView, type JourneyLeg, type Interchange, type JourneyFocus } from './itinerary.ts';
 
@@ -65,6 +67,8 @@ export interface PlannerState {
   arriveBy: boolean;
   /** Keys from `MODE_GROUPS`. */
   groups: Set<string>;
+  /** Fare preset; anything other than `any` overrides the chips entirely. */
+  fare: FareFilter;
   bikeMinutes: number;
   carriage: boolean;
   /** Index into the current result, or null. Kept in the URL so a plan is shareable. */
@@ -78,6 +82,7 @@ export function defaultPlannerState(): PlannerState {
     time: null,
     arriveBy: false,
     groups: new Set(MODE_GROUPS.map((g) => g.key)),
+    fare: 'any',
     bikeMinutes: 30,
     carriage: false,
     selected: null,
@@ -219,11 +224,14 @@ function runPlan(pageCursor: string | undefined, keepSelection = false): void {
   status = 'loading';
   redraw();
 
+  // A fare preset answers the whole "which services" question on its own, so
+  // the chips stand down rather than half-apply - they cannot express "rail,
+  // but no ICE" in the first place, which is the very restriction asked for.
   const modes = new Set<TransitMode>(
-    MODE_GROUPS.filter((g) => s.groups.has(g.key)).flatMap((g) => g.modes),
+    s.fare !== 'any'
+      ? FARE_MODES[s.fare]
+      : MODE_GROUPS.filter((g) => s.groups.has(g.key)).flatMap((g) => g.modes),
   );
-  // Every chip off would ask MOTIS for no transit at all, which returns
-  // nothing and reads as a broken planner. Fall back to everything.
   if (!modes.size) ALL_TRANSIT_MODES.forEach((m) => modes.add(m));
 
   plan(
@@ -571,6 +579,23 @@ function buildForm(): HTMLElement {
 
   // --- modes ---------------------------------------------------------------
   box.appendChild(el('h2', '', s.planModes));
+
+  /** A fare preset replaces the chips rather than constraining them: it is
+   *  the answer to the same question, given more precisely. */
+  const fare = el('select', 'select plan-fare');
+  fare.appendChild(new Option(s.planFareAny, 'any'));
+  fare.appendChild(new Option(s.planFareRegional, 'regional'));
+  fare.appendChild(new Option(s.planFareTicket, 'ticket'));
+  fare.value = state.fare;
+  fare.setAttribute('aria-label', s.planFare);
+  fare.onchange = () => {
+    state.fare = fare.value as FareFilter;
+    host.persist();
+    if (state.from && state.to) query();
+    else redraw();
+  };
+  box.appendChild(fare);
+
   const chips = el('div', 'row');
   for (const group of MODE_GROUPS) {
     const on = state.groups.has(group.key);
@@ -587,6 +612,9 @@ function buildForm(): HTMLElement {
     chips.appendChild(chip);
   }
   box.appendChild(chips);
+  // Hidden rather than disabled: greyed-out chips would still claim a say the
+  // preset has taken over, and hidden leaves their choice intact for "any".
+  chips.hidden = state.fare !== 'any';
 
   // --- bike ----------------------------------------------------------------
   box.appendChild(el('h2', '', s.planBike));

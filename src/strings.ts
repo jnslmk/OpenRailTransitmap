@@ -142,6 +142,10 @@ export interface Strings {
   planDate: string;
   planTime: string;
   planModes: string;
+  planFare: string;
+  planFareAny: string;
+  planFareRegional: string;
+  planFareTicket: string;
   planBike: string;
   planBikeQuestion: string;
   planBikeNone: string;
@@ -373,6 +377,10 @@ const STRINGS: Strings = {
   planDate: 'Date',
   planTime: 'Time',
   planModes: 'Travel by',
+  planFare: 'Ticket',
+  planFareAny: 'All services',
+  planFareRegional: 'Regional trains only',
+  planFareTicket: 'Deutschland-Ticket only',
   planBike: 'Bike',
   // The control is named by what it decides, not by the parameter it sets.
   planBikeQuestion: 'How far will you ride at each end?',

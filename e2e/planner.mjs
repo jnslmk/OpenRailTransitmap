@@ -378,7 +378,11 @@ async function journeyLegibility(page) {
       },
     ],
   };
-  const handler = (route) => route.fulfill({ json: body });
+  let askedModes = '';
+  const handler = (route) => {
+    askedModes = new URL(route.request().url()).searchParams.get('transitModes') ?? '';
+    return route.fulfill({ json: body });
+  };
   await page.route('**/api/v1/plan?**', handler);
   await mkdir(SCREENSHOTS, { recursive: true });
   try {
@@ -620,6 +624,51 @@ async function journeyLegibility(page) {
         },
       );
     }
+
+    // The fare presets are a request contract: what the router is allowed to
+    // offer, not a client-side prune of what came back. So the check is on the
+    // parameter, which is also the part that cannot drift with the timetable.
+    await testCase('a ticket preset replaces the mode chips', async () => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`${BASE}?tab=plan&from=${RURAL}&to=${HANNOVER}&bike=0`, {
+        waitUntil: 'load',
+      });
+      await ready(page);
+      await page.waitForSelector('.plan-fare', { timeout: 10000 });
+      check(
+        await page.locator('.plan-form .chip').first().isVisible(),
+        'chips decide while the preset is All services',
+      );
+
+      const settle = async (expected) => {
+        for (let i = 0; i < 50 && askedModes !== expected; i++) {
+          await page.waitForTimeout(100);
+        }
+      };
+      const TICKET = 'REGIONAL_RAIL,SUBURBAN,SUBWAY,TRAM,BUS,FERRY';
+      const ANY = 'HIGHSPEED_RAIL,LONG_DISTANCE,REGIONAL_RAIL,SUBURBAN,SUBWAY,TRAM,BUS,COACH,FERRY';
+
+      await page.selectOption('.plan-fare', 'ticket');
+      await settle(TICKET);
+      eq(askedModes, TICKET, 'Deutschland-Ticket routes on Nahverkehr only');
+      check(
+        !askedModes.includes('HIGHSPEED_RAIL') &&
+          !askedModes.includes('LONG_DISTANCE') &&
+          !askedModes.includes('COACH'),
+        'no ICE, IC/EC, FlixTrain or FlixBus is asked for',
+      );
+      check(await page.locator('.plan-form .chip').first().isHidden(), 'chips stand down');
+      eq(new URL(page.url()).searchParams.get('fare'), 'ticket', 'the preset is in the URL');
+
+      await page.selectOption('.plan-fare', 'regional');
+      await settle('REGIONAL_RAIL,SUBURBAN');
+      eq(askedModes, 'REGIONAL_RAIL,SUBURBAN', 'regional is trains only');
+
+      await page.selectOption('.plan-fare', 'any');
+      await settle(ANY);
+      await page.waitForFunction(() => !!document.querySelector('.plan-form .chip'));
+      eq(askedModes, ANY, 'All services hands the decision back to the chips');
+    });
   } finally {
     await page.unroute('**/api/v1/plan?**', handler);
     await page.emulateMedia({ reducedMotion: null });

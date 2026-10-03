@@ -12,6 +12,7 @@
  *   ?from= / ?to=           the planner's two ends (see `encodePlace`)
  *   ?at= / ?arrive=1        depart-at / arrive-by, absent meaning "leave now"
  *   ?pmodes=rail,bus        which modes the planner may use
+ *   ?fare=ticket            regional-only / Deutschland-Ticket-only routing
  *   ?bike=30&carry=1        minutes in the saddle at each end, bike carriage
  *   ?itin=2                 which itinerary is drawn
  */
@@ -116,6 +117,10 @@ export function readState(fallback: { center: [number, number]; zoom: number }):
     const chosen = pmodes.split(',').filter((k) => keys.has(k));
     if (chosen.length) plan.groups = new Set(chosen);
   }
+  // An unknown value stays `any` rather than being coaxed into a preset -
+  // a link that quietly drops ICE legs is worse than one that ignores a typo.
+  plan.fare =
+    q.get('fare') === 'ticket' ? 'ticket' : q.get('fare') === 'regional' ? 'regional' : 'any';
   // Read the raw string first, and only then convert. `Number(null)` is 0, and
   // 0 is a legitimate value for both of these - "no bike" and "the first
   // itinerary" - so converting before checking for absence silently turns every
@@ -172,6 +177,7 @@ export function writeState(s: ViewState) {
   if (p.to) q.set('to', encodePlace(p.to));
   if (p.time) q.set('at', p.time.toISOString());
   if (p.arriveBy) q.set('arrive', '1');
+  if (p.fare !== 'any') q.set('fare', p.fare);
   if (p.groups.size !== MODE_GROUPS.length) q.set('pmodes', [...p.groups].join(','));
   // Only when it differs from the default, so an untouched planner adds nothing
   // to a link that is mostly about the map.
