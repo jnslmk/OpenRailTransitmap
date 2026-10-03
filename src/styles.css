@@ -654,9 +654,8 @@ h2 {
 #detail.open {
   display: flex;
 }
-/* The inspector only takes a column where there is room for three: on a
-   phone it shares the one content slot instead. */
-@media (min-width: 821px) {
+/* Only wide desktop has room for browse, map and evidence together. */
+@media (min-width: 1200px) {
   body:not(.chrome-hidden) #app:has(#detail.open) {
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--detail-w);
   }
@@ -673,7 +672,7 @@ h2 {
   border-bottom: 1px solid var(--grey);
 }
 
-/* Back is the phone's way out of a selection; the desktop keeps the rail. */
+/* Shared drawers and phone sheets return to their workspace with Back. */
 .inspector-back {
   display: none;
   align-self: flex-start;
@@ -1204,6 +1203,21 @@ body.chrome-hidden #map {
 }
 
 /* --- responsive ----------------------------------------------------------- */
+
+@media (min-width: 821px) and (max-width: 1199px) {
+  /* Browse and evidence take turns in one left drawer; the map stays live. */
+  #detail {
+    grid-column: 1;
+    border-left: 0;
+    border-right: 1px solid var(--grey);
+  }
+  #app:has(#detail.open) #sidebar {
+    display: none;
+  }
+  .inspector-back {
+    display: inline-flex;
+  }
+}
 
 @media (max-width: 820px) {
   /* One column: map, shared controls, one content slot. Sidebar and inspector

@@ -141,17 +141,10 @@ let opts: ChromeOptions;
 let inspectorTitle: string | null = null;
 /** Where focus goes when the inspector closes: whatever opened it. */
 let returnFocus: HTMLElement | null = null;
-/**
- * The workspace body's scroll offset while the inspector covers it.
- *
- * On a phone the rail and the inspector share one slot and the rail is hidden
- * while a panel is open, which resets a hidden scroll container's offset. The
- * reader's place in the browse list or the planner is part of the context Back
- * is supposed to restore, so it is put back explicitly. On a desktop nothing is
- * hidden and nothing is saved, so a scroll the reader made with the panel open
- * is left alone.
- */
-let workspaceScroll: number | null = null;
+/** Scroll in both workspace regions survives a hidden drawer or sheet. */
+let workspaceScroll = { head: 0, body: 0 };
+let workspaceVisible = false;
+let lastFocus: HTMLElement | null = null;
 /**
  * What the inspector is showing, as `kind:id`, so a repaint of the same thing
  * is a no-op. `applySelection` runs on every tab switch, filter change and
@@ -171,6 +164,12 @@ export function renderChrome(o: ChromeOptions) {
   mountSheetControls();
   buildSidebar();
   renderChrome.rerender();
+  document.addEventListener('focusin', (event) => {
+    if (event.target instanceof HTMLElement) lastFocus = event.target;
+  });
+  window.matchMedia('(max-width: 820px)').addEventListener('change', syncWorkspaceLayout);
+  window.matchMedia('(max-width: 1199px)').addEventListener('change', syncWorkspaceLayout);
+  syncWorkspaceLayout();
 }
 
 /**
@@ -267,6 +266,7 @@ export function syncSheetHandle(mode: ChromeMode) {
     expandEl.setAttribute('aria-pressed', String(expanded));
   }
   syncSheetSummary();
+  syncWorkspaceLayout();
 }
 
 /**
@@ -794,6 +794,11 @@ function buildSidebar() {
 
   body.append(exploreBody, planRoot, buildFooter());
   root.append(head, body);
+  for (const region of [head, body]) {
+    region.addEventListener('scroll', () => {
+      if (root.getClientRects().length) rememberWorkspaceScroll();
+    });
+  }
   syncTab();
 }
 
@@ -1113,12 +1118,15 @@ function runSearch(query: string, container: HTMLElement) {
 function openInspector(title: string, identity: HTMLElement[]): HTMLElement {
   const host = document.getElementById('detail')!;
   const active = document.activeElement;
-  if (active instanceof HTMLElement && !host.contains(active)) returnFocus = active;
-  // Only a fresh open has a scroll offset worth keeping; a second panel
-  // replacing the first on a phone reads an already-hidden body.
-  if (!host.classList.contains('open') && window.matchMedia('(max-width: 820px)').matches) {
-    workspaceScroll = document.querySelector<HTMLElement>('.workspace-body')?.scrollTop ?? null;
+  const workspace = document.getElementById('sidebar')!;
+  if (
+    active instanceof HTMLElement &&
+    !host.contains(active) &&
+    (!host.classList.contains('open') || workspace.getClientRects().length)
+  ) {
+    returnFocus = active;
   }
+  if (workspace.getClientRects().length) rememberWorkspaceScroll();
 
   host.innerHTML = '';
   host.classList.add('open');
@@ -1149,6 +1157,7 @@ function openInspector(title: string, identity: HTMLElement[]): HTMLElement {
   head.append(back, row);
   const body = el('div', 'inspector-body');
   host.append(head, body);
+  syncWorkspaceLayout();
   return body;
 }
 
@@ -1169,15 +1178,47 @@ function closeInspector() {
   host.innerHTML = '';
   const target = returnFocus;
   returnFocus = null;
-  // The rail is rendered again by the class removal above, so its offset can
-  // be put back before focus is handed over.
-  if (workspaceScroll !== null) {
-    const body = document.querySelector<HTMLElement>('.workspace-body');
-    if (body) body.scrollTop = workspaceScroll;
-    workspaceScroll = null;
+  // Class removal reveals the original mounted workspace, including its inputs
+  // and disclosures; put its scroll back before returning focus.
+  syncWorkspaceLayout();
+  if (target && target.isConnected && target.getClientRects().length) {
+    target.focus({ preventScroll: true });
+  } else focusWorkspace();
+}
+
+function rememberWorkspaceScroll() {
+  workspaceScroll = {
+    head: document.querySelector<HTMLElement>('.workspace-head')?.scrollTop ?? 0,
+    body: document.querySelector<HTMLElement>('.workspace-body')?.scrollTop ?? 0,
+  };
+}
+
+/** CSS owns layout; only restore context and move focus out of hidden content. */
+function syncWorkspaceLayout() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  const visible = sidebar.getClientRects().length > 0;
+  if (visible && !workspaceVisible) {
+    const head = sidebar.querySelector<HTMLElement>('.workspace-head');
+    const body = sidebar.querySelector<HTMLElement>('.workspace-body');
+    if (head) head.scrollTop = workspaceScroll.head;
+    if (body) body.scrollTop = workspaceScroll.body;
   }
-  if (target && target.isConnected && target.getClientRects().length) target.focus();
-  else focusWorkspace();
+  workspaceVisible = visible;
+
+  // A display:none transition can already have blurred the active element.
+  const active = document.activeElement;
+  const focused = active instanceof HTMLElement && active !== document.body ? active : lastFocus;
+  if (!focused || focused.getClientRects().length) return;
+  if (sidebar.contains(focused)) returnFocus = focused;
+  const detail = document.getElementById('detail');
+  if (detail?.getClientRects().length) {
+    const back = detail.querySelector<HTMLElement>('.inspector-back');
+    const close = detail.querySelector<HTMLElement>('.close');
+    (back?.getClientRects().length ? back : close)?.focus({ preventScroll: true });
+  } else {
+    focusWorkspace();
+  }
 }
 
 /**

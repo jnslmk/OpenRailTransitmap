@@ -116,13 +116,17 @@ GitHub Pages and rebuilt nightly.
   company each operator was taken to be arrives as a reviewable diff and is
   corrected by hand in `data/logo-overrides.yaml`; see
   [`pipeline/logos.ts`](pipeline/logos.ts).
-- **Full-screen map and a contextual inspector.** Hide the browse workspace to
-  give the map the window, or open a line, station or closure in the adjacent
-  evidence inspector while the map stays visible. On phones the map sits above
-  one sheet: its handle peeks the workspace, Expand opens it for reading, and
-  selected evidence takes the same sheet slot. Back restores the browse or
-  planning context. The shared layout and sheet size are URL state (`?ui=map`,
-  `?ui=peek`, `?ui=expanded`).
+- **Full-screen map and a contextual inspector.** At widths of 1200px and above,
+  browse and plan stay left while selected line, station or closure evidence
+  opens in a separate right inspector. Compact desktop (821–1199px) uses one
+  collapsible 320px left drawer: selection replaces browse or plan, leaving the
+  map interactive and undimmed by any backdrop. On phones (up to 820px), the map
+  sits above one sheet: its handle peeks the workspace, Expand opens it for
+  reading, and selected evidence takes the same sheet slot. Back restores
+  search, filters, disclosures, planner input, scroll and visible focus.
+  Hiding and reopening the chrome keeps the selection and its map highlight.
+  Panel visibility and phone sheet size are URL state (`?ui=map`, `?ui=peek`,
+  `?ui=expanded`).
 - **Own location**, with an accuracy circle and continuous tracking, and a
   compass that puts the map back to north after an accidental twist.
 - **The OpenStreetMap standard raster underneath**, heavily desaturated and

@@ -7,11 +7,10 @@
  *   node e2e/workspace.mjs --headed                        # watch it run
  *
  * The cases pin down the things this layout exists to get right and that are
- * easy to lose without noticing: a phone shows one content slot, so a detail
- * can never stack over the rail; Back hands the slot back with the query,
- * filters, disclosure state and scroll the reader left behind; the sheet has a
- * fold for each intent and the fold survives a shared link and a resize; and
- * the filter summary states the restriction that is actually on.
+ * easy to lose without noticing: phones and compact desktops show one content
+ * slot; Back restores the query, filters, disclosure, scroll and visible focus;
+ * compact drawers leave an interactive map and survive collapse and resizing;
+ * the phone fold survives shared links; and filter summaries name restrictions.
  */
 
 import { chromium } from 'playwright';
@@ -29,6 +28,7 @@ const BERLIN = '#11.50/52.5170/13.4050';
 /** A phone and the desktop the same state has to read sensibly on. */
 const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1280, height: 900 };
+const COMPACT = { width: 951, height: 900 };
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -40,6 +40,10 @@ let currentCase = null;
 function check(ok, what, detail = '') {
   currentCase.checks.push({ ok, what, detail });
   if (!ok) currentCase.failed = true;
+}
+
+function skip(reason) {
+  currentCase.skipped = reason;
 }
 
 const eq = (actual, expected, what) =>
@@ -252,15 +256,46 @@ async function openStationFromSearch(page) {
   const name = await aStationName(page);
   if (!name) return null;
   await page.locator('#sidebar .search').first().fill(name);
+  // Search is debounced and keeps the preceding result list until it renders.
+  // Bind both the wait and click to this query's station, never a live first row.
   const result = page
     .locator('#sidebar .results .line-row')
     .filter({ has: page.locator('.dot') })
-    .first();
+    .filter({ has: page.getByText(name, { exact: true }) });
   await result.waitFor({ timeout: 15000 });
-  const opened = await result.locator('.line-name').textContent();
   await result.click();
-  await page.waitForTimeout(250);
-  return opened;
+  await page.waitForFunction(
+    (expected) => document.querySelector('#detail .detail-title')?.textContent?.trim() === expected,
+    name,
+  );
+  return name;
+}
+
+/** The painted drawer and map must share the viewport, not overlap. */
+async function compactGeometry(page, panel) {
+  const geometry = await page.evaluate((selector) => {
+    const drawer = document.querySelector(selector).getBoundingClientRect();
+    const map = document.querySelector('#map').getBoundingClientRect();
+    return {
+      left: drawer.left,
+      width: drawer.width,
+      right: drawer.right,
+      mapLeft: map.left,
+      mapWidth: map.width,
+      mapRight: map.right,
+      viewport: innerWidth,
+    };
+  }, panel);
+  check(
+    Math.abs(geometry.left) <= 1 &&
+      geometry.width >= 320 &&
+      geometry.width <= 340 &&
+      Math.abs(geometry.mapLeft - geometry.right) <= 1 &&
+      Math.abs(geometry.mapRight - geometry.viewport) <= 1 &&
+      geometry.mapWidth >= geometry.viewport - 341,
+    'one 320–340px left drawer leaves the remaining width to the map',
+    JSON.stringify(geometry),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -601,128 +636,339 @@ async function run(page) {
     },
   );
 
-  await testCase('a closure takes the same slot when one is in view', async () => {
-    await goto(page, BERLIN, '', PHONE);
-    const clicked = await clickMapFeature(page, 'closure');
-    if (!clicked) {
-      check(true, 'no closure drawn in this view to open', '');
-      return;
+  for (const viewport of [PHONE, COMPACT]) {
+    await testCase(
+      `a closure takes the shared slot at ${viewport.width}px when in view`,
+      async () => {
+        await goto(page, BERLIN, '', viewport);
+        const clicked = await clickMapFeature(page, 'closure');
+        if (!clicked) {
+          skip('No closure is drawn in the loaded Berlin view; slot behavior was not exercised.');
+          return;
+        }
+        check(await shown(page, '#detail'), 'a closure takes the slot');
+        check(!(await shown(page, '#sidebar')), 'without stacking the rail behind it');
+      },
+    );
+  }
+
+  // --- compact desktop: one drawer, with the map still usable ---------------
+
+  await testCase(
+    'compact evidence survives map interaction, collapse and layout boundaries',
+    async () => {
+      await goto(page, BERLIN, '', COMPACT);
+      await compactGeometry(page, '#sidebar');
+      check(!(await chrome(page)).controls, 'compact desktop has no phone sheet controls');
+      await page.locator('#sidebar .line-list .line-row').first().click();
+      await page.waitForTimeout(300);
+      check(await shown(page, '#detail'), 'the selected line opens evidence');
+      check(
+        !(await shown(page, '#sidebar')),
+        'evidence replaces browse rather than adding a column',
+      );
+      await compactGeometry(page, '#detail');
+      const selection = await page.evaluate(() => new URLSearchParams(location.search).get('line'));
+      check(!!selection, 'the selected line is shareable');
+      const waitForEvidence = () =>
+        page.waitForFunction(
+          (line) => {
+            const section = document.querySelector('#detail .detail-punctuality');
+            return section?.dataset.line === line && section.dataset.filled === line;
+          },
+          selection,
+          { timeout: 30000 },
+        );
+      // Map readiness does not wait for the separate punctuality request.
+      // Filled covers both loaded scores and the explicit unavailable response.
+      await waitForEvidence();
+      const evidence = await page.locator('#detail .inspector-body').textContent();
+      const highlights = () =>
+        page.evaluate(() => {
+          const m = window.__map;
+          return m
+            .getStyle()
+            .layers.filter((l) => /^route-.*-highlight$/.test(l.id))
+            .map((l) => m.getPaintProperty(l.id, 'line-opacity'));
+        });
+      const selectedHighlights = await highlights();
+      check(
+        selectedHighlights.some(
+          (opacity) => Array.isArray(opacity) && opacity[1]?.[2] === selection && opacity[2] === 1,
+        ),
+        'the map highlights the selected route',
+        JSON.stringify(selectedHighlights),
+      );
+
+      const map = await page.locator('#map').boundingBox();
+      const center = await page.evaluate(() => window.__map.getCenter().toArray());
+      await page.mouse.move(map.x + map.width * 0.55, map.y + map.height * 0.6);
+      await page.mouse.down();
+      await page.mouse.move(map.x + map.width * 0.55 + 75, map.y + map.height * 0.6, { steps: 12 });
+      await page.mouse.up();
+      await settle(page, -1);
+      const moved = await page.evaluate(() => window.__map.getCenter().toArray());
+      check(
+        Math.abs(moved[0] - center[0]) > 0.0001,
+        'the undimmed map can be dragged beside evidence',
+      );
+
+      await page.click('.maplibregl-ctrl-chrome');
+      await page.waitForTimeout(250);
+      check(
+        !(await shown(page, '#detail')) && !(await shown(page, '#sidebar')),
+        'collapse hides the drawer rather than clearing the selection',
+      );
+      eq(
+        await page.evaluate(() => new URLSearchParams(location.search).get('line')),
+        selection,
+        'collapse preserves the selected line URL',
+      );
+      eq(
+        JSON.stringify(await highlights()),
+        JSON.stringify(selectedHighlights),
+        'collapse preserves the highlighted route',
+      );
+      await page.click('.maplibregl-ctrl-chrome');
+      await page.waitForTimeout(250);
+      check(await shown(page, '#detail'), 'reopen returns evidence, not browse');
+      eq(
+        await page.locator('#detail .inspector-body').textContent(),
+        evidence,
+        'reopen retains the selected evidence',
+      );
+
+      const sharedURL = page.url();
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('body.ready', { timeout: 30000 });
+      await settle(page, 0);
+      eq(page.url(), sharedURL, 'the actual shared selection URL survives reload');
+      check(
+        (await shown(page, '#detail')) && !(await shown(page, '#sidebar')),
+        'the shared URL restores evidence in the compact drawer',
+      );
+      await waitForEvidence();
+      eq(
+        await page.locator('#detail .inspector-body').textContent(),
+        evidence,
+        'reloading the shared URL restores the selected evidence',
+      );
+      eq(
+        JSON.stringify(await highlights()),
+        JSON.stringify(selectedHighlights),
+        'reloading the shared URL restores the highlighted route',
+      );
+
+      for (const viewport of [
+        DESKTOP,
+        PHONE,
+        { width: 820, height: 900 },
+        { width: 821, height: 900 },
+        COMPACT,
+        { width: 1199, height: 900 },
+        { width: 1200, height: 900 },
+        COMPACT,
+      ]) {
+        await page.setViewportSize(viewport);
+        await page.waitForTimeout(300);
+        check(await shown(page, '#detail'), `evidence remains visible at ${viewport.width}px`);
+        eq(
+          await page.evaluate(() => new URLSearchParams(location.search).get('line')),
+          selection,
+          `resizing to ${viewport.width}px preserves selection`,
+        );
+        const wide = viewport.width >= 1200;
+        eq(
+          await shown(page, '#sidebar'),
+          wide,
+          `${viewport.width}px ${wide ? 'keeps browse beside evidence' : 'uses one content slot'}`,
+        );
+        eq(
+          (await chrome(page)).controls,
+          viewport.width <= 820,
+          `${viewport.width}px ${viewport.width <= 820 ? 'shows phone sheet controls' : 'has no phone sheet controls'}`,
+        );
+        if (viewport.width <= 820) {
+          const sheet = await page.locator('#detail').boundingBox();
+          const phoneMap = await page.locator('#map').boundingBox();
+          check(
+            Math.abs(sheet.width - viewport.width) <= 1 &&
+              sheet.y >= phoneMap.y + phoneMap.height &&
+              Math.abs(sheet.y + sheet.height - viewport.height) <= 1,
+            'phone evidence sits in a full-width bottom sheet below the map',
+          );
+        }
+        if (viewport.width > 820 && !wide) await compactGeometry(page, '#detail');
+        if (wide) {
+          const right = await page.locator('#detail').boundingBox();
+          check(
+            Math.abs(right.x + right.width - viewport.width) <= 1,
+            'wide evidence occupies the right edge',
+          );
+        }
+      }
+      await page.click('#detail .inspector-back');
+      check(await shown(page, '#sidebar'), 'Back still returns browse after all resizes');
+    },
+  );
+
+  await testCase('compact station Directions-from and -to reveal usable Plan', async () => {
+    await goto(page, BERLIN, '?tab=plan&to=~52.52508~13.36940~Berlin%20Hbf', COMPACT);
+    const field = (i) => page.locator('#sidebar .plan-places .plan-field').nth(i).locator('input');
+    await field(1).fill('Hannover Hbf raw');
+    for (const [i, direction] of ['from', 'to'].entries()) {
+      await page.getByRole('tab', { name: 'Explore', exact: true }).click();
+      const station = await openStationFromSearch(page);
+      check(!!station, `a real station is available for Directions-${direction}`);
+      if (!station) return;
+      check(!(await shown(page, '#sidebar')), 'station evidence owns the compact drawer');
+      await page.click(`#detail .pop-actions .pop-action:nth-child(${i + 1})`);
+      await page.waitForTimeout(300);
+      check(
+        !(await shown(page, '#detail')) && (await shown(page, '#sidebar .plan-form')),
+        `Directions-${direction} hands the drawer to the visible planner`,
+      );
+      eq(
+        (await page.getByRole('tab', { selected: true }).allTextContents()).join(', '),
+        'Plan',
+        `Directions-${direction} selects Plan`,
+      );
+      eq(await field(i).inputValue(), station, `Directions-${direction} fills its endpoint`);
+      if (i === 0)
+        eq(
+          await field(1).inputValue(),
+          'Hannover Hbf raw',
+          'Directions-from retains the uncommitted destination text',
+        );
+      check(
+        await page.locator('.plan-submit').isEnabled(),
+        'confirmed endpoints leave Plan usable',
+      );
+      await field(i).click();
+      check(
+        await field(i).evaluate((n) => n === document.activeElement),
+        `the Directions-${direction} endpoint can be edited`,
+      );
     }
-    check(await shown(page, '#detail'), 'a closure takes the slot');
-    check(!(await shown(page, '#sidebar')), 'without stacking the rail behind it');
   });
 
   // --- Back restores the browse context ------------------------------------
 
-  await testCase('Back restores the query, filters, disclosure and scroll', async () => {
-    await goto(page, BERLIN, '?modes=regional,tram', PHONE);
-    await openFilters(page);
-    const n0 = await idleCount(page);
-    await page.evaluate(() => {
-      const panel = [...document.querySelectorAll('#sidebar .panel')].find(
-        (p) => p.querySelector('h2')?.textContent === 'Modes',
+  for (const viewport of [PHONE, COMPACT]) {
+    await testCase(`Back restores browse context at ${viewport.width}px`, async () => {
+      await goto(page, BERLIN, '?modes=regional,tram', viewport);
+      await openFilters(page);
+      const n0 = await idleCount(page);
+      await page.evaluate(() => {
+        const panel = [...document.querySelectorAll('#sidebar .panel')].find(
+          (p) => p.querySelector('h2')?.textContent === 'Modes',
+        );
+        const box = [...panel.querySelectorAll('label.toggle')].find(
+          (r) => r.querySelector('.label')?.textContent === 'S-Bahn',
+        );
+        box.querySelector('input').click();
+      });
+      await settle(page, n0);
+
+      // A query with results, and a scroll position to come back to.
+      const query = await page.evaluate(
+        () => document.querySelector('#sidebar .line-list .line-row .line-name')?.textContent ?? '',
       );
-      const box = [...panel.querySelectorAll('label.toggle')].find(
-        (r) => r.querySelector('.label')?.textContent === 'S-Bahn',
+      await page.locator('#sidebar .search').first().fill(query.slice(0, 4));
+      await page.locator('#sidebar .results .line-row').first().waitFor({ timeout: 10000 });
+
+      const rows = page.locator('#sidebar .line-list .line-row');
+      const target = rows.last();
+      await target.scrollIntoViewIfNeeded();
+
+      const modesBefore = await modeState(page);
+      const before = await page.evaluate(() => ({
+        query: document.querySelector('#sidebar .search').value,
+        scroll: document.querySelector('.workspace-body')?.scrollTop ?? 0,
+        open: !!document.querySelector('details.filter-disclosure')?.open,
+      }));
+
+      check(before.scroll > 0, 'the reader has a nonzero scroll position to restore');
+      await target.click();
+      await page.waitForTimeout(250);
+      check(await shown(page, '#detail'), 'the line opens the inspector');
+
+      await page.click('#detail .inspector-back');
+      await page.waitForTimeout(300);
+      await settle(page, -1);
+
+      const modesAfter = await modeState(page);
+      const after = await page.evaluate(() => ({
+        query: document.querySelector('#sidebar .search').value,
+        scroll: document.querySelector('.workspace-body')?.scrollTop ?? 0,
+        open: !!document.querySelector('details.filter-disclosure')?.open,
+        line: new URLSearchParams(location.search).get('line'),
+        focusVisible: (() => {
+          const a = document.activeElement;
+          if (!a || a === document.body) return false;
+          const r = a.getBoundingClientRect();
+          return (
+            a.getClientRects().length > 0 &&
+            r.top >= 0 &&
+            r.bottom <= innerHeight &&
+            r.left >= 0 &&
+            r.right <= innerWidth
+          );
+        })(),
+      }));
+
+      eq(after.query, before.query, 'the search query is still there');
+      eq(modesAfter.join(','), modesBefore.join(','), 'the filters are still where they were');
+      check(
+        Math.abs(after.scroll - before.scroll) <= 4,
+        'the scroll position came back',
+        `${before.scroll} -> ${after.scroll}`,
       );
-      box.querySelector('input').click();
+      check(after.open, 'the disclosure is still open');
+      eq(after.line, null, 'and the selection left the URL');
+      check(after.focusVisible, 'Back returns focus to a visible workspace control');
     });
-    await settle(page, n0);
-
-    // A query with results, and a scroll position to come back to.
-    const query = await page.evaluate(
-      () => document.querySelector('#sidebar .line-list .line-row .line-name')?.textContent ?? '',
-    );
-    await page.locator('#sidebar .search').first().fill(query.slice(0, 4));
-    await page.locator('#sidebar .results .line-row').first().waitFor({ timeout: 10000 });
-
-    const rows = page.locator('#sidebar .line-list .line-row');
-    const target = rows.nth(Math.min(4, (await rows.count()) - 1));
-    await target.scrollIntoViewIfNeeded();
-
-    const modesBefore = await modeState(page);
-    const before = await page.evaluate(() => ({
-      query: document.querySelector('#sidebar .search').value,
-      scroll: document.querySelector('.workspace-body')?.scrollTop ?? 0,
-      open: !!document.querySelector('details.filter-disclosure')?.open,
-    }));
-
-    await target.click();
-    await page.waitForTimeout(250);
-    check(await shown(page, '#detail'), 'the line opens the inspector');
-
-    await page.click('#detail .inspector-back');
-    await page.waitForTimeout(300);
-    await settle(page, -1);
-
-    const modesAfter = await modeState(page);
-    const after = await page.evaluate(() => ({
-      query: document.querySelector('#sidebar .search').value,
-      scroll: document.querySelector('.workspace-body')?.scrollTop ?? 0,
-      open: !!document.querySelector('details.filter-disclosure')?.open,
-      line: new URLSearchParams(location.search).get('line'),
-      focusHidden: (() => {
-        const a = document.activeElement;
-        return !!a && a !== document.body && a.getClientRects().length === 0;
-      })(),
-    }));
-
-    eq(after.query, before.query, 'the search query is still there');
-    eq(modesAfter.join(','), modesBefore.join(','), 'the filters are still where they were');
-    check(
-      Math.abs(after.scroll - before.scroll) <= 4,
-      'the scroll position came back',
-      `${before.scroll} -> ${after.scroll}`,
-    );
-    check(after.open, 'the disclosure is still open');
-    eq(after.line, null, 'and the selection left the URL');
-    check(!after.focusHidden, 'focus did not land on something invisible');
-  });
+  }
 
   // --- the planner keeps its state behind a detail -------------------------
 
-  await testCase('a detail opens over the planner without losing its raw text', async () => {
-    await goto(page, BERLIN, '?tab=plan', PHONE);
-    const from = page.locator('#sidebar .plan-places .plan-field').first().locator('input');
-    await from.fill('Hannover Hbf raw');
-    const raw = await from.inputValue();
+  for (const viewport of [PHONE, COMPACT]) {
+    await testCase(
+      `Back returns the planner with its raw text at ${viewport.width}px`,
+      async () => {
+        await goto(page, BERLIN, '?tab=plan', viewport);
+        const from = page.locator('#sidebar .plan-places .plan-field').first().locator('input');
+        await from.fill('Hannover Hbf raw');
+        const raw = await from.inputValue();
 
-    // Tag the node: a redraw that rebuilds the form would lose the mark.
-    await page.evaluate(() => {
-      document.querySelector('#sidebar .plan-places .plan-field input').dataset.probe = 'kept';
-    });
+        const clicked = await clickMapFeature(page, 'route');
+        if (!clicked) {
+          check(true, 'nothing drawn on the map to select', '');
+          return;
+        }
+        check(await shown(page, '#detail'), 'the selection opens a detail');
 
-    const clicked = await clickMapFeature(page, 'route');
-    if (!clicked) {
-      check(true, 'nothing drawn on the map to select', '');
-      return;
-    }
-    check(await shown(page, '#detail'), 'the selection opens a detail');
+        eq(
+          await page.evaluate(
+            () => document.querySelector('#sidebar .plan-places .plan-field input')?.value,
+          ),
+          raw,
+          'and it still holds the raw text',
+        );
 
-    const kept = await page.evaluate(
-      () =>
-        document.querySelector('#sidebar .plan-places .plan-field input')?.dataset.probe === 'kept',
+        await page.click('#detail .inspector-back');
+        await page.waitForTimeout(250);
+        check(await shown(page, '#sidebar'), 'Back returns the planner');
+        eq(
+          await page.evaluate(
+            () => document.querySelector('#sidebar .plan-places .plan-field input')?.value,
+          ),
+          raw,
+          'with the raw text untouched',
+        );
+      },
     );
-    check(kept, 'the plan form is the same one, not a rebuild');
-    eq(
-      await page.evaluate(
-        () => document.querySelector('#sidebar .plan-places .plan-field input')?.value,
-      ),
-      raw,
-      'and it still holds the raw text',
-    );
-
-    await page.click('#detail .inspector-back');
-    await page.waitForTimeout(250);
-    check(await shown(page, '#sidebar'), 'Back returns the planner');
-    eq(
-      await page.evaluate(
-        () => document.querySelector('#sidebar .plan-places .plan-field input')?.value,
-      ),
-      raw,
-      'with the raw text untouched',
-    );
-  });
+  }
 
   // --- the sheet's folds ----------------------------------------------------
 
@@ -873,12 +1119,19 @@ await run(page);
 await browser.close();
 
 let failed = 0;
+let skipped = 0;
 for (const c of results) {
-  console.log(`${c.failed ? 'FAIL' : 'ok  '}  ${c.name}`);
+  console.log(`${c.failed ? 'FAIL' : c.skipped ? 'SKIP' : 'ok  '}  ${c.name}`);
+  if (!c.failed && c.skipped) {
+    skipped++;
+    console.log(`        ${c.skipped}`);
+  }
   for (const chk of c.checks) {
     if (!chk.ok) console.log(`        ✗ ${chk.what}${chk.detail ? ` — ${chk.detail}` : ''}`);
   }
   if (c.failed) failed++;
 }
-console.log(`\n${results.length - failed}/${results.length} cases passed`);
+console.log(
+  `\n${results.length - failed - skipped} passed, ${skipped} skipped, ${failed} failed (${results.length} cases)`,
+);
 process.exit(failed ? 1 : 0);

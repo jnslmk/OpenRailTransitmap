@@ -54,13 +54,13 @@ components:
 
 OpenRailTransitmap is an information-dense, light railway workbench: a geographic map remains the working surface while compact controls and evidence panels make the network legible. Its incumbent LNVG-inspired character is practical rather than ornamental—light-grey ground, white working surfaces, a restrained blue interface accent, and workhorse sans typography sit beside the many route colours required by the map itself. The product preserves geographic route geometry and railway marks rather than turning the network into a schematic.
 
-The desktop gives browsing and planning a persistent left rail, the map the largest area, and selected evidence a right-hand inspector. On phones, the map stays above a single contextual sheet that changes between browse/plan and selected evidence; the sheet can peek, work, or expand for reading. This is an ordinary extension of the existing map identity, not a replacement visual world.
+Wide desktop (1200px and above) gives browsing and planning a persistent left rail, the map the largest area, and selected evidence a right-hand inspector. Compact desktop (821–1199px) uses one collapsible left drawer: browse/plan and selected evidence take turns while the map remains interactive. On phones (up to 820px), the map stays above a single contextual sheet that changes between browse/plan and selected evidence; the sheet can peek, work, or expand for reading. This is an ordinary extension of the existing map identity, not a replacement visual world.
 
 **Key Characteristics:**
 - Map-first and geographically grounded.
 - Compact, workhorse controls; information before decoration.
 - Neutral application chrome alongside data-driven railway colours.
-- One active phone content sheet, with visible access to map controls.
+- One active compact-desktop drawer or phone content sheet, with visible access to map controls.
 
 ## Colors
 
@@ -96,7 +96,7 @@ The chrome palette is light and restrained; route and operator colours remain da
 
 ## Layout
 
-Desktop uses a 320px browsing/planning rail beside a flexible map; an open selection adds a 340px inspector when the viewport supports all three columns. At widths up to 820px, the workspace becomes a map above shared sheet controls and one content slot. The browse/plan rail and selection inspector take turns in that slot rather than stacking. The phone sheet has peek, working, and expanded reading modes; map-only viewing can fold the workspace away.
+At widths of 1200px and above, desktop uses a 320px browsing/planning rail beside a flexible map; an open selection adds a separate 340px right inspector. Compact desktop (821–1199px) shares a single collapsible 320px left drawer between browse/plan and selected evidence, leaving more than half the viewport for the map. At widths up to 820px, the workspace becomes a map above shared sheet controls and one content slot. The browse/plan rail and selection inspector take turns in that slot rather than stacking. The phone sheet has peek, working, and expanded reading modes. The map remains interactive without a backdrop; map-only viewing folds the chrome away without clearing the selection or its highlight.
 
 Keep identity, tabs, search, and filter access in the rail's fixed head while its content body owns the scroll. In the inspector, keep the selection identity/header fixed and let evidence scroll. The mobile sheet controls remain visible between map and content; scrolling belongs to the active panel, not the page. Preserve comfortable touch targets on coarse pointers and allow long evidence to scroll within its panel.
 
@@ -125,10 +125,10 @@ Panels are white with a 1px grey border, 6px corners, and 12px internal padding.
 Search and select fields use white fill, 1px grey border, 4px corners, and 8px by 10px padding. Focus receives a 2px blue outline inset by 1px. Keep native input semantics and visible focus rather than replacing fields with decorative lookalikes.
 
 ### Navigation
-Explore and Plan share a segmented tab bed in the persistent desktop rail. The selected tab is white with ink text; the inactive tab is muted over grey. On phones, the same tabs remain in the active sheet's browsing/planning content.
+Explore and Plan share a segmented tab bed in the desktop browse rail. The selected tab is white with ink text; the inactive tab is muted over grey. On compact desktop, evidence replaces that rail until Back returns to the workspace. On phones, the same tabs remain in the active sheet's browsing/planning content.
 
 ### Browse rail and mobile sheet
-The rail gives search, filter access, browse results, and planning a stable place beside the map. On a phone, a shared control row remains between the map and the single active sheet; selection replaces the sheet body, and Back returns to the previous workspace context. Sheet sizing transitions briefly unless reduced motion is requested.
+The rail gives search, filter access, browse results, and planning a stable place beside the map. On compact desktop, selection replaces the left drawer's content; on a phone, a shared control row remains between the map and the single active sheet, and selection replaces the sheet body. Back restores query, filters, disclosures, planner input, scroll and visible focus, including across layout changes. Collapsing and reopening the chrome retains selected evidence and its map highlight. Sheet sizing transitions briefly unless reduced motion is requested.
 
 ### Evidence inspector
 Keep selected identity before evidence. Pin the header while evidence scrolls, and keep dates, coverage, snapshot qualifications, and unavailable/error/empty states close to the claims they qualify. Native disclosures hold secondary metadata and explanatory legends without displacing the primary evidence.
@@ -138,12 +138,12 @@ Keep selected identity before evidence. Pin the header while evidence scrolls, a
 ### Do:
 - **Do** preserve the LNVG-inspired workhorse map identity, geographic routes, and station marks.
 - **Do** use the exact light-ground, grey-divider, ink, muted, blue-accent, and white-panel roles documented above.
-- **Do** keep browse/plan at left, the map central, and selection evidence in an optional desktop inspector; use one replacing content slot on phones.
+- **Do** keep browse/plan at left and a separate right inspector on wide desktop; use one replacing left drawer on compact desktop and one replacing content slot on phones.
 - **Do** keep focus visible, controls labelled, touch targets comfortable, and long evidence independently scrollable.
 - **Do** state evidence dates and source coverage limits beside the relevant facts.
 
 ### Don't:
 - **Don't** invent a dark theme, new identity palette, prestige styling, warmth, gradients, or shadow vocabulary.
 - **Don't** use the blue UI accent as a substitute for line, operator, punctuality, or construction data colours.
-- **Don't** stack the phone's browse/planning panel and inspector; selection occupies the same content slot.
+- **Don't** stack browse/planning and evidence on phones or show both sidebars on compact desktop; selection occupies their shared content slot.
 - **Don't** turn this dense map interface into a dashboard or oversized display-led landing page.

@@ -372,9 +372,8 @@ async function main() {
    * to reopen the chrome or it lands where nobody can see it. On a phone the
    * sheet comes back to the peek - controls and a summary naming what was
    * picked, one tap from opening - rather than unfolding the whole panel over
-   * the map the reader asked to see; on a desktop the rail and the column come
-   * back together, because that layout shows both at once. Back folds it away
-   * again.
+   * the map the reader asked to see; on desktop the drawer or wide columns come
+   * back at their previous size. Back folds it away again.
    */
   function revealSheet() {
     if (state.chrome !== 'hidden') return;
@@ -907,15 +906,15 @@ async function main() {
    * Hand a station to the planner as one end of a journey.
    *
    * The reader has asked to plan, so when this returns the planner has to be
-   * usable. On a phone the slot shows the rail or the evidence and never both,
-   * so the station panel gives it up; on a desktop the two sit side by side and
+   * usable. Phones and compact desktop share one workspace/evidence slot, so
+   * the station panel gives it up; wide desktop keeps the two side by side and
    * the evidence stays where it is. The size is settled after `select(null)`
    * because that also resolves what a Back would put the sheet back to, and this
    * request outranks it: a folded or map-only sheet comes back to working size,
    * while `expanded` is left alone because it is already readable.
    */
   function planFrom(station: StationRecord, dir: 'from' | 'to') {
-    if (window.matchMedia('(max-width: 820px)').matches) select(null);
+    if (window.matchMedia('(max-width: 1199px)').matches) select(null);
     state.tab = 'plan';
     renderChrome.rerender();
     if (state.chrome === 'hidden' || state.chrome === 'peek') setChrome('full');
