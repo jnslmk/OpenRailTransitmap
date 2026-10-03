@@ -100,6 +100,8 @@ At widths of 1200px and above, desktop uses a 320px browsing/planning rail besid
 
 Keep identity, tabs, search, and filter access in the rail's fixed head while its content body owns the scroll. In the inspector, keep the selection identity/header fixed and let evidence scroll. The mobile sheet controls remain visible between map and content; scrolling belongs to the active panel, not the page. Preserve comfortable touch targets on coarse pointers and allow long evidence to scroll within its panel.
 
+Filters and the browse list have no full-width divider between them; tabs, search, filters, and the list use consistent 10px vertical gaps. Counts, attribution, and the build stamp sit at the bottom of the rail when content fits, following the content in the scroll region when it overflows.
+
 ## Elevation & Depth
 
 The UI is flat and structural, not shadow-led. White surfaces are set against the light-grey ground and separated with fine grey borders; a selected tab or open panel is distinguished by its surface, border, and state rather than a drop shadow. Route geometry and explicit evidence marks supply visual emphasis.
