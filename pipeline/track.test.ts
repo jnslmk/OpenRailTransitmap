@@ -113,6 +113,22 @@ test('puts back the crossover that links two kept stretches', () => {
   assert.equal(chainWays(kept, geom).length, 1);
 });
 
+test('restores a connector split across multiple ways without restoring a dead end', () => {
+  const point = (m: number): Coord => [10.52 + m * M_LON, 52.26];
+  const geom = geomOf({
+    left: [point(0), point(400)],
+    linkA: [point(400), point(415)],
+    linkB: [point(415), point(430)],
+    right: [point(430), point(830)],
+    deadEnd: [point(415), [point(415)[0], 52.26 + 4 * M_LAT]],
+  });
+  const kept = collapseParallelTracks([...geom.keys()], geom, 20, {
+    canonical: new Set(['left', 'right']),
+  });
+  assert.equal(chainWays(kept, geom).length, 1, 'the original route must remain connected');
+  assert.ok(!kept.includes('deadEnd'), 'an unused branch must stay collapsed');
+});
+
 test('does not put back a whole second track to close a gap', () => {
   // Both stretches are separated by a hole the data never filled, and the only
   // dropped way long enough to bridge it is the track we collapsed away. Two

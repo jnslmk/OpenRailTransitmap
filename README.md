@@ -180,6 +180,11 @@ one segment, and each line gets a perpendicular offset ordinal — its rank amon
 the lines actually on that segment, centred so the bundle straddles its
 alignment. No geometric matching required.
 
+Double-track deduplication preserves short connector paths between surviving
+stretches, including connectors split across several OSM ways. It restores only
+the paths needed to reconnect the track, leaving duplicate loops and dead ends
+collapsed instead of inventing bridges across missing source geometry.
+
 Ranking per segment is a deliberate choice over ranking once per corridor and
 letting a line hold that slot for the corridor's length. The corridor-wide
 version moves less, but it reserves a band for every line in the corridor's

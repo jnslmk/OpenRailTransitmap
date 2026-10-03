@@ -276,10 +276,9 @@ function bearing(from: Coord, to: Coord): number {
  * Where the collapse does have to change track - the kept one ends, or was never
  * mapped - the crossover between them is itself covered and goes, and the two
  * kept stretches are left a track's width apart with nothing joining them. A
- * final pass puts those short connectors back: a dropped way returns if it is
- * the only thing linking two stretches that are now separate. It is short and it
- * runs under geometry that is already drawn, so it costs nothing visually and
- * buys back a line that reads as one line.
+ * final pass puts those short connector paths back, even when a path spans
+ * several ways. Only paths linking separate kept stretches return; loops and
+ * dead ends stay collapsed.
  *
  * `canonical` is how lines sharing a corridor end up on the *same* track. Run
  * over the whole network first, this returns one track per corridor; passed back
@@ -390,12 +389,10 @@ export function collapseParallelTracks(
 }
 
 /**
- * The dropped ways worth having back: the shortest ones that each join two
- * stretches of kept track nothing else connects. Longer than a crossover and a
- * restored way would start redrawing the track it was dropped for, so the search
- * is capped at `maxLengthM`, and stretches left apart by a genuine hole in the
- * data - a way the extract never carried - stay apart, since no dropped way
- * bridges them either.
+ * Restore a forest of short dropped ways connecting separate kept stretches.
+ * Joining shortest ways first avoids bringing back parallel alternatives;
+ * pruning non-kept leaves removes dead ends. No coordinates are invented, so
+ * a genuine hole in the source data stays a hole.
  */
 function reconnectors(
   kept: string[],
@@ -434,19 +431,54 @@ function reconnectors(
   };
   for (const id of kept) join(id);
 
-  const restored: string[] = [];
+  // Freeze kept components before unions below start merging them.
+  const nodes = new Map([...claimed].map(([key, owner]) => [key, find(owner)]));
+  const terminals = new Set(nodes.values());
+  const edges = new Map<string, { from: string; to: string }>();
+  const adjacent = new Map<string, Set<string>>();
+  const attach = (node: string, id: string) => {
+    let list = adjacent.get(node);
+    if (!list) adjacent.set(node, (list = new Set()));
+    list.add(id);
+  };
   const candidates = dropped
     .filter((id) => wayLength(geom.get(id)!) <= maxLengthM)
     .sort((a, b) => wayLength(geom.get(a)!) - wayLength(geom.get(b)!));
   for (const id of candidates) {
     const g = geom.get(id)!;
-    const from = claimed.get(endpointKey(g[0]));
-    const to = claimed.get(endpointKey(g[g.length - 1]));
-    if (!from || !to || find(from) === find(to)) continue;
-    join(id);
-    restored.push(id);
+    const ends = [g[0], g[g.length - 1]].map((end) => {
+      const key = endpointKey(end);
+      return nodes.get(key) ?? key;
+    });
+    const [from, to] = ends;
+    for (const node of ends) if (!parent.has(node)) parent.set(node, node);
+    const a = find(from),
+      b = find(to);
+    if (a === b) continue;
+    parent.set(a, b);
+    edges.set(id, { from, to });
+    attach(from, id);
+    attach(to, id);
   }
-  return restored;
+
+  // A tree is useful only between kept stretches, not beyond them.
+  const leaves = [...adjacent.keys()].filter(
+    (node) => !terminals.has(node) && adjacent.get(node)!.size === 1,
+  );
+  while (leaves.length > 0) {
+    const node = leaves.pop()!;
+    const list = adjacent.get(node)!;
+    if (list.size !== 1) continue;
+    const id = list.values().next().value!;
+    const { from, to } = edges.get(id)!;
+    const other = from === node ? to : from;
+    list.delete(id);
+    edges.delete(id);
+    const remaining = adjacent.get(other)!;
+    remaining.delete(id);
+    if (!terminals.has(other) && remaining.size === 1) leaves.push(other);
+  }
+  return [...edges.keys()];
 }
 
 function wayLength(g: Coord[]): number {
