@@ -8,8 +8,8 @@
 #   pass 1  route relations only -> OPL, which gives us tags + member way ids
 #   pass 2  fetch exactly those ways -> GeoJSON LineStrings, keyed by way id
 #
-# build.ts then stitches ways into routes. Stations are a straightforward tag
-# filter exported directly to GeoJSON.
+# build.ts then stitches ways into routes. Stations and city/town centres are
+# straightforward tag filters exported directly to GeoJSON.
 
 set -euo pipefail
 
@@ -84,5 +84,17 @@ osmium export "$OUT/stops.osm.pbf" \
   --add-unique-id=type_id \
   -o "$OUT/stops.geojsonseq" --overwrite
 echo "    $(wc -l < "$OUT/stops.geojsonseq") stop positions"
+
+# --- city and town centres ----------------------------------------------------
+step "filtering city and town centres"
+osmium tags-filter "$PBF" -R \
+  n/place=city,town \
+  -o "$OUT/places.osm.pbf" --overwrite
+
+osmium export "$OUT/places.osm.pbf" \
+  -f geojsonseq \
+  --geometry-types=point \
+  -o "$OUT/places.geojsonseq" --overwrite
+echo "    $(wc -l < "$OUT/places.geojsonseq") place features"
 
 step "extract complete -> $OUT"

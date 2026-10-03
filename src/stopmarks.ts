@@ -1,5 +1,5 @@
 /**
- * The pill a station is marked with, drawn as an image and handed to MapLibre.
+ * The pill a station is marked with, encoded as a signed-distance image.
  *
  * The mark has to be a bar of arbitrary length, laid at an arbitrary angle, and
  * measured in *pixels* - it spans bands whose spacing is a pixel quantity that
@@ -36,10 +36,12 @@ export const PILL_PITCH = BUNDLE_PITCH_PX;
 export const PILL_THICKNESS = 9;
 
 /** Outline weight, in the same units. */
-const PILL_STROKE = 1.5;
+export const PILL_STROKE = 1.5;
 
-/** Supersampling. The image is scaled up to 1.6x at z14+, so 4x stays crisp. */
-const RESOLUTION = 4;
+/** MapLibre's SDF shader uses an eight-pixel distance range and a 0.75 edge. */
+const SDF_RANGE = 8;
+const SDF_EDGE = 0.75;
+const PADDING = 2;
 
 /** Longest bar we will draw. Germany's largest bundle is around 20 bands. */
 const MAX_SPAN = 64;
@@ -51,40 +53,29 @@ export const PILL_IMAGE_PREFIX = 'stop-pill-';
 export const pillLength = (span: number) => (Math.max(1, span) - 1) * PILL_PITCH + PILL_THICKNESS;
 
 /**
- * White bar with a dark outline, long axis along +x, at `RESOLUTION` times the
- * size it is nominally drawn at.
+ * Distance to a capsule's white fill. MapLibre antialiases its contour at the
+ * displayed size; a supersampled bitmap aliases when its atlas is minified
+ * without mipmaps. The halo supplies the outline, with padding for its AA.
  */
-function drawPill(span: number): ImageData | null {
-  const w = Math.max(1, Math.round(pillLength(span) * RESOLUTION));
-  const h = Math.max(1, Math.round(PILL_THICKNESS * RESOLUTION));
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  const inset = (PILL_STROKE * RESOLUTION) / 2;
-  const radius = h / 2 - inset;
-  ctx.beginPath();
-  // roundRect is in every browser this map already needs for WebGL 2; the arc
-  // fallback keeps the mark from disappearing entirely if one turns up without.
-  if (typeof ctx.roundRect === 'function') {
-    ctx.roundRect(inset, inset, w - 2 * inset, h - 2 * inset, radius);
-  } else {
-    ctx.moveTo(inset + radius, inset);
-    ctx.lineTo(w - inset - radius, inset);
-    ctx.arc(w - inset - radius, h / 2, radius, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(inset + radius, h - inset);
-    ctx.arc(inset + radius, h / 2, radius, Math.PI / 2, -Math.PI / 2);
-    ctx.closePath();
+function drawPill(span: number): ImageData {
+  const length = pillLength(span);
+  const w = Math.ceil(length) + 2 * PADDING;
+  const h = PILL_THICKNESS + 2 * PADDING;
+  const image = new ImageData(w, h);
+  const halfSegment = (length - PILL_THICKNESS) / 2;
+  const radius = PILL_THICKNESS / 2 - PILL_STROKE;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = Math.max(0, Math.abs(x + 0.5 - w / 2) - halfSegment);
+      const dy = y + 0.5 - h / 2;
+      const distance = radius - Math.hypot(dx, dy);
+      image.data[(y * w + x) * 4 + 3] = Math.max(
+        0,
+        Math.min(255, Math.round(255 * (SDF_EDGE + distance / SDF_RANGE))),
+      );
+    }
   }
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = PILL_STROKE * RESOLUTION;
-  ctx.strokeStyle = '#1a1a1a';
-  ctx.stroke();
-
-  return ctx.getImageData(0, 0, w, h);
+  return image;
 }
 
 /**
@@ -101,6 +92,6 @@ export function registerPillImages(map: MLMap): void {
     if (!match || map.hasImage(e.id)) return;
     const span = Math.min(MAX_SPAN, Number(match[1]));
     const image = drawPill(span);
-    if (image) map.addImage(e.id, image, { pixelRatio: RESOLUTION });
+    map.addImage(e.id, image, { sdf: true });
   });
 }

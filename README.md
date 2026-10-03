@@ -155,6 +155,12 @@ GitHub Pages and rebuilt nightly.
   half-transparent so the rail bands still dominate, and so a tram stop can be
   placed on an actual street. The interface is English; station and line names
   stay as OSM has them, in German.
+- **Clear city labels at regional zooms**, drawn above the railway bands with
+  dark type and white halos. Population thresholds favour larger cities when
+  zoomed out; collision handling avoids crowded names. These geographic labels
+  fade out by z12, leaving station names and the detailed basemap. City centres
+  and populations come from the same OSM extract, rebuilt into the self-hosted
+  `places.geojson` alongside the network.
 
 ## How it is built
 
@@ -173,7 +179,7 @@ pipeline/
   fonts.ts                 self-hosted MapLibre glyphs (no font CDN)
   tiles.sh                 tippecanoe -> rail.pmtiles
 shared/lnvg.ts             design tokens read out of the reference PDF
-src/stopmarks.ts           the stop bars, drawn to canvas and handed to MapLibre
+src/stopmarks.ts           the stop bars, encoded as distance fields for MapLibre
 src/                       MapLibre app (style, state, UI, controls, strings)
   live.ts / routing.ts     the only two modules that talk to Transitous
   planner.ts               the Plan tab
@@ -287,9 +293,11 @@ Drawing it is one trick. MapLibre multiplies `icon-offset` by `icon-size` and
 rotates it with `icon-rotate`, so setting `icon-size` to exactly the factor the
 bundle spread uses at that zoom makes an offset of `mid × pitch` land on the band
 that ordinal names, at every zoom, with neither expression knowing about the
-other. The bar itself is a canvas-drawn image per span, added on demand — of
+other. The bar itself is a signed-distance image per span, added on demand — of
 MapLibre's point primitives only a symbol can be a bar of arbitrary length at an
-arbitrary angle measured in pixels. The price is that the bar's *thickness*
+arbitrary angle measured in pixels. Its fill and outline are antialiased by
+MapLibre at the displayed size, avoiding the jagged edges of a supersampled
+bitmap shrunk without mipmaps. The price is that the bar's *thickness*
 scales with the spread too, which is why below z11 — where the spread
 deliberately collapses so national-scale bundles read as one trunk — the marks
 are plain dots on the same anchors, and the bars fade in over the changeover.
@@ -412,6 +420,17 @@ restores the whole plan — rather than any particular journey.
 
 A local run needs tiles, which the pipeline builds; the quickest way to get
 them without running it is to copy the deployed ones into `public/`.
+
+The icon-edge regression runs against a local Vite server, without tiles or
+external requests: `node e2e/stopmarks.mjs http://127.0.0.1:5173/`. It compares
+small, fractional-size and enlarged bars at four angles with an area-averaged
+reference. Set `PLAYWRIGHT_CHROMIUM` to use an existing Chromium executable.
+
+The regional-city regression checks Hannover, Hildesheim, Göttingen and Kassel
+in the real map, then zooms in to verify that station labels take over:
+`node e2e/cities.mjs http://127.0.0.1:5173/`. It needs generated tiles, fonts and
+`public/places.geojson`; the normal extraction/data build generates the latter.
+It also supports `PLAYWRIGHT_CHROMIUM`.
 
 ## What is committed
 

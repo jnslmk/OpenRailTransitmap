@@ -4,6 +4,7 @@
  *   routes.opl            -> route relations (tags + member way ids)
  *   rail-ways.geojsonseq  -> way geometry, keyed by way id
  *   stations.geojsonseq   -> station points
+ *   places.geojsonseq     -> city and town centres for geographic labels
  *
  * The interesting part is bundling. Routes sharing a corridor must be drawn as
  * parallel bands rather than stacked on one another, which is what makes a
@@ -403,6 +404,7 @@ const TRACK_PAIR_M: Record<Mode, number> = {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   mkdirSync(DATA, { recursive: true });
+  mkdirSync('public', { recursive: true });
 
   const cfg = parseYaml(readFileSync('config/regions.yaml', 'utf8')) as RegionsConfig;
   // REGION overrides the committed default, so a one-off national run needs no
@@ -411,6 +413,56 @@ async function main() {
   const region = cfg.regions[active];
   if (!region) throw new Error(`unknown region '${active}'`);
   console.log(`==> region: ${active} (${region.name})`);
+
+  // --- city and town centres -> geographic labels ---------------------------
+  const places: {
+    type: 'Feature';
+    geometry: { type: 'Point'; coordinates: Coord };
+    properties: { name: string; place: 'city' | 'town'; population: number };
+  }[] = [];
+  for await (const raw of createInterface({
+    input: createReadStream(`${EXTRACT}/places.geojsonseq`),
+    crlfDelay: Infinity,
+  })) {
+    const text = (raw.startsWith('\x1e') ? raw.slice(1) : raw).trim();
+    if (!text) continue;
+    const f = JSON.parse(text) as OsmFeature & { type?: string };
+    const props = f?.properties;
+    const coords = f?.geometry?.coordinates;
+    if (
+      f?.type !== 'Feature' ||
+      f.geometry?.type !== 'Point' ||
+      typeof props?.name !== 'string' ||
+      !props.name.trim() ||
+      (props.place !== 'city' && props.place !== 'town') ||
+      !Array.isArray(coords) ||
+      coords.length !== 2 ||
+      typeof coords[0] !== 'number' ||
+      !Number.isFinite(coords[0]) ||
+      Math.abs(coords[0]) > 180 ||
+      typeof coords[1] !== 'number' ||
+      !Number.isFinite(coords[1]) ||
+      Math.abs(coords[1]) > 90
+    ) {
+      continue;
+    }
+    const populationTag = typeof props.population === 'string' ? props.population.trim() : '';
+    const population = /^\d+$/.test(populationTag) ? Number(populationTag) : 0;
+    places.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: coords as Coord },
+      properties: {
+        name: props.name,
+        place: props.place,
+        population: Number.isFinite(population) ? population : 0,
+      },
+    });
+  }
+  writeFileSync(
+    'public/places.geojson',
+    JSON.stringify({ type: 'FeatureCollection', features: places }),
+  );
+  console.log(`==> geographic labels: ${places.length} city and town centres`);
 
   const overridesFile = existsSync(`${DATA}/overrides.yaml`)
     ? (parseYaml(readFileSync(`${DATA}/overrides.yaml`, 'utf8')) as {

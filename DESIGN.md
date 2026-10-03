@@ -104,6 +104,12 @@ Filters and the browse list have no full-width divider between them; tabs, searc
 
 Map attribution is a small, muted text strip at the map's bottom-right edge on a translucent white backing, with no border or shadow. The linked OpenStreetMap credit is always visible; a native **Credits** disclosure opens other map-source links above the strip. It remains accessible in map-only and fullscreen views, stays above the phone sheet, and gives touch links and the disclosure at least 44px-high targets. Routing attribution belongs in the sidebar, not the map strip.
 
+At regional zooms, larger cities are geographic anchors above the railway bands:
+Fira Sans Bold, dark ink and a white text halo, with collision placement favouring
+larger populations. Use OSM city centres, not station coordinates or names.
+Station marks remain visible; city labels fade between z11 and z12 as station
+names and the detailed basemap take over.
+
 ## Elevation & Depth
 
 The UI is flat and structural, not shadow-led. White surfaces are set against the light-grey ground and separated with fine grey borders; a selected tab or open panel is distinguished by its surface, border, and state rather than a drop shadow. Route geometry and explicit evidence marks supply visual emphasis.

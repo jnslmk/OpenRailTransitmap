@@ -9,6 +9,7 @@ public/logos/
 public/lines.json
 public/punctuality.json
 public/operator-logos.json
+public/places.geojson
 
 # implement-review run ledgers
 .implement-review/

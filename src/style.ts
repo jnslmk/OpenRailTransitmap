@@ -31,7 +31,13 @@ import {
   spreadAt,
   type Mode,
 } from '../shared/lnvg.ts';
-import { PILL_IMAGE_PREFIX, PILL_PITCH, PILL_THICKNESS, pillLength } from './stopmarks.ts';
+import {
+  PILL_IMAGE_PREFIX,
+  PILL_PITCH,
+  PILL_THICKNESS,
+  PILL_STROKE,
+  pillLength,
+} from './stopmarks.ts';
 import type { ClosureBand } from '../shared/closures.ts';
 
 export const FONT_REGULAR = ['Fira Sans Regular'];
@@ -361,6 +367,18 @@ const barLayout: SymbolLayerSpecification['layout'] = {
   ] as ExpressionSpecification,
 };
 
+const barPaint: SymbolLayerSpecification['paint'] = {
+  'icon-color': LNVG.white,
+  'icon-halo-color': INK,
+  // Halo width is in screen pixels; scale it with the fill to retain the stroke.
+  'icon-halo-width': [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    ...PILL_SIZE_STOPS.flatMap(([z, f]) => [z, PILL_STROKE * f]),
+  ] as ExpressionSpecification,
+};
+
 /**
  * How far a name sits from its own bar, in ems.
  *
@@ -492,10 +510,8 @@ function stationLayers(): LayerSpecification[] {
     }
 
     // Every bar of the tier. Below the changeover it is invisible and the dots
-    // above are what is seen - but it is still placed, so it holds the space
-    // its name will later need and city labels give it the room they always
-    // did. It keeps drawing above the label zoom too, because a junction has a
-    // bar per corridor and only one of them is the one that carries the name.
+    // above are what is seen. It keeps drawing above the label zoom too, because
+    // a junction has a bar per corridor and only one carries the name.
     layers.push({
       id: markLayer(tier.rank),
       type: 'symbol',
@@ -504,7 +520,7 @@ function stationLayers(): LayerSpecification[] {
       minzoom: tier.mark,
       filter: rankIs(tier.rank),
       layout: barLayout,
-      paint: { 'icon-opacity': fadeIn(tier.rank) },
+      paint: { ...barPaint, 'icon-opacity': fadeIn(tier.rank) },
     });
 
     // ...and, over the top of one of them, that same bar again with its name
@@ -534,6 +550,7 @@ function stationLayers(): LayerSpecification[] {
         'text-optional': true,
       },
       paint: {
+        ...barPaint,
         'icon-opacity': fadeIn(tier.rank),
         // Trams get the quieter colour by tier; a coach bay of its own gets it
         // by being one, wherever it has been ranked. It is not a railway
@@ -832,8 +849,7 @@ function closureLayers(): LayerSpecification[] {
  * Desaturated and half-transparent over the flat LNVG ground, so it reads as
  * context rather than as the map: the rail bands have to dominate, and OSM's
  * own colours - motorway orange, forest green - would otherwise argue with
- * them. Its labels are the map's place names too, which is why the style
- * carries none of its own.
+ * them. Larger cities get separate labels above the railway bands.
  */
 const osmRasterSource = () => ({
   type: 'raster' as const,
@@ -841,6 +857,43 @@ const osmRasterSource = () => ({
   tileSize: 256,
   maxzoom: 19,
 });
+
+/** Geographic anchors at regional scale; station names take over on zooming in. */
+function cityLayer(): SymbolLayerSpecification {
+  return {
+    id: 'city-labels',
+    type: 'symbol',
+    source: 'places',
+    minzoom: 5,
+    maxzoom: 12,
+    filter: [
+      'any',
+      ['>=', ['get', 'population'], ['step', ['zoom'], 500000, 6, 100000, 7, 50000, 9, 20000]],
+      [
+        'all',
+        ['==', ['get', 'place'], 'city'],
+        ['==', ['get', 'population'], 0],
+        ['>=', ['zoom'], 7],
+      ],
+    ],
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': FONT_BOLD,
+      'text-size': ['interpolate', ['linear'], ['zoom'], 5, 13, 8, 16, 11, 17],
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.7,
+      'text-justify': 'auto',
+      'text-padding': 4,
+      'symbol-sort-key': ['-', 0, ['get', 'population']],
+    },
+    paint: {
+      'text-color': INK,
+      'text-halo-color': LNVG.white,
+      'text-halo-width': 2,
+      'text-opacity': ['interpolate', ['linear'], ['zoom'], 11, 1, 12, 0],
+    },
+  };
+}
 
 export interface StyleOptions {
   /** Base path the site is served from, e.g. "/OpenRailTransitmap/". */
@@ -855,6 +908,7 @@ export function buildStyle({ base }: StyleOptions): StyleSpecification {
     sources: {
       rail: { type: 'vector', url: `pmtiles://${base}tiles/rail.pmtiles` },
       osm: osmRasterSource(),
+      places: { type: 'geojson', data: `${base}places.geojson` },
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': LNVG.ground } },
@@ -867,10 +921,15 @@ export function buildStyle({ base }: StyleOptions): StyleSpecification {
     ],
   };
 
-  // Symbol placement priority runs from the *top* layer down, so whatever is
-  // pushed last wins collisions. Station names matter more than repeated line
-  // badges, so the badge layer goes underneath them.
-  style.layers.push(...routeLayers(), badgeLayer(), ...closureLayers(), ...stationLayers());
+  // Placement runs from the top down: cities anchor regional views, and station
+  // names outrank repeated line badges. Station marks always allow overlap.
+  style.layers.push(
+    ...routeLayers(),
+    badgeLayer(),
+    ...closureLayers(),
+    ...stationLayers(),
+    cityLayer(),
+  );
   return style;
 }
 
