@@ -379,9 +379,18 @@ async function journeyLegibility(page) {
     ],
   };
   let askedModes = '';
-  const handler = (route) => {
+  let planRequests = 0;
+  let responseBody = body;
+  let responseStatus = 200;
+  let heldResponse = null;
+  let releaseRefresh;
+  const handler = async (route) => {
+    planRequests++;
+    const json = responseBody;
+    const status = responseStatus;
     askedModes = new URL(route.request().url()).searchParams.get('transitModes') ?? '';
-    return route.fulfill({ json: body });
+    if (heldResponse) await heldResponse;
+    return route.fulfill({ json, status }).catch(() => {});
   };
   await page.route('**/api/v1/plan?**', handler);
   await mkdir(SCREENSHOTS, { recursive: true });
@@ -625,6 +634,114 @@ async function journeyLegibility(page) {
       );
     }
 
+    await testCase(
+      'Refresh routes bypasses fresh cache and recovers from empty/error searches',
+      async () => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.goto(
+          `${BASE}?tab=plan&from=${RURAL}&to=${HANNOVER}&bike=0&at=2026-10-03T07:00:00Z`,
+          { waitUntil: 'load' },
+        );
+        await ready(page);
+        await page.waitForSelector('.itin');
+        const initialRequests = planRequests;
+        await page.click('.plan-submit');
+        await page.waitForSelector('.itin');
+        eq(planRequests, initialRequests, 'ordinary submit reuses a fresh result');
+
+        const changedLeg = {
+          ...leg('REGIONAL_RAIL', east, destination, '09:10', '10:00', 3000),
+          routeShortName: 'RE9',
+          from: { ...east, departure: time('09:10'), track: '4' },
+        };
+        responseBody = {
+          itineraries: [
+            {
+              startTime: time('09:10'),
+              endTime: time('10:00'),
+              duration: 3000,
+              transfers: 0,
+              legs: [changedLeg],
+            },
+          ],
+        };
+        heldResponse = new Promise((resolve) => {
+          releaseRefresh = resolve;
+        });
+        const refresh = page.getByRole('button', { name: 'Refresh routes', exact: true });
+        await refresh.focus();
+        const requested = page.waitForRequest('**/api/v1/plan?**');
+        await page.keyboard.press('Enter');
+        await requested;
+        eq(
+          await refresh.getAttribute('aria-disabled'),
+          'true',
+          'refresh is unavailable while loading',
+        );
+        check(
+          await refresh.evaluate((button) => document.activeElement === button),
+          'keyboard focus survives the loading redraw',
+        );
+        await page.keyboard.press('Space');
+        eq(planRequests, initialRequests + 1, 'repeat activation does not start another refresh');
+        releaseRefresh();
+        heldResponse = null;
+        await page
+          .locator('.itin .badge')
+          .filter({ hasText: /\bRE9$/ })
+          .waitFor();
+        check(
+          await refresh.evaluate((button) => document.activeElement === button),
+          'keyboard focus survives the completed refresh',
+        );
+        check(
+          (await page.locator('.leg-list').textContent()).includes('Pl. 4'),
+          'refreshed platform is displayed',
+        );
+        await page.waitForFunction(async () => {
+          const features = (await window.__map.getSource('itinerary').getData()).features;
+          const transit = features.filter((feature) => feature.properties.kind === 'transit');
+          return (
+            transit.length === 1 &&
+            transit[0].geometry.coordinates[0][0] === 10.12 &&
+            transit[0].geometry.coordinates.at(-1)[0] === 10.2
+          );
+        });
+        eq(
+          await page.locator('.itin-wrap.open').count(),
+          1,
+          'refreshed journey is selected and drawn on the map',
+        );
+
+        responseBody = { itineraries: [] };
+        await refresh.click();
+        await page.getByText('No journeys found', { exact: true }).waitFor();
+        responseBody = body;
+        await refresh.focus();
+        await page.keyboard.press('Space');
+        await page.waitForSelector('.itin');
+        eq(planRequests, initialRequests + 3, 'an empty cached search can be explicitly refreshed');
+
+        responseStatus = 503;
+        await refresh.click();
+        await page.getByText('Could not reach the routing service', { exact: true }).waitFor();
+        responseStatus = 200;
+        await refresh.click();
+        await page.waitForSelector('.itin');
+        eq(planRequests, initialRequests + 5, 'refresh retries an errored search');
+
+        await page.goto(`${BASE}?tab=plan`, { waitUntil: 'load' });
+        await ready(page);
+        check(await refresh.isDisabled(), 'refresh requires both endpoints');
+      },
+    );
+    releaseRefresh?.();
+    heldResponse = null;
+    responseBody = body;
+    responseStatus = 200;
+    releaseRefresh = undefined;
+    askedModes = '';
+
     // The fare presets are a request contract: what the router is allowed to
     // offer, not a client-side prune of what came back. So the check is on the
     // parameter, which is also the part that cannot drift with the timetable.
@@ -635,6 +752,7 @@ async function journeyLegibility(page) {
       });
       await ready(page);
       await page.waitForSelector('.plan-fare', { timeout: 10000 });
+      await page.waitForSelector('.itin');
       check(
         await page.locator('.plan-form .chip').first().isVisible(),
         'chips decide while the preset is All services',
@@ -665,6 +783,10 @@ async function journeyLegibility(page) {
       eq(askedModes, 'REGIONAL_RAIL,SUBURBAN', 'regional is trains only');
 
       await page.selectOption('.plan-fare', 'any');
+      await page.waitForSelector('.itin');
+      // Returning to All services can reuse the fresh first result; refresh
+      // explicitly when this request-contract check needs to observe the API.
+      await page.getByRole('button', { name: 'Refresh routes', exact: true }).click();
       await settle(ANY);
       await page.waitForFunction(() => !!document.querySelector('.plan-form .chip'));
       eq(askedModes, ANY, 'All services hands the decision back to the chips');

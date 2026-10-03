@@ -159,7 +159,7 @@ Transitous.
 export interface RoutingProvider {
   geocode(text: string, signal: AbortSignal): Promise<Place[]>;
   reverseGeocode(lonLat: [number, number], signal: AbortSignal): Promise<Place | null>;
-  plan(query: PlanQuery, signal: AbortSignal): Promise<PlanResult>;
+  plan(query: PlanQuery, signal: AbortSignal, refresh?: boolean): Promise<PlanResult>;
 }
 
 export interface PlanQuery {
@@ -341,9 +341,13 @@ Transitous singles routing out as resource-intensive and asks to be contacted
 before heavy use. At 140 KB per plan response, the mitigations are:
 
 1. **Never plan on keystroke.** Geocode is debounced at ~400 ms; `plan` fires on
-   submit, on a slider release, and on Earlier/Later — never on pan or zoom.
+   submit, on a slider release, on Earlier/Later, and on explicit Refresh routes
+   — never on pan or zoom.
 2. **Cache client-side** on the rounded query (from, to, time to the quarter
-   hour, modes, bike profile). Sliding the split back and forth is then free.
+   hour, modes, bike profile, page cursor), capped at 24 results. Entries expire
+   two minutes after the successful response body completes; sliding the split
+   back and forth is free within that window. Expiry is checked on the next
+   ordinary search, never by a timer or background request.
 3. **Reuse the `live.ts` seam** so a caching edge function stays a one-line
    change, per the standing decision in `docs/live-data.md` §6.
 4. **Ask them first.** This is a gating action, not a courtesy: the map already
@@ -562,9 +566,23 @@ and nothing failed. It was caught by opening the page and reading the label,
 which is the argument for driving the real thing rather than only the types.
 `e2e/planner.mjs` now pins it.
 
-**Load.** `plan()` is called only on a deliberate act — submit, a slider release,
-a mode chip, Earlier/Later — never on a pan and never on a keystroke; the
-geocoder is debounced at 350 ms; identical queries are answered from a capped
-client-side cache keyed on the query rounded to the quarter hour. Transitous
-still has not been asked about any of this, and should be before the planner is
-announced anywhere. That remains open question 3.
+**Load and freshness.** `plan()` is called only on a deliberate act — submit, a
+slider release, a mode chip, Earlier/Later, Refresh routes — never on a pan and
+never on a keystroke; the geocoder is debounced at 350 ms. Identical queries are
+answered from a 24-entry client-side cache keyed on the query rounded to the
+quarter hour, including modes, bike profile and page cursor. Each successful
+response (including an empty result) is reusable for two minutes from body
+completion; reading it does not extend that lifetime. Expiry alone never requests
+new data or changes the displayed journey.
+
+**Refresh routes** is a separate keyboard- and touch-accessible action, available
+with valid endpoints after successful, empty or failed searches. It bypasses and
+replaces a fresh cache entry, re-runs the current form's search from the first
+page, and updates both the list and selected map journey. "Leave now" is
+re-evaluated, while explicit times, fare/mode and bike settings stay intact.
+Repeated activation while loading is ignored, and keyboard focus survives the
+loading and result redraws. Other query changes still cancel an in-flight
+request; aborted and failed responses are not cached.
+
+Transitous still has not been asked about any of this, and should be before the
+planner is announced anywhere. That remains open question 3.

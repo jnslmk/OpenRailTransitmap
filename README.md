@@ -90,6 +90,11 @@ GitHub Pages and rebuilt nightly.
   move the highlighted suggestion, and Enter selects it directly—even if the
   search is still loading. The selected field stays focused after Enter, so
   typing can continue without clicking it again.
+  Ordinary searches reuse identical queries for two minutes after a successful
+  response, with at most 24 cached results. **Refresh routes** explicitly asks
+  for new journeys even within that window, including after empty results or an
+  error; it works by keyboard and touch. Cache expiry never polls or changes
+  displayed journeys by itself.
   The chosen journey uses distinct colour-blind-friendly leg colours shared by
   map strokes, numbered sidebar badges, and the timeline—not official route
   colours. Bike and walk legs stay dashed with white route casing. In Plan,

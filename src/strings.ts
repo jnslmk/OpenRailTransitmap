@@ -153,6 +153,7 @@ export interface Strings {
   planCarriage: string;
   planCarriageNote: string;
   planSubmit: string;
+  planRefresh: string;
   planLoading: string;
   planFailed: string;
   planNothing: string;
@@ -393,6 +394,7 @@ const STRINGS: Strings = {
     'Most German timetables do not publish whether bikes are carried, and this ' +
     'filter treats silence as no. It can return nothing at all.',
   planSubmit: 'Find routes',
+  planRefresh: 'Refresh routes',
   planLoading: 'Finding routes…',
   planFailed: 'Could not reach the routing service',
   planNothing: 'No journeys found',

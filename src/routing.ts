@@ -31,8 +31,9 @@
  * Transitous names routing as resource-intensive and asks to be contacted before
  * heavy use. Two things here honour that: nothing calls `plan()` except a
  * deliberate act by the user (never a pan, never a keystroke), and identical
- * queries are answered from `planCache` rather than re-asked. Debouncing the
- * geocoder is the UI's job, because only the UI knows what a keystroke is.
+ * queries are answered from `planCache` for two minutes rather than re-asked.
+ * Explicit refresh bypasses that cache; expiry never sends a request itself.
+ * Debouncing the geocoder is the UI's job, because only the UI knows what a keystroke is.
  */
 
 import { request, LiveDataError } from './live.ts';
@@ -534,14 +535,15 @@ function planParams(q: PlanQuery): Record<string, string> {
 }
 
 /**
- * Identical queries are answered from here rather than re-asked, which is what
- * makes dragging the bike slider back over a value free. Capped because a
- * session can generate a lot of these and each is a couple of hundred KB of
- * decoded geometry; oldest out first, which for a planner is also least likely
- * to be wanted again.
+ * Identical queries are answered from here for two minutes after a successful
+ * response rather than re-asked, making a return to a bike-slider value free
+ * within that window. Expiry is checked only on demand; explicit refresh also
+ * drops a fresh entry. Capped because a session can generate a lot of these and
+ * each holds decoded geometry; oldest out first.
  */
-const planCache = new Map<string, PlanResult>();
+const planCache = new Map<string, { result: PlanResult; completedAt: number }>();
 const PLAN_CACHE_MAX = 24;
+const PLAN_CACHE_TTL = 120_000;
 
 function cacheKey(q: PlanQuery): string {
   return JSON.stringify([
@@ -558,12 +560,21 @@ function cacheKey(q: PlanQuery): string {
   ]);
 }
 
-export async function plan(q: PlanQuery, signal: AbortSignal): Promise<PlanResult> {
+/** `refresh` bypasses even a fresh entry; ordinary callers keep cache reuse. */
+export async function plan(
+  q: PlanQuery,
+  signal: AbortSignal,
+  refresh = false,
+): Promise<PlanResult> {
+  signal.throwIfAborted();
   const key = cacheKey(q);
   const hit = planCache.get(key);
-  if (hit) return hit;
+  if (!refresh && hit && Date.now() - hit.completedAt < PLAN_CACHE_TTL) return hit.result;
+  planCache.delete(key);
 
   const data = await request<RawPlanResponse>('/plan', planParams(q), signal);
+  signal.throwIfAborted();
+  const completedAt = Date.now();
 
   const itineraries = (data.itineraries ?? []).map(toItinerary).filter((i): i is Itinerary => !!i);
 
@@ -584,7 +595,7 @@ export async function plan(q: PlanQuery, signal: AbortSignal): Promise<PlanResul
     laterCursor: data.nextPageCursor ?? null,
   };
 
-  planCache.set(key, result);
+  planCache.set(key, { result, completedAt });
   if (planCache.size > PLAN_CACHE_MAX) {
     planCache.delete(planCache.keys().next().value!);
   }

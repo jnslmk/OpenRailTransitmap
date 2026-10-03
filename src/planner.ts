@@ -24,8 +24,8 @@
  * ## Load
  *
  * `plan()` is called only on a deliberate act: submit, a slider release, a
- * mode chip, Earlier/Later. Never on a pan, never on a keystroke. The geocoder
- * is debounced here, because only this module knows what a keystroke is.
+ * mode chip, Earlier/Later, Refresh routes. Never on a pan, never on a keystroke.
+ * The geocoder is debounced here, because only this module knows what a keystroke is.
  */
 
 import { t } from './strings.ts';
@@ -214,7 +214,7 @@ function query(): void {
  * ends *and* which itinerary was being shown, and re-running the search to get
  * the geometry back must not then reset that to the first result.
  */
-function runPlan(pageCursor: string | undefined, keepSelection = false): void {
+function runPlan(pageCursor: string | undefined, keepSelection = false, refresh = false): void {
   const s = host.state;
   if (!s.from || !s.to) return;
 
@@ -245,6 +245,7 @@ function runPlan(pageCursor: string | undefined, keepSelection = false): void {
       pageCursor,
     },
     ac.signal,
+    refresh,
   )
     .then((r) => {
       if (ac.signal.aborted) return;
@@ -674,6 +675,16 @@ function buildForm(): HTMLElement {
   submit.onclick = () => query();
   box.appendChild(submit);
 
+  const refresh = el('button', 'plan-page plan-refresh', s.planRefresh);
+  refresh.type = 'button';
+  refresh.disabled = !state.from || !state.to;
+  // Keep keyboard focus while loading, but ignore repeated activation.
+  refresh.setAttribute('aria-disabled', String(refresh.disabled || status === 'loading'));
+  refresh.onclick = () => {
+    if (status !== 'loading') runPlan(undefined, false, true);
+  };
+  box.appendChild(refresh);
+
   return box;
 }
 
@@ -982,6 +993,7 @@ function redraw(): void {
   if (!mount) return;
   const focused = mount.querySelector<HTMLInputElement>('.plan-field input:focus');
   const overview = mount.querySelector<HTMLButtonElement>('.itin:focus')?.dataset.itinerary;
+  const refreshFocused = !!mount.querySelector('.plan-refresh:focus');
   mount.innerHTML = '';
   mount.append(buildForm(), buildResults());
   syncFocusedPart();
@@ -989,6 +1001,9 @@ function redraw(): void {
     mount
       .querySelector<HTMLButtonElement>(`.itin[data-itinerary="${overview}"]`)
       ?.focus({ preventScroll: true });
+  }
+  if (refreshFocused) {
+    mount.querySelector<HTMLButtonElement>('.plan-refresh')?.focus({ preventScroll: true });
   }
   // Selection and arriving route results rebuild the form without ending typing.
   if (focused) {
