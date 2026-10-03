@@ -278,7 +278,7 @@ export interface Leg {
   line: string;
   headsign: string;
   operator: string;
-  /** The feed's own colour, or null. The UI prefers the map's own. */
+  /** Feed-provided colour metadata, or null; independent of the UI's journey-leg colours. */
   colour: string | null;
   from: LegPlace;
   to: LegPlace;

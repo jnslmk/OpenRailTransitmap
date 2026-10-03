@@ -17,6 +17,8 @@ import {
   STOP_MARK_LAYERS,
   CLOSURE_LAYER_IDS,
   CLOSURE_HIT_LAYER_IDS,
+  FONT_MEDIUM,
+  FONT_BOLD,
 } from './style.ts';
 import { registerPillImages } from './stopmarks.ts';
 import { readState, writeState, type ViewState, type ChromeMode, type Tab } from './state.ts';
@@ -45,7 +47,8 @@ import {
   setRoutingAttributionUsed,
 } from './ui.ts';
 import { setPlannerPlace, restorePlannerResult, type PlannerHost } from './planner.ts';
-import type { Itinerary, Leg, Place } from './routing.ts';
+import type { Itinerary, Place } from './routing.ts';
+import { journeyView, type JourneyFocus } from './itinerary.ts';
 import { ChromeToggleControl, labelControls, ZoomReadoutControl, DEBUG } from './controls.ts';
 import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
@@ -243,8 +246,8 @@ async function main() {
    * tab is only which half of the sidebar is showing.
    */
   function routeOpacity(): number | ExpressionSpecification {
-    if (state.selected) return selectionOpacity(state.selected);
-    return shownItinerary && state.tab === 'plan' ? 0.22 : 1;
+    const quiet = shownItinerary && state.tab === 'plan' ? 0.14 : 1;
+    return state.selected ? ['*', selectionOpacity(state.selected), quiet] : quiet;
   }
 
   function applySelection() {
@@ -253,7 +256,9 @@ async function main() {
       map.setPaintProperty(
         `route-${mode}-highlight`,
         'line-opacity',
-        highlightOpacity(state.selected),
+        shownItinerary && state.tab === 'plan'
+          ? ['*', highlightOpacity(state.selected), 0.14]
+          : highlightOpacity(state.selected),
       );
     }
     map.setPaintProperty('route-badges', 'text-opacity', routeOpacity());
@@ -377,7 +382,13 @@ async function main() {
       ? ['in', `,${state.selected},`, ['concat', ',', ['get', 'lines'], ',']]
       : true;
     for (const [id, base] of Object.entries(STATION_FILTERS)) {
-      map.setFilter(id, ['all', base, served, selected] as never);
+      map.setFilter(id, [
+        'all',
+        base,
+        served,
+        selected,
+        !(shownItinerary && state.tab === 'plan'),
+      ] as never);
     }
   }
 
@@ -524,68 +535,43 @@ async function main() {
   const persist = () => writeState(state);
 
   // --- the planned journey on the map ---------------------------------------
-  //
-  // The thing only this map can do. Google draws a generic blue snake; here a
-  // transit leg is painted in the colour the network underneath is already
-  // painted in, so an itinerary reads as a path *through* the map rather than
-  // as an overlay on top of one.
+  // Journey colours identify successive legs, not official network routes.
 
   const ITINERARY_SOURCE = 'itinerary';
   const NO_ITINERARY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
   const BIKE_LEG_MODES = new Set(['BIKE', 'RENTAL', 'BIKE_RENTAL']);
   let shownItinerary: Itinerary | null = null;
 
-  /**
-   * The map's own colour for a line the planner names.
-   *
-   * Keyed on the normalised ref, and *only* where that ref is unambiguous
-   * across the whole registry. Twenty-two German lines are called "S1"; the
-   * departure board can disambiguate because it knows which station it is
-   * standing at, and this cannot, so where a ref maps to more than one colour
-   * the honest answer is none and the feed's own colour is used instead.
-   */
-  const unambiguousRefColours = (() => {
-    const byRef = new Map<string, Set<string>>();
-    for (const l of registry.lines) {
-      const k = lineKey(l.ref);
-      const set = byRef.get(k);
-      if (set) set.add(l.colour);
-      else byRef.set(k, new Set([l.colour]));
-    }
-    const out = new Map<string, string>();
-    for (const [k, colours] of byRef) if (colours.size === 1) out.set(k, [...colours][0]);
-    return out;
-  })();
-
-  const legColour = (leg: Leg): string | null =>
-    leg.line ? (unambiguousRefColours.get(lineKey(leg.line)) ?? null) : null;
+  let focusedJourneyPart: JourneyFocus = null;
 
   function itineraryData(it: Itinerary | null): GeoJSON.FeatureCollection {
     if (!it) return NO_ITINERARY;
     const features: GeoJSON.Feature[] = [];
+    const view = journeyView(it);
 
-    for (const leg of it.legs) {
+    for (const { leg, index, number, colour } of view.legs) {
       if (leg.path.length < 2) continue;
       features.push({
         type: 'Feature',
         geometry: { type: 'LineString', coordinates: leg.path },
         properties: {
           kind: leg.transit ? 'transit' : BIKE_LEG_MODES.has(leg.mode) ? 'bike' : 'walk',
-          colour: leg.transit ? (legColour(leg) ?? leg.colour ?? '#1a1a1a') : '#1a1a1a',
+          colour,
+          leg: index,
+          number,
         },
       });
     }
 
-    // A dot at every leg boundary - which is every place the rider changes
-    // from one thing to another - and a larger one at each end of the journey.
-    it.legs.forEach((leg, i) => {
-      if (i === 0) return;
+    // One numbered interchange per transit-to-transit connection, including
+    // zero-distance walks and adjacent transit legs. Access/egress is not a change.
+    for (const change of view.interchanges) {
       features.push({
         type: 'Feature',
-        geometry: { type: 'Point', coordinates: [leg.from.lon, leg.from.lat] },
-        properties: { kind: 'change' },
+        geometry: { type: 'Point', coordinates: change.at },
+        properties: { kind: 'change', number: change.number, label: change.label },
       });
-    });
+    }
     const first = it.legs[0];
     const last = it.legs[it.legs.length - 1];
     for (const p of [first?.from, last?.to]) {
@@ -593,7 +579,7 @@ async function main() {
         features.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-          properties: { kind: 'end' },
+          properties: { kind: 'end', label: p.name },
         });
       }
     }
@@ -665,10 +651,10 @@ async function main() {
       source: ITINERARY_SOURCE,
       filter: ['==', ['get', 'kind'], 'change'],
       paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 2.5, 11, 4.5, 15, 6],
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 10, 11, 12, 15, 14],
         'circle-color': LNVG.white,
         'circle-stroke-color': '#1a1a1a',
-        'circle-stroke-width': 1.6,
+        'circle-stroke-width': 2,
       },
     });
     map.addLayer({
@@ -683,39 +669,125 @@ async function main() {
         'circle-stroke-width': 2,
       },
     });
+    map.addLayer({
+      id: 'itinerary-change-numbers',
+      type: 'symbol',
+      source: ITINERARY_SOURCE,
+      filter: ['==', ['get', 'kind'], 'change'],
+      layout: {
+        'text-field': ['to-string', ['get', 'number']],
+        'text-font': FONT_BOLD,
+        'text-size': 13,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: { 'text-color': '#1a1a1a' },
+    });
+    map.addLayer({
+      id: 'itinerary-labels',
+      type: 'symbol',
+      source: ITINERARY_SOURCE,
+      filter: ['in', ['get', 'kind'], ['literal', ['change', 'end']]],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': FONT_MEDIUM,
+        'text-size': 13,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -1.25],
+        'text-max-width': 18,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#1a1a1a',
+        'text-halo-color': LNVG.white,
+        'text-halo-width': 2,
+      },
+    });
   }
 
   function drawItinerary(it: Itinerary | null) {
     shownItinerary = it;
+    focusedJourneyPart = null;
     ensureItineraryLayers();
     const source = map.getSource<GeoJSONSource>(ITINERARY_SOURCE);
     source?.setData(itineraryData(it));
+    applyJourneyFocus();
     applySelection();
     if (it) fitItinerary(it);
   }
 
   /** Bring the whole journey into view, the way picking a route out of a list should. */
   function fitItinerary(it: Itinerary) {
-    let west = Infinity,
-      south = Infinity,
-      east = -Infinity,
-      north = -Infinity;
-    for (const leg of it.legs) {
-      for (const [lon, lat] of leg.path) {
-        if (lon < west) west = lon;
-        if (lon > east) east = lon;
-        if (lat < south) south = lat;
-        if (lat > north) north = lat;
-      }
-    }
-    if (!Number.isFinite(west)) return;
-    map.fitBounds(
-      [
-        [west, south],
-        [east, north],
-      ],
-      { padding: 48, maxZoom: 13, duration: 600 },
+    fitJourneyPoints(
+      it.legs.flatMap((leg) => [
+        [leg.from.lon, leg.from.lat] as [number, number],
+        ...leg.path,
+        [leg.to.lon, leg.to.lat] as [number, number],
+      ]),
+      13,
     );
+  }
+
+  function fitJourneyPoints(points: [number, number][], maxZoom: number) {
+    if (!points.length) return;
+    const bounds = new maplibregl.LngLatBounds();
+    for (const point of points) bounds.extend(point);
+    // Leave room for above-route labels and the visible right-side control rail.
+    const mapRect = map.getContainer().getBoundingClientRect();
+    let controlInset = 0;
+    for (const control of map
+      .getContainer()
+      .querySelectorAll<HTMLElement>(
+        '.maplibregl-ctrl-top-right .maplibregl-ctrl-group, .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group',
+      )) {
+      const rect = control.getBoundingClientRect();
+      if (rect.width) controlInset = Math.max(controlInset, mapRect.right - rect.left);
+    }
+    map.fitBounds(bounds, {
+      padding: { top: 64, bottom: 48, left: 64, right: 64 + controlInset },
+      maxZoom,
+      duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 600,
+    });
+  }
+
+  function applyJourneyFocus() {
+    const view = shownItinerary ? journeyView(shownItinerary) : null;
+    const change =
+      focusedJourneyPart?.kind === 'change'
+        ? view?.interchanges.find((c) => c.number === focusedJourneyPart?.index)
+        : null;
+    const indices =
+      focusedJourneyPart?.kind === 'leg'
+        ? [focusedJourneyPart.index]
+        : change
+          ? change.connectionIndices.filter(
+              (index) => (view?.legs[index]?.leg.path.length ?? 0) >= 2,
+            )
+          : [];
+    // A same-station transfer can have no street geometry; keep its two trains
+    // visible while emphasizing the numbered marker instead.
+    if (change && !indices.length) indices.push(change.arrivalIndex, change.departureIndex);
+    const opacity: number | ExpressionSpecification = focusedJourneyPart
+      ? ['case', ['in', ['get', 'leg'], ['literal', indices]], 1, 0.25]
+      : 1;
+    for (const layer of ['itinerary-transit', 'itinerary-street']) {
+      map.setPaintProperty(layer, 'line-opacity', opacity);
+    }
+    map.setPaintProperty(
+      'itinerary-changes',
+      'circle-stroke-width',
+      change ? ['case', ['==', ['get', 'number'], change.number], 4, 2] : 2,
+    );
+  }
+
+  function focusJourneyPart(focus: JourneyFocus) {
+    focusedJourneyPart = focus;
+    applyJourneyFocus();
+    if (shownItinerary && focus?.kind === 'change') {
+      const change = journeyView(shownItinerary).interchanges.find((c) => c.number === focus.index);
+      if (change) fitJourneyPoints(change.path, 17);
+    }
   }
 
   // --- interactions ---------------------------------------------------------
@@ -972,7 +1044,7 @@ async function main() {
   const plannerHost: PlannerHost = {
     state: state.plan,
     onItinerary: drawItinerary,
-    legColour,
+    onFocus: focusJourneyPart,
     persist,
     onRoutingUsed: setRoutingAttributionUsed,
   };

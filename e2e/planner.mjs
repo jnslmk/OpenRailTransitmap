@@ -6,14 +6,14 @@
  *   node e2e/planner.mjs --headed                         # watch it run
  *   node e2e/planner.mjs --relay-api                      # see below
  *   node e2e/planner.mjs --autocomplete-only              # deterministic keyboard regression
+ *   node e2e/planner.mjs --journey-only --url http://127.0.0.1:5173/
  *
  * The planner is the one part of this app that cannot be checked from the
  * tiles: it is a live conversation with Transitous, and the shapes it returns
  * change with the timetable. So these cases pin down the things that must hold
- * whatever comes back - that a place resolves, that an itinerary is drawn on
- * the map in the map's own colours, that the bike slider actually reaches the
- * request, and that a link restores the whole plan - rather than any particular
- * journey.
+ * whatever comes back - that a place resolves, that an itinerary is drawn with
+ * shared journey-leg colours, that the bike slider actually reaches the request,
+ * and that a link restores the whole plan - rather than any particular journey.
  *
  * `--relay-api` answers the Transitous calls from Node instead of from the
  * browser. It exists for sandboxes whose browser cannot reach the open internet
@@ -23,6 +23,7 @@
  */
 
 import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -33,6 +34,8 @@ const BASE = flag('url', 'https://jnslmk.github.io/OpenRailTransitmap/').replace
 const HEADED = args.includes('--headed');
 const RELAY = args.includes('--relay-api');
 const AUTOCOMPLETE_ONLY = args.includes('--autocomplete-only');
+const JOURNEY_ONLY = args.includes('--journey-only');
+const SCREENSHOTS = flag('screenshots', '/tmp/openrail-journey');
 
 /**
  * A village in the Aller valley, and Hannover Hbf.
@@ -306,6 +309,324 @@ async function autocomplete(page) {
   });
 }
 
+async function journeyLegibility(page) {
+  // Fixture-only interception: exercise the real parser, planner, map and controls
+  // without depending on a particular live timetable or adding app fallbacks.
+  const stop = (name, lon, lat = 52.3759, track = null) => ({
+    name,
+    stopId: name,
+    lon,
+    lat,
+    track,
+    tz: 'Europe/Berlin',
+  });
+  const origin = stop('Origin', 9.724);
+  const central = stop('Hannover Hbf', 9.732);
+  const arrival = stop('Lehrte', 9.974, 52.376, '2');
+  const departure = stop('Lehrte tram', 9.976, 52.377, '4');
+  const east = stop('East', 10.12, 52.36, '1');
+  const destination = stop('Destination', 10.2, 52.35);
+  const time = (clock) => `2026-10-03T${clock}:00+02:00`;
+  const geometry = (points) => {
+    let lat = 0,
+      lon = 0,
+      encoded = '';
+    for (const point of points) {
+      const nextLat = Math.round(point.lat * 1e5);
+      const nextLon = Math.round(point.lon * 1e5);
+      for (let value of [nextLat - lat, nextLon - lon]) {
+        value = value < 0 ? ~(value << 1) : value << 1;
+        while (value >= 0x20) {
+          encoded += String.fromCharCode((0x20 | (value & 0x1f)) + 63);
+          value >>= 5;
+        }
+        encoded += String.fromCharCode(value + 63);
+      }
+      lat = nextLat;
+      lon = nextLon;
+    }
+    return { points: encoded, precision: 5 };
+  };
+  const leg = (mode, from, to, start, end, duration, withGeometry = true) => ({
+    mode,
+    duration,
+    routeShortName: mode === 'WALK' ? '' : 'RE1',
+    routeColor: 'ff0000',
+    agencyName: 'Fixture rail',
+    from: { ...from, departure: time(start) },
+    to: { ...to, arrival: time(end) },
+    ...(withGeometry ? { legGeometry: geometry([from, to]) } : {}),
+  });
+  const legs = [
+    leg('WALK', origin, central, '08:55', '09:00', 300),
+    leg('REGIONAL_RAIL', central, arrival, '09:00', '09:20', 1200),
+    leg('WALK', arrival, departure, '09:20', '09:23', 180),
+    leg('REGIONAL_RAIL', departure, east, '09:25', '09:40', 900),
+    leg('WALK', east, east, '09:40', '09:40', 0, false),
+    leg('REGIONAL_RAIL', east, destination, '09:45', '10:00', 900),
+    leg('WALK', destination, destination, '10:00', '10:00', 0, false),
+  ];
+  const body = {
+    itineraries: [
+      { startTime: time('08:55'), endTime: time('10:00'), duration: 3900, transfers: 2, legs },
+      {
+        startTime: time('09:00'),
+        endTime: time('10:00'),
+        duration: 3600,
+        transfers: 0,
+        legs: [leg('REGIONAL_RAIL', central, destination, '09:00', '10:00', 3600)],
+      },
+    ],
+  };
+  const handler = (route) => route.fulfill({ json: body });
+  await page.route('**/api/v1/plan?**', handler);
+  await mkdir(SCREENSHOTS, { recursive: true });
+  try {
+    for (const [surface, width, height] of [
+      ['desktop', 1280, 900],
+      ['mobile', 390, 844],
+    ]) {
+      await testCase(
+        `${surface}: numbered journey, keyboard selection and restoration`,
+        async () => {
+          await page.setViewportSize({ width, height });
+          await page.emulateMedia({ reducedMotion: 'reduce' });
+          await page.goto(`${BASE}?tab=plan&from=${RURAL}&to=${HANNOVER}&bike=0&modes=regional`, {
+            waitUntil: 'load',
+          });
+          await ready(page);
+          await page.waitForSelector('.interchange-select');
+          await page.waitForFunction(
+            () =>
+              window.__map.queryRenderedFeatures({
+                layers: ['itinerary-changes'],
+              }).length === 2,
+          );
+          const source = await page.evaluate(
+            async () => (await window.__map.getSource('itinerary').getData()).features,
+          );
+          eq(
+            source.filter((f) => f.properties.kind === 'change').length,
+            2,
+            'walking boundary pairs are two changes, not four; access and egress excluded',
+          );
+          eq(
+            await page
+              .locator('.interchange-number')
+              .allTextContents()
+              .then((a) => a.join(',')),
+            '1,2',
+            'sidebar numbers match the map changes',
+          );
+          const details = await page.locator('.interchange-select').first().textContent();
+          check(
+            /Lehrte → Lehrte tram/.test(details) && /Walk 3 min/.test(details),
+            'connecting-station label includes walking duration',
+            details,
+          );
+          check(
+            /Arrive · 09:20 · Lehrte · Pl. 2/.test(details) &&
+              /Depart · 09:25 · Lehrte tram · Pl. 4/.test(details),
+            'connection times and platforms',
+            details,
+          );
+          check(
+            (await page.locator('.interchange-select').nth(1).textContent()).includes('Walk 0 min'),
+            'zero-duration transfer remains a numbered change',
+          );
+          const colours = await page.$$eval(
+            '.itin-wrap.open .leg:not(.leg-street):not(.leg-end) .badge',
+            (badges) => badges.map((badge) => badge.style.backgroundColor),
+          );
+          const mapped = await page.evaluate(async () => {
+            const features = (await window.__map.getSource('itinerary').getData()).features;
+            return features
+              .filter((f) => f.properties.kind === 'transit')
+              .map((f) => {
+                const el = document.createElement('span');
+                el.style.backgroundColor = f.properties.colour;
+                return el.style.backgroundColor;
+              });
+          });
+          eq(colours.join(','), mapped.join(','), 'map and sidebar share journey colours');
+          check(
+            colours[0] !== colours[1] && colours[1] !== colours[2],
+            'same official route gets distinct adjacent journey colours',
+          );
+          const marks = await page.evaluate(
+            () =>
+              window.__map.queryRenderedFeatures({
+                layers: window.__map
+                  .getStyle()
+                  .layers.filter((l) => l.id.startsWith('stop-') || l.id === 'station-positions')
+                  .map((l) => l.id),
+              }).length,
+          );
+          eq(marks, 0, 'unrelated network station marks hidden in Plan');
+          eq(
+            await page.locator('.itin button, .itin a, .itin input').count(),
+            0,
+            'overview button contains no interactive controls',
+          );
+          await page.waitForFunction(
+            () =>
+              new Set(
+                window.__map
+                  .queryRenderedFeatures({
+                    layers: ['itinerary-labels'],
+                  })
+                  .map((feature) => feature.properties.label),
+              ).size === 4,
+          );
+          const labelSafety = await page.evaluate(() => {
+            const map = window.__map;
+            const rect = map.getContainer().getBoundingClientRect();
+            const labelsIn = (box) =>
+              map
+                .queryRenderedFeatures(box, {
+                  layers: ['itinerary-labels'],
+                })
+                .map((feature) => feature.properties.label);
+            const controls = [
+              ...map
+                .getContainer()
+                .querySelectorAll(
+                  '.maplibregl-ctrl-top-right .maplibregl-ctrl-group, .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group',
+                ),
+            ].flatMap((control) => {
+              const bounds = control.getBoundingClientRect();
+              return bounds.width
+                ? labelsIn([
+                    [bounds.left - rect.left, bounds.top - rect.top],
+                    [bounds.right - rect.left, bounds.bottom - rect.top],
+                  ])
+                : [];
+            });
+            // Query the actual rendered symbol hit boxes, not estimated text width.
+            const edges = [
+              [
+                [0, 0],
+                [2, rect.height],
+              ],
+              [
+                [rect.width - 2, 0],
+                [rect.width, rect.height],
+              ],
+              [
+                [0, 0],
+                [rect.width, 2],
+              ],
+              [
+                [0, rect.height - 2],
+                [rect.width, rect.height],
+              ],
+            ].flatMap(labelsIn);
+            return {
+              labels: [
+                ...new Set(
+                  labelsIn([
+                    [0, 0],
+                    [rect.width, rect.height],
+                  ]),
+                ),
+              ],
+              controls,
+              edges,
+            };
+          });
+          eq(
+            labelSafety.labels.sort().join('|'),
+            'East|Lehrte → Lehrte tram|Origin|Destination'.split('|').sort().join('|'),
+            'origin, destination and change labels remain rendered',
+          );
+          eq(
+            labelSafety.controls.join(','),
+            '',
+            'journey labels do not intersect map control rail',
+          );
+          eq(labelSafety.edges.join(','), '', 'journey labels do not intersect map edges');
+          await page.screenshot({ path: `${SCREENSHOTS}/${surface}-overview.png` });
+          const before = new URL(page.url()).searchParams;
+          const legControl = page.locator('[data-focus-kind="leg"][data-focus-index="3"]');
+          await legControl.focus();
+          await page.keyboard.press('Enter');
+          eq(await legControl.getAttribute('aria-pressed'), 'true', 'keyboard selects a leg');
+          check(
+            await legControl.evaluate((el) => document.activeElement === el),
+            'selection retains native keyboard focus',
+          );
+          const opacity = await page.evaluate(() =>
+            window.__map.getPaintProperty('itinerary-transit', 'line-opacity'),
+          );
+          eq(
+            JSON.stringify(opacity),
+            JSON.stringify(['case', ['in', ['get', 'leg'], ['literal', [3]]], 1, 0.25]),
+            'selected leg emphasized, other segments quietened',
+          );
+          const changeControl = page.locator('.interchange-select').first();
+          await changeControl.focus();
+          await page.keyboard.press('Space');
+          eq(
+            await changeControl.getAttribute('aria-pressed'),
+            'true',
+            'keyboard selects interchange',
+          );
+          eq(await legControl.getAttribute('aria-pressed'), 'false', 'leg selection cleared');
+          const zoom = await page.evaluate(() => window.__map.getZoom());
+          check(zoom > 13, 'interchange zooms into walking connection', String(zoom));
+          check(
+            await page.evaluate(() => !window.__map.isMoving()),
+            'reduced-motion map move is immediate',
+          );
+          for (const key of ['from', 'to', 'bike', 'itin']) {
+            eq(
+              new URL(page.url()).searchParams.get(key),
+              before.get(key),
+              `${key}: trip state preserved`,
+            );
+          }
+          await page.screenshot({ path: `${SCREENSHOTS}/${surface}-connection.png` });
+          await page.locator('.itin').nth(1).click();
+          eq(
+            await page.locator('[data-focus-kind][aria-pressed="true"]').count(),
+            0,
+            'changing itinerary resets focused-leg state',
+          );
+          eq(await page.locator('.interchange').count(), 0, 'single transit journey has no change');
+          await page.locator('.tab').first().click();
+          const restored = await page.evaluate(() => ({
+            opacity: window.__map.getPaintProperty('route-regional', 'line-opacity'),
+            tram: window.__map.getLayoutProperty('route-tram', 'visibility'),
+            filters: window.__map
+              .getStyle()
+              .layers.filter((l) => l.id.startsWith('stop-'))
+              .map((l) => l.filter),
+          }));
+          eq(restored.opacity, 1, 'Explore restores normal network opacity');
+          eq(restored.tram, 'none', 'active mode filter survives restoration');
+          check(
+            restored.filters.every((filter) => filter.at(-1) === true),
+            'Explore restores station filters',
+          );
+          await page.locator('.tab').nth(1).click();
+          await page.locator('.itin').nth(1).click();
+          eq(
+            await page.evaluate(() =>
+              window.__map.getPaintProperty('route-regional', 'line-opacity'),
+            ),
+            1,
+            'clearing itinerary restores network',
+          );
+        },
+      );
+    }
+  } finally {
+    await page.unroute('**/api/v1/plan?**', handler);
+    await page.emulateMedia({ reducedMotion: null });
+    await page.setViewportSize({ width: 1280, height: 900 });
+  }
+}
+
 async function run(page) {
   let navigatorLanguage = '';
 
@@ -501,8 +822,9 @@ const page = await context.newPage();
 page.on('pageerror', (err) => console.error('[page error]', err.message));
 
 console.log(`planner e2e against ${BASE}${RELAY ? ' (API relayed through Node)' : ''}\n`);
-await autocomplete(page);
-if (!AUTOCOMPLETE_ONLY) await run(page);
+if (!JOURNEY_ONLY) await autocomplete(page);
+if (!AUTOCOMPLETE_ONLY) await journeyLegibility(page);
+if (!AUTOCOMPLETE_ONLY && !JOURNEY_ONLY) await run(page);
 await browser.close();
 
 let failed = 0;

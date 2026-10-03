@@ -137,6 +137,35 @@ The rail gives search, filter access, browse results, and planning a stable plac
 ### Evidence inspector
 Keep selected identity before evidence. Pin the header while evidence scrolls, and keep dates, coverage, snapshot qualifications, and unavailable/error/empty states close to the claims they qualify. Native disclosures hold secondary metadata and explanatory legends without displacing the primary evidence.
 
+### Journey legibility
+In Plan, a selected journey is the foreground: keep its white casing, quiet the
+network routes, and hide network station marks while retaining active mode,
+operator and line-selection filters for restoration. Origin, destination and
+interchange labels sit above the route with white text halos. Explore or clearing
+the journey restores normal network marks and route emphasis.
+
+Successive transit legs use Okabe–Ito hues (blue, vermilion, green, purple and
+contrast-darkened amber), shared by map strokes, numbered badges and timeline
+bars. These colours identify journey legs, not official lines; Explore retains
+the network palette. Service text and leg numbers carry the meaning without
+colour. The palette cycles on longer journeys without equal adjacent leg colours.
+
+Each transit-to-transit connection has one larger white, dark-outline numbered
+marker with a persistent station label and a matching sidebar change number.
+Walking arrival/departure boundaries form one interchange, including zero-length
+walks and adjacent trains; access/egress is not a train change. Connecting station
+names and walking duration remain explicit in the sidebar. One grouped marker
+is retained at every zoom; choosing it in the sidebar fits the walking connection.
+
+Use native, visible-focus buttons beside the timeline to select a leg or a change,
+never nested inside the itinerary overview button. A pressed leg keeps its map
+segment vivid while other legs quieten; a pressed change emphasizes its numbered
+mark and fits the connection, with arrival/departure times and platforms shown
+when published. Touch targets are at least 44px on coarse pointers. Focused-leg
+state is temporary, resets when the itinerary changes, and does not alter trip
+URL state. Added map fitting is immediate for reduced-motion users.
+
+
 ## Do's and Don'ts
 
 ### Do:

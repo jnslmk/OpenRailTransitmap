@@ -168,6 +168,12 @@ export interface Strings {
   planWalk: string;
   planBikeLeg: string;
   planPlatform: (n: string) => string;
+  planChange: (n: number, station: string) => string;
+  planShowLeg: (n: number | null, service: string) => string;
+  planArrival: string;
+  planDeparture: string;
+  planTimeUnknown: string;
+  planJourneyColours: string;
   planDirectionsFrom: string;
   planDirectionsTo: string;
   planAttribution: string;
@@ -399,6 +405,13 @@ const STRINGS: Strings = {
   planWalk: 'Walk',
   planBikeLeg: 'Cycle',
   planPlatform: (n) => `Pl. ${n}`,
+  planChange: (n, station) => `Change ${n} · ${station}`,
+  planShowLeg: (n, service) => `Show ${n === null ? service : `leg ${n} · ${service}`} on map`,
+  planArrival: 'Arrive',
+  planDeparture: 'Depart',
+  planTimeUnknown: 'Time not published',
+  planJourneyColours:
+    'Colours identify journey legs, not official line colours. Select a leg or change to see it on the map.',
   planDirectionsFrom: 'Directions from here',
   planDirectionsTo: 'Directions to here',
   planAttribution: 'Routing: <a href="https://transitous.org">Transitous</a>',

@@ -40,6 +40,7 @@ import {
   type Leg,
   type TransitMode,
 } from './routing.ts';
+import { journeyView, type JourneyLeg, type Interchange, type JourneyFocus } from './itinerary.ts';
 
 // ---------------------------------------------------------------------------
 // State
@@ -87,8 +88,8 @@ export interface PlannerHost {
   state: PlannerState;
   /** Draw this itinerary on the map, or clear it. */
   onItinerary: (itinerary: Itinerary | null) => void;
-  /** The colour this map draws that line in, so an itinerary matches the network. */
-  legColour: (leg: Leg) => string | null;
+  /** Highlight a leg, or zoom to a numbered interchange. Not part of URL state. */
+  onFocus: (focus: JourneyFocus) => void;
   /** Write the planner's state back into the URL. */
   persist: () => void;
   /** Reveal the sidebar's routing credit when the first route comes back. */
@@ -100,6 +101,7 @@ let result: PlanResult | null = null;
 let status: 'idle' | 'loading' | 'error' | 'empty' = 'idle';
 let statusDetail = '';
 let inFlight: AbortController | null = null;
+let focusedPart: JourneyFocus = null;
 
 /**
  * What is currently in each place field, including text the rider has typed but
@@ -259,6 +261,8 @@ function runPlan(pageCursor: string | undefined, keepSelection = false): void {
     .catch((err) => {
       if (ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
       result = null;
+      host.state.selected = null;
+      showSelected();
       status = 'error';
       // Deliberately one message for every failure. A public API timing out, a
       // bad status and an unparseable body are the same event to a rider, and
@@ -270,6 +274,7 @@ function runPlan(pageCursor: string | undefined, keepSelection = false): void {
 }
 
 function showSelected(): void {
+  focusedPart = null;
   const i = host.state.selected;
   host.onItinerary(i !== null ? (result?.itineraries[i] ?? null) : null);
 }
@@ -652,8 +657,9 @@ function buildForm(): HTMLElement {
 function modeStrip(itinerary: Itinerary): HTMLElement {
   const s = t();
   const strip = el('div', 'itin-strip');
+  const { legs } = journeyView(itinerary);
 
-  itinerary.legs.forEach((leg, i) => {
+  legs.forEach(({ leg, number, colour }, i) => {
     if (i > 0) strip.appendChild(el('span', 'itin-join'));
     const mins = Math.round(leg.seconds / 60);
 
@@ -665,8 +671,7 @@ function modeStrip(itinerary: Itinerary): HTMLElement {
       return;
     }
 
-    const colour = host.legColour(leg) ?? leg.colour ?? '#4a4a4a';
-    const badge = el('span', 'badge', leg.line || leg.mode);
+    const badge = el('span', 'badge', `${number} · ${leg.line || leg.mode}`);
     badge.style.background = colour;
     badge.style.color = textColour(colour);
     strip.appendChild(badge);
@@ -691,24 +696,33 @@ function delayMinutes(scheduled: Date | null, actual: Date | null): number {
   return Math.round((actual.getTime() - scheduled.getTime()) / 60000);
 }
 
-function legDetail(leg: Leg): HTMLElement {
+function legDetail({ leg, index, number, colour }: JourneyLeg): HTMLElement {
   const s = t();
   const li = el('li', `leg${leg.transit ? '' : ' leg-street'}`);
+  li.dataset.leg = String(index);
 
   const time = el('span', 'leg-time');
   if (leg.from.actual) time.textContent = clockAt(leg.from.actual, leg.from.tz);
   li.appendChild(time);
 
-  const colour = leg.transit ? (host.legColour(leg) ?? leg.colour ?? '#4a4a4a') : '#8a8a8a';
   const mark = el('span', 'leg-mark');
   mark.style.background = colour;
   li.appendChild(mark);
 
   const body = el('div', 'leg-body');
-  const title = el('div', 'leg-title');
+  const title = el('button', 'leg-title leg-select');
+  title.type = 'button';
+  title.dataset.focusKind = 'leg';
+  title.dataset.focusIndex = String(index);
+  title.setAttribute('aria-pressed', 'false');
+  title.setAttribute(
+    'aria-label',
+    s.planShowLeg(number, leg.line || (isBike(leg) ? s.planBikeLeg : s.planWalk)),
+  );
+  title.onclick = () => selectPart({ kind: 'leg', index });
 
   if (leg.transit) {
-    const badge = el('span', 'badge', leg.line || leg.mode);
+    const badge = el('span', 'badge', `${number} · ${leg.line || leg.mode}`);
     badge.style.background = colour;
     badge.style.color = textColour(colour);
     title.append(badge);
@@ -766,12 +780,65 @@ function legDetail(leg: Leg): HTMLElement {
   return li;
 }
 
+function selectPart(focus: Exclude<JourneyFocus, null>): void {
+  focusedPart =
+    focusedPart?.kind === focus.kind && focusedPart.index === focus.index ? null : focus;
+  host.onFocus(focusedPart);
+  syncFocusedPart();
+}
+
+function syncFocusedPart(): void {
+  for (const button of mount?.querySelectorAll<HTMLButtonElement>('[data-focus-kind]') ?? []) {
+    const selected =
+      button.dataset.focusKind === focusedPart?.kind &&
+      Number(button.dataset.focusIndex) === focusedPart?.index;
+    button.setAttribute('aria-pressed', String(selected));
+    button.closest('li')?.classList.toggle('is-focused', selected);
+  }
+}
+
+function interchangeDetail(change: Interchange): HTMLElement {
+  const s = t();
+  const row = el('li', 'interchange');
+  const button = el('button', 'interchange-select');
+  button.type = 'button';
+  button.dataset.focusKind = 'change';
+  button.dataset.focusIndex = String(change.number);
+  button.setAttribute('aria-pressed', 'false');
+  button.onclick = () => selectPart({ kind: 'change', index: change.number });
+  const number = el('span', 'interchange-number', String(change.number));
+  number.setAttribute('aria-hidden', 'true');
+  const content = el('span', 'interchange-body');
+  content.appendChild(el('span', 'interchange-label', s.planChange(change.number, change.label)));
+  if (change.hasWalking) {
+    content.appendChild(
+      el('span', 'interchange-walk', `${s.planWalk} ${duration(change.walkingSeconds)}`),
+    );
+  }
+  const details = el('span', 'interchange-details');
+  for (const [label, place] of [
+    [s.planArrival, change.arrival],
+    [s.planDeparture, change.departure],
+  ] as const) {
+    const time = place.actual ?? place.scheduled;
+    const parts = [label, time ? clockAt(time, place.tz) : s.planTimeUnknown];
+    if (place.name) parts.push(place.name);
+    if (place.track) parts.push(s.planPlatform(place.track));
+    details.appendChild(el('span', '', parts.join(' · ')));
+  }
+  content.appendChild(details);
+  button.append(number, content);
+  row.appendChild(button);
+  return row;
+}
+
 function itineraryRow(itinerary: Itinerary, index: number): HTMLElement {
   const s = t();
   const wrap = el('div', `itin-wrap${host.state.selected === index ? ' open' : ''}`);
 
   const row = el('button', 'itin');
   row.type = 'button';
+  row.dataset.itinerary = String(index);
   row.setAttribute('aria-expanded', String(host.state.selected === index));
 
   const head = el('div', 'itin-head');
@@ -785,7 +852,9 @@ function itineraryRow(itinerary: Itinerary, index: number): HTMLElement {
       `${clockAt(itinerary.start, from?.tz ?? null)} → ${clockAt(itinerary.end, to?.tz ?? null)}`,
     ),
   );
-  head.append(el('span', 'itin-transfers', s.planTransfers(itinerary.transfers)));
+  head.append(
+    el('span', 'itin-transfers', s.planTransfers(journeyView(itinerary).interchanges.length)),
+  );
   row.appendChild(head);
 
   if (itinerary.direct) {
@@ -813,7 +882,13 @@ function itineraryRow(itinerary: Itinerary, index: number): HTMLElement {
 
   if (host.state.selected === index) {
     const list = el('ul', 'leg-list');
-    for (const leg of itinerary.legs) list.appendChild(legDetail(leg));
+    if (!itinerary.direct) wrap.appendChild(el('p', 'journey-colour-note', s.planJourneyColours));
+    const view = journeyView(itinerary);
+    for (const leg of view.legs) {
+      list.appendChild(legDetail(leg));
+      const change = view.interchanges.find((c) => c.arrivalIndex === leg.index);
+      if (change) list.appendChild(interchangeDetail(change));
+    }
     // The arrival has no leg of its own, and a journey that does not say when
     // it ends is not an itinerary.
     const last = itinerary.legs[itinerary.legs.length - 1];
@@ -878,8 +953,15 @@ let mount: HTMLElement | null = null;
 function redraw(): void {
   if (!mount) return;
   const focused = mount.querySelector<HTMLInputElement>('.plan-field input:focus');
+  const overview = mount.querySelector<HTMLButtonElement>('.itin:focus')?.dataset.itinerary;
   mount.innerHTML = '';
   mount.append(buildForm(), buildResults());
+  syncFocusedPart();
+  if (overview !== undefined) {
+    mount
+      .querySelector<HTMLButtonElement>(`.itin[data-itinerary="${overview}"]`)
+      ?.focus({ preventScroll: true });
+  }
   // Selection and arriving route results rebuild the form without ending typing.
   if (focused) {
     const input = mount.querySelector<HTMLInputElement>(`input[name="${focused.name}"]`);
@@ -918,6 +1000,6 @@ export function restorePlannerResult(): void {
 export function clearPlannerSelection(): void {
   if (!host) return;
   host.state.selected = null;
-  host.onItinerary(null);
+  showSelected();
   redraw();
 }

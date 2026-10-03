@@ -90,11 +90,20 @@ GitHub Pages and rebuilt nightly.
   move the highlighted suggestion, and Enter selects it directly—even if the
   search is still loading. The selected field stays focused after Enter, so
   typing can continue without clicking it again.
-  The chosen journey draws on the map in the map's own colours — an RE8 leg painted
-  as the map paints RE8 — with bike and walk legs dashed and the rest of the
-  network dimmed behind it. Bike carriage is reported honestly: German feeds
-  mostly do not publish it, and the panel says so rather than inventing a
-  refusal. A plan is a link, itinerary and all. Runs on the
+  The chosen journey uses distinct colour-blind-friendly leg colours shared by
+  map strokes, numbered sidebar badges, and the timeline—not official route
+  colours. Bike and walk legs stay dashed with white route casing. In Plan,
+  background routes are quieter and network station marks are hidden; Explore
+  or clearing the journey restores the filtered network. Actual transit changes
+  have larger numbered white markers and persistent station labels. A walk
+  between trains is one change, not two; access/egress is not a train change.
+  Select a sidebar leg to highlight it, or a numbered change to zoom to its
+  walking connection and read arrival/departure times and platforms when given.
+  These controls work by keyboard and touch; map movement honors reduced motion.
+  Changes and connection zoom still work without supplied route geometry, using
+  station positions; missing route geometry is not invented. Bike carriage is
+  reported honestly: German feeds mostly do not publish it, and the panel says
+  so rather than inventing a refusal. A plan is a link, itinerary and all. Runs on the
   [Transitous](https://transitous.org) MOTIS API; see
   [`docs/buses-and-routing.md`](docs/buses-and-routing.md).
 - **Search, mode and operator filters**, and deep-linkable URLs that restore

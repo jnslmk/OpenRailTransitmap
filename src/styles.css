@@ -1761,8 +1761,7 @@ body.chrome-hidden #map {
   padding-top: 2px;
 }
 
-/* A short bar in the line's own colour, so the list reads as the same journey
-   the map is drawing. */
+/* Journey-leg colour shared by the map stroke and sidebar badge. */
 .leg-mark {
   width: 4px;
   margin: 3px 0 0 4px;
@@ -1830,6 +1829,108 @@ body.chrome-hidden #map {
   background: none;
   padding-left: 0;
   color: var(--accent);
+}
+
+.journey-colour-note {
+  margin: 0;
+  padding: 0 9px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.leg-select,
+.interchange-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 4px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--grey);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.leg-select:hover,
+.interchange-select:hover {
+  border-color: var(--accent);
+}
+
+.leg-select:focus-visible,
+.interchange-select:focus-visible,
+.itin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.leg-select[aria-pressed='true'],
+.interchange-select[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.leg.is-focused .leg-mark {
+  width: 8px;
+  margin-left: 2px;
+}
+
+.interchange {
+  margin: 10px 0 2px 38px;
+}
+
+.interchange-select {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+}
+
+.interchange-number {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.interchange-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.interchange-label,
+.interchange-walk,
+.interchange-details,
+.interchange-details > span {
+  display: block;
+}
+
+.interchange-label {
+  font-weight: 500;
+}
+
+.interchange-details,
+.interchange-walk {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .leg-select,
+  .interchange-select,
+  .itin {
+    min-height: 44px;
+  }
 }
 
 /* --- directions from a station popup -------------------------------------- */
