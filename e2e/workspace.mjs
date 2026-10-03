@@ -303,6 +303,42 @@ async function compactGeometry(page, panel) {
 // ---------------------------------------------------------------------------
 
 async function run(page) {
+  await testCase(
+    'map credits stay accessible with the sidebar closed on desktop and phone',
+    async () => {
+      for (const viewport of [DESKTOP, PHONE]) {
+        await goto(page, BERLIN, '', viewport);
+        const osm = '.map-credits > span a[href="https://www.openstreetmap.org/copyright"]';
+        const source = '.map-credits-sources a[href="https://maplibre.org/"]';
+        check(await shown(page, osm), 'OSM attribution is visible without opening credits');
+        check(!(await shown(page, source)), 'secondary credits are initially folded away');
+        await page.focus('.map-credits summary');
+        await page.keyboard.press('Enter');
+        check(await shown(page, source), 'keyboard activation reveals linked source credits');
+        await page.click('.maplibregl-ctrl-chrome');
+        check(await shown(page, source), 'open credits survive map-only viewing');
+        check(!(await shown(page, '#sidebar')), 'the sidebar is closed');
+        const withinMap = await page.evaluate(() => {
+          const map = document.querySelector('#map').getBoundingClientRect();
+          const strip = document.querySelector('.map-credits').getBoundingClientRect();
+          const credits = document.querySelector('.map-credits-sources').getBoundingClientRect();
+          return (
+            strip.left >= map.left &&
+            strip.right <= map.right &&
+            Math.abs(strip.bottom - map.bottom) < 1 &&
+            credits.top >= map.top &&
+            credits.bottom <= map.bottom
+          );
+        });
+        check(withinMap, 'the strip stays at the map edge and expanded credits fit on the map');
+        await page.focus('.map-credits summary');
+        await page.keyboard.press('Space');
+        check(!(await shown(page, source)), 'keyboard activation folds credits away again');
+        check(await shown(page, osm), 'OSM attribution remains visible after closing credits');
+      }
+    },
+  );
+
   // --- the active-filter summary -------------------------------------------
 
   await testCase('the filter summary names the modes held back and resets', async () => {

@@ -350,9 +350,9 @@ before heavy use. At 140 KB per plan response, the mitigations are:
    plans to send them departures and possibly a trips poll, and routing is the
    endpoint they name. It should go in the same message.
 
-Attribution is already handled the way this project handles attribution —
-sidebar plus the map's own attribution control, shown when the feature is in use.
-Transitous, OpenStreetMap, and DELFI if option D happens.
+Routing attribution lives in the sidebar. OpenStreetMap remains visibly linked
+on the map, beside a **Credits** disclosure for the other map sources. DELFI
+would also need credit if option D happens.
 
 ---
 

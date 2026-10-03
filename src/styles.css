@@ -1052,6 +1052,87 @@ body.chrome-hidden #map {
   color: #333;
 }
 
+.map-credits {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  max-width: calc(100vw - 20px);
+  padding: 0 5px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #555;
+  font-family: 'Fira Sans', system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.maplibregl-ctrl-bottom-right {
+  padding-bottom: 28px;
+}
+.maplibregl-ctrl-bottom-right .map-credits {
+  margin: 0;
+}
+.map-credits a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.map-credits summary {
+  padding: 3px 0;
+  list-style: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.map-credits summary::-webkit-details-marker {
+  display: none;
+}
+.map-credits a:hover,
+.map-credits summary:hover {
+  color: var(--accent);
+}
+.map-credits-sources {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  width: 280px;
+  max-width: calc(100vw - 20px);
+  max-height: min(220px, 35dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+}
+.map-credits details:not([open]) .map-credits-sources {
+  display: none;
+}
+.map-credits-sources p {
+  margin: 0;
+}
+.map-credits-sources p + p {
+  margin-top: 6px;
+}
+@media (pointer: coarse) {
+  .maplibregl-ctrl-bottom-right {
+    padding-bottom: 48px;
+  }
+  .map-credits > span a,
+  .map-credits summary,
+  .map-credits-sources a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .map-credits summary {
+    min-width: 44px;
+    justify-content: center;
+  }
+}
+
 /* The debug zoom readout. Not a button, so it takes none of the control-group
    chrome - a plain plate, out of the way of a drag, legible over the map. */
 .maplibregl-ctrl-zoom-readout {

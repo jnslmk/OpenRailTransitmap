@@ -91,7 +91,7 @@ export interface PlannerHost {
   legColour: (leg: Leg) => string | null;
   /** Write the planner's state back into the URL. */
   persist: () => void;
-  /** Earned the first time a route comes back, for the attribution control. */
+  /** Reveal the sidebar's routing credit when the first route comes back. */
   onRoutingUsed: () => void;
 }
 

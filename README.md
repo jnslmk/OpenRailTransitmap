@@ -451,6 +451,10 @@ instead of taking it over, is in
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors,
 licensed under the **ODbL**. The raster basemap uses openstreetmap.org tiles
 and is subject to the OSMF tile usage policy.
+The map keeps its OSM credit visible in a quiet bottom-right text strip. Its
+keyboard-accessible **Credits** disclosure lists other map sources without
+covering the map on load, including in map-only and fullscreen views. Journey
+routing is credited to Transitous in the sidebar rather than repeated on the map.
 
 Construction closures come from **DB InfraGO**'s
 [strecken.info](https://strecken-info.de), the infrastructure manager's own

@@ -185,74 +185,42 @@ async function main() {
   // see the zoom while adjusting them.
   if (DEBUG) map.addControl(new ZoomReadoutControl(), 'bottom-left');
 
-  const OSM_ATTRIBUTION =
-    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
-  let attribution = new maplibregl.AttributionControl({
-    compact: true,
-    customAttribution: OSM_ATTRIBUTION,
-  });
-  map.addControl(attribution, 'bottom-right');
-  collapseAttribution();
+  const attribution = document.createElement('div');
+  attribution.className = 'maplibregl-ctrl map-credits';
+  attribution.innerHTML = `
+    <span>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</span>
+    <span aria-hidden="true">·</span>
+    <details>
+      <summary>Credits</summary>
+      <div class="map-credits-sources">
+        <p>Map rendering: <a href="https://maplibre.org/">MapLibre</a></p>
+      </div>
+    </details>`;
+  map.addControl(
+    {
+      onAdd: () => attribution,
+      onRemove: () => attribution.remove(),
+    },
+    'bottom-right',
+  );
+  const sources = attribution.querySelector('.map-credits-sources')!;
 
-  /**
-   * A compact attribution control expands itself the moment it is added, which
-   * on a phone means the credits cover a third of the map on every page load
-   * until they are tapped away. Collapse it back to the "i" button.
-   *
-   * The state written here is the one the control's own toggle leaves behind
-   * when it closes - `open` on the `<details>`, the `-show` class off - reached
-   * through the DOM rather than through an underscore-prefixed method, for the
-   * reason spelled out below. Doing it once after `addControl` is enough:
-   * MapLibre only expands the control on the pass that first marks it compact,
-   * so neither a resize nor a later source credit re-opens it.
-   */
-  function collapseAttribution() {
-    const el = map.getContainer().querySelector('.maplibregl-ctrl-attrib.maplibregl-compact');
-    if (!el) return;
-    el.setAttribute('open', '');
-    el.classList.remove('maplibregl-compact-show');
-  }
+  // Credits are earned once data is shown; adding one leaves the disclosure alone.
+  const earned = new Set<'live' | 'punctuality' | 'closures' | 'coach'>();
 
-  /**
-   * Credits beyond OSM are added only once the data behind them is actually on
-   * screen, not unconditionally - a build that never resolves a `stopId` has no
-   * departures to credit, and a checkout with no closure tiles has no
-   * construction data to credit either.
-   *
-   * `AttributionControl` has no supported way to change its own
-   * `customAttribution` after construction and force a re-render - mutating
-   * `options.customAttribution` in place only takes effect on the control's own
-   * `sourcedata`/`styledata`/`terrain` listeners, none of which a station click
-   * guarantees. So the control is dropped and rebuilt with the full set of
-   * credits earned so far: `removeControl`/`addControl` are the public, stable
-   * API MapLibre offers for changing what a control shows, unlike reaching into
-   * `_updateAttributions()` (underscore-prefixed, not in the public surface, and
-   * free to disappear on any `^5.0.0` bump with no compiler warning).
-   *
-   * Every earned credit is replayed on each rebuild, because a rebuilt control
-   * starts empty - which is exactly what made this one function rather than one
-   * copy of it per source.
-   */
-  const earned = new Set<'live' | 'punctuality' | 'closures' | 'coach' | 'routing'>();
-
-  function credit(source: 'live' | 'punctuality' | 'closures' | 'coach' | 'routing') {
+  function credit(source: 'live' | 'punctuality' | 'closures' | 'coach') {
     if (earned.has(source)) return;
     earned.add(source);
     const s = t();
-    map.removeControl(attribution);
-    attribution = new maplibregl.AttributionControl({
-      compact: true,
-      customAttribution: [
-        OSM_ATTRIBUTION,
-        ...(earned.has('live') ? [s.liveAttribution] : []),
-        ...(earned.has('punctuality') ? [s.punctualityAttribution] : []),
-        ...(earned.has('closures') ? [s.closureAttribution] : []),
-        ...(earned.has('coach') ? [s.coachAttribution] : []),
-        ...(earned.has('routing') ? [s.planAttribution] : []),
-      ],
-    });
-    map.addControl(attribution, 'bottom-right');
-    collapseAttribution();
+    const credits = {
+      live: s.liveAttribution,
+      punctuality: s.punctualityAttribution,
+      closures: s.closureAttribution,
+      coach: s.coachAttribution,
+    };
+    const row = document.createElement('p');
+    row.innerHTML = credits[source];
+    sources.appendChild(row);
   }
 
   function markLiveDataUsed() {
@@ -343,13 +311,6 @@ async function main() {
   function markCoachUsed() {
     credit('coach');
     setCoachAttributionUsed();
-  }
-
-  /** Transitous asks for visible credit while its data is on screen. A drawn
-   *  itinerary is its data as much as a departure board is. */
-  function markRoutingUsed() {
-    credit('routing');
-    setRoutingAttributionUsed();
   }
 
   /**
@@ -1007,7 +968,7 @@ async function main() {
     onItinerary: drawItinerary,
     legColour,
     persist,
-    onRoutingUsed: markRoutingUsed,
+    onRoutingUsed: setRoutingAttributionUsed,
   };
 
   renderChrome({
