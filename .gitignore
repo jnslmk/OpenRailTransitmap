@@ -20,3 +20,7 @@ public/places.geojson
 !.impeccable/live/
 .impeccable/live/*
 !.impeccable/live/config.json
+
+# Local implementation-batch worktrees and durable run records.
+.codex-tmp/
+.worktrees/
