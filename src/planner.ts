@@ -28,6 +28,7 @@
  * The geocoder is debounced here, because only this module knows what a keystroke is.
  */
 
+import { textOn } from '../shared/lnvg.ts';
 import { t } from './strings.ts';
 import {
   geocode,
@@ -712,22 +713,11 @@ function modeStrip(itinerary: Itinerary): HTMLElement {
 
     const badge = el('span', 'badge', `${number} · ${leg.line || leg.mode}`);
     badge.style.background = colour;
-    badge.style.color = textColour(colour);
+    badge.style.color = textOn(colour);
     strip.appendChild(badge);
   });
 
   return strip;
-}
-
-/** White on a dark badge, near-black on a light one. Same rule as the map's. */
-function textColour(colour: string): string {
-  const channel = (i: number) => {
-    const c = parseInt(colour.slice(i, i + 2), 16) / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  if (!/^#[0-9a-f]{6}$/i.test(colour)) return '#ffffff';
-  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
-  return luminance > 0.179 ? '#1a1a1a' : '#ffffff';
 }
 
 function delayMinutes(scheduled: Date | null, actual: Date | null): number {
@@ -763,7 +753,7 @@ function legDetail({ leg, index, number, colour }: JourneyLeg): HTMLElement {
   if (leg.transit) {
     const badge = el('span', 'badge', `${number} · ${leg.line || leg.mode}`);
     badge.style.background = colour;
-    badge.style.color = textColour(colour);
+    badge.style.color = textOn(colour);
     title.append(badge);
     if (leg.headsign) title.append(el('span', 'leg-dest', `→ ${leg.headsign}`));
   } else {

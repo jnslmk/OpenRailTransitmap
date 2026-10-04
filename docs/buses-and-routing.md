@@ -554,9 +554,12 @@ already draws that line in, looked up by ref in `data/lines.json` — but only
 where the ref is unambiguous across the whole registry, because twenty-two German
 lines are called "S1" and the planner, unlike the departure board, does not know
 which station it is standing at. Where it is ambiguous the feed's own colour is
-used. Bike and walk legs are dashed; the network behind dims to 0.22 while the
-Plan tab is in front, and comes back up on Explore with the journey still drawn,
-because the map is one map and the tab is only which half of the sidebar shows.
+used. Journey badge labels use the shared `textOn` contrast rule, so both the
+summary strip and leg detail stay readable across the light and dark journey
+palette. Bike and walk legs are dashed; the network behind dims to 0.22 while
+the Plan tab is in front, and comes back up on Explore with the journey still
+drawn, because the map is one map and the tab is only which half of the sidebar
+shows.
 
 **The bug worth recording.** `readState` read the bike setting with
 `Number(q.get('bike'))`. `Number(null)` is `0`, and `0` is a legitimate slider
