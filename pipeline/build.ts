@@ -1269,6 +1269,7 @@ async function main() {
         lon: st.geometry.coordinates[0],
         lat: st.geometry.coordinates[1],
         mode: st.props.railway === 'tram_stop' ? 'tram' : 'rail',
+        ifopt: st.props['ref:IFOPT'],
       })),
     ));
   } catch (err) {

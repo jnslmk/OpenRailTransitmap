@@ -139,6 +139,7 @@ export interface StationInput {
   lon: number;
   lat: number;
   mode: StationMode; // OSM station/halt vs tram_stop
+  ifopt?: string; // OSM ref:IFOPT, used only to propose validated MOTIS candidates
 }
 
 // A '#' prefix can never collide with a real MOTIS id (ids are plain feed
@@ -179,8 +180,11 @@ const AMBIGUOUS_MARKER = '#ambiguous';
  *      stations the geocoder could only decline as ambiguous: it also returns
  *      unserved parent and stop-area records that tie with the real stop,
  *      and the sweep does not list them.
+ *   7  + validated `ref:IFOPT` full-id and station-stem candidates before the
+ *      sweep. The API-returned identity, name, coordinates, and compatible
+ *      mode are checked; a rejected or unavailable candidate changes nothing.
  */
-const RESOLVER_VERSION = 6;
+const RESOLVER_VERSION = 7;
 
 // osmId -> MOTIS stop id, '' = confirmed no match, AMBIGUOUS_MARKER = see T1-8 below.
 type Cache = Record<string, string>;
@@ -212,14 +216,12 @@ function parseCache(raw: unknown): CacheFile {
 // killed process - see saveCache) must not take the whole build down with
 // it. Worst case we lose a run's worth of memoisation and re-resolve within
 // budget; saveCache's atomic rename means this should be rare to begin with.
-function loadCache(): CacheFile {
-  if (!existsSync(CACHE_PATH)) return { version: RESOLVER_VERSION, stops: {} };
+function loadCache(path = CACHE_PATH): CacheFile {
+  if (!existsSync(path)) return { version: RESOLVER_VERSION, stops: {} };
   try {
-    return parseCache(JSON.parse(readFileSync(CACHE_PATH, 'utf8')));
+    return parseCache(JSON.parse(readFileSync(path, 'utf8')));
   } catch (err) {
-    console.log(
-      `==> stop ids: ${CACHE_PATH} is unreadable (${(err as Error).message}), starting empty`,
-    );
+    console.log(`==> stop ids: ${path} is unreadable (${(err as Error).message}), starting empty`);
     return { version: RESOLVER_VERSION, stops: {} };
   }
 }
@@ -242,19 +244,19 @@ function dropStaleNegatives(cache: CacheFile): number {
   return dropped;
 }
 
-function saveCache(cache: Cache): void {
+function saveCache(cache: Cache, path = CACHE_PATH): void {
   const sorted: Cache = {};
   for (const key of Object.keys(cache).sort()) sorted[key] = cache[key];
   // JSON.stringify's pretty-printer puts one key per line, so a nightly
   // diff shows exactly which stations changed.
   const body = JSON.stringify({ version: RESOLVER_VERSION, stops: sorted }, null, 2) + '\n';
   // Write-then-rename: a process kill mid-write leaves the temp file
-  // corrupt but never touches the committed CACHE_PATH, so a crash here
-  // can't leave a truncated file for the next run's loadCache to trip over.
-  const tmp = `${CACHE_PATH}.${process.pid}.tmp`;
+  // corrupt but never touches the committed cache, so a crash here can't
+  // leave a truncated file for the next run's loadCache to trip over.
+  const tmp = `${path}.${process.pid}.tmp`;
   try {
     writeFileSync(tmp, body);
-    renameSync(tmp, CACHE_PATH);
+    renameSync(tmp, path);
   } finally {
     if (existsSync(tmp)) unlinkSync(tmp); // rename failed - don't litter a stray temp file
   }
@@ -334,6 +336,7 @@ export function normaliseName(raw: string, keepStationWords = false): string {
 // ("Bad Oeynhausen"); allowing more would let the alignment below skip half a
 // name looking for something to line up with.
 const MAX_TOWN_PREFIX_TOKENS = 2;
+const MIN_SPLIT_FRAGMENT_LENGTH = 3;
 
 /**
  * Do two token lists describe the same stop, allowing either side to
@@ -347,16 +350,35 @@ const MAX_TOWN_PREFIX_TOKENS = 2;
  * leading town prefix, the two lists must be the same length and each pair
  * must share a prefix, in either direction.
  *
- * The same-length requirement is the guard. Without it "Am Wall" would align
- * against the first two words of any longer name starting the same way; with
- * it, a candidate has to be the *whole* name, abbreviated - a missing or an
- * extra word is a different stop.
+ * Requiring every station word to be represented is the guard. One station
+ * word may arrive split into two abbreviated feed tokens
+ * (`Jahrhunderthalle` → `Jahrh. Halle`); all other words still have to align.
+ * A missing or extra word remains a different stop.
  */
 function tokensMatch(station: string[], candidate: string[]): boolean {
   for (let skip = 0; skip <= MAX_TOWN_PREFIX_TOKENS; skip++) {
     const tail = candidate.slice(skip);
-    if (tail.length !== station.length) continue;
-    if (tail.every((t, i) => t.startsWith(station[i]) || station[i].startsWith(t))) return true;
+    if (
+      tail.length === station.length &&
+      tail.every((t, i) => t.startsWith(station[i]) || station[i].startsWith(t))
+    )
+      return true;
+    if (tail.length !== station.length + 1) continue;
+    for (let split = 0; split < station.length; split++) {
+      if (
+        tail[split].length >= MIN_SPLIT_FRAGMENT_LENGTH &&
+        tail[split + 1].length >= MIN_SPLIT_FRAGMENT_LENGTH &&
+        tail[split].length + tail[split + 1].length <= station[split].length &&
+        station[split].startsWith(tail[split]) &&
+        station[split].endsWith(tail[split + 1]) &&
+        station.every((word, i) => {
+          if (i === split) return true;
+          const token = tail[i + (i > split ? 1 : 0)];
+          return token.startsWith(word) || word.startsWith(token);
+        })
+      )
+        return true;
+    }
   }
   return false;
 }
@@ -694,11 +716,13 @@ export function boxCandidates(stops: MapStop[]): Candidate[] {
 }
 
 /**
- * Four searches, tried in order, each one only reached because the one before
- * it didn't produce a clean single id. Every list is validated by the same
- * `bestMatch`, so "clean" means the same thing at every step.
+ * A valid `ref:IFOPT` is tried first as a full DHID and, when different, a
+ * station-level stem. Each `/stoptimes` response must return that exact id and
+ * pass the same name/distance validation plus an explicit compatible mode.
+ * Missing, malformed, unavailable, or rejected candidates fall through to the
+ * established search sequence below.
  *
- * ## 1. The spatial sweep - the primary source
+ * ## The spatial sweep - the primary fallback
  * `/map/stops` returns *every* transit stop inside a bounding box, so asking
  * it for a box around the station's own coordinates yields the candidate set
  * this resolver has always actually wanted: the stops that are near enough to
@@ -756,7 +780,7 @@ export function boxCandidates(stops: MapStop[]): Candidate[] {
  * geocoder pool below. Merging would re-admit the very records the sweep
  * excludes, and hand back the ambiguity it just resolved.
  *
- * ## 2-4. The geocoder - the fallback
+ * ## The geocoder - the final fallback
  * The sweep only knows about stops that are *there*; it can't rescue a station
  * whose stop MOTIS places outside the box, and it says nothing at all where
  * the box is empty. So the previous generation's three searches are kept
@@ -827,14 +851,73 @@ export function boxCandidates(stops: MapStop[]): Candidate[] {
  * `{id}` for none.
  *
  * ## Cost
- * This adds one request to every uncached lookup, and only the first of the
- * four is new - a station the sweep resolves *or* declines outright now costs
- * *one* request where it used to cost one to three. Only a station the sweep
- * has no opinion on (an empty or unmatched box) costs one more than before.
- * Budget accounting is unaffected either way: `attempt` spends one unit per
- * station, not per request.
+ * A station without a valid `ref:IFOPT` keeps the v6 request sequence. A tagged
+ * station adds one request for a station-level DHID or at most two for a full
+ * DHID plus its distinct stem. Requests remain serial and throttled. Budget
+ * accounting is unchanged: `attempt` spends one unit per station, not per
+ * request.
  */
+interface StopTimesResponse {
+  place?: {
+    stopId?: string;
+    name?: string;
+    lat?: number;
+    lon?: number;
+    modes?: string[];
+  };
+}
+
+function ifoptCandidates(ifopt: string | undefined): string[] {
+  if (!ifopt || !/^[a-z]{2}:[A-Za-z0-9]+:[A-Za-z0-9]+(?::[A-Za-z0-9]+)*$/.test(ifopt)) return [];
+  const stem = ifopt.split(':').slice(0, 3).join(':');
+  return (stem === ifopt ? [ifopt] : [ifopt, stem]).map((id) => `de-DELFI_${id}`);
+}
+
+async function ifoptMatch(station: StationInput): Promise<MatchResult> {
+  const ids = ifoptCandidates(station.ifopt);
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    try {
+      const response = (await fetchJson(
+        `${API}/stoptimes?stopId=${encodeURIComponent(id)}&n=1`,
+      )) as StopTimesResponse;
+      const place = response.place;
+      if (
+        place?.stopId === id &&
+        typeof place.name === 'string' &&
+        typeof place.lat === 'number' &&
+        typeof place.lon === 'number' &&
+        place.modes?.some((mode) => COMPATIBLE_MODES[station.mode][mode])
+      ) {
+        const match = bestMatch(
+          [
+            {
+              type: 'STOP',
+              id: place.stopId,
+              name: place.name,
+              lat: place.lat,
+              lon: place.lon,
+              modes: place.modes,
+            },
+          ],
+          station,
+        );
+        if (match && 'id' in match) return match;
+      }
+    } catch {
+      // An unknown or temporarily unavailable candidate is not a resolver
+      // failure: the spatial sweep below remains the source of truth.
+    }
+    if (i + 1 < ids.length) await sleep(THROTTLE_MS);
+  }
+  return null;
+}
+
 async function lookup(station: StationInput): Promise<MatchResult> {
+  const byIfopt = await ifoptMatch(station);
+  if (byIfopt) return byIfopt;
+  if (ifoptCandidates(station.ifopt).length) await sleep(THROTTLE_MS);
+
   // grouped=true: collapse each feed's platforms onto the parent it publishes,
   // where it publishes one - see above.
   const boxed = (await fetchJson(
@@ -913,10 +996,11 @@ const AMBIGUOUS_REPROBE_CAP = 100;
 
 export async function resolveStopIds(
   stations: StationInput[],
-  opts: { budget?: number } = {},
+  opts: { budget?: number; cachePath?: string } = {},
 ): Promise<ResolveResult> {
   const budget = opts.budget ?? envBudget() ?? DEFAULT_BUDGET;
-  const cacheFile = loadCache();
+  const cachePath = opts.cachePath ?? CACHE_PATH;
+  const cacheFile = loadCache(cachePath);
   const cache = cacheFile.stops;
   const stopIds = new Map<string, string>();
 
@@ -997,7 +1081,7 @@ export async function resolveStopIds(
       // Every branch above wrote to the cache; checkpoint periodically so a
       // long uncapped pass survives being interrupted (see SAVE_EVERY).
       if (++sinceSave >= SAVE_EVERY) {
-        saveCache(cache);
+        saveCache(cache, cachePath);
         sinceSave = 0;
         console.log(`    ${budgetUsed} looked up (${resolved} resolved) - cache checkpointed`);
       }
@@ -1029,7 +1113,7 @@ export async function resolveStopIds(
     await attempt(st);
   }
 
-  if (dirty) saveCache(cache);
+  if (dirty) saveCache(cache, cachePath);
 
   console.log(
     `==> stop ids: ${cachedN} from cache, ${resolved} newly resolved, ` +
@@ -1081,6 +1165,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       lon: f.geometry.coordinates[0],
       lat: f.geometry.coordinates[1],
       mode: f.properties.railway === 'tram_stop' ? 'tram' : 'rail',
+      ifopt: f.properties['ref:IFOPT'],
     });
   }
   console.log(

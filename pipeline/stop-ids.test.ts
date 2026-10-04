@@ -10,6 +10,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   namesMatch,
   namesEqual,
@@ -287,6 +290,28 @@ test('an explicitly unserved geocoder row is not a stop match', () => {
   );
 });
 
+test('split-word abbreviations cannot turn one-letter fragments into a station name', () => {
+  const station = {
+    id: 'n-mainz',
+    name: 'Mainz',
+    lon: 8.27,
+    lat: 50,
+    mode: 'rail' as const,
+  };
+
+  assert.equal(
+    bestMatch(
+      [
+        {
+          ...stop('wrong', 'M. Z.', station.lat, station.lon),
+          modes: ['REGIONAL_RAIL'],
+        },
+      ],
+      station,
+    ),
+    null,
+  );
+});
 // --- the spatial sweep (/map/stops) ------------------------------------------
 //
 // Every fixture below is a verbatim `/api/v1/map/stops` response observed
@@ -302,6 +327,10 @@ const mapStop = (stopId: string, name: string, lat: number, lon: number) => ({
   lat,
   lon,
 });
+
+function requestUrl(input: string | URL | Request): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+}
 
 test('the sweep returns the compatible member id from a near-duplicate group', () => {
   const station = {
@@ -688,7 +717,191 @@ test('a sweep can be legitimately ambiguous, and that verdict is now final', () 
   );
 });
 
-test('a zero-budget build reuses the committed cache without fetching untried stations', async (t) => {
+test('a station-level ref:IFOPT stem resolves Hannover after identity validation', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'stop-ids-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const station = {
+    id: 'n-hannover-glocksee',
+    name: 'Glocksee',
+    lon: 9.71858,
+    lat: 52.37399,
+    mode: 'tram' as const,
+    ifopt: 'de:03241:461:1:461',
+  };
+  const fetch = t.mock.method(globalThis, 'fetch', (input: string | URL | Request) => {
+    const url = requestUrl(input);
+    if (url.includes('de-DELFI_de%3A03241%3A461%3A1%3A461')) {
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }
+    assert.match(url, /stoptimes\?stopId=de-DELFI_de%3A03241%3A461&n=1$/);
+    return Promise.resolve(
+      Response.json({
+        place: {
+          name: 'Hannover Glocksee',
+          stopId: 'de-DELFI_de:03241:461',
+          lat: 52.37384,
+          lon: 9.718738,
+          modes: ['TRAM', 'BUS'],
+        },
+      }),
+    );
+  });
+
+  const result = await resolveStopIds([station], {
+    budget: 1,
+    cachePath: join(dir, 'cache.json'),
+  });
+
+  assert.equal(result.stopIds.get(station.id), 'de-DELFI_de:03241:461');
+  assert.equal(fetch.mock.callCount(), 2);
+});
+
+test('full ref:IFOPT candidates resolve the observed Bochum and Singen fixtures', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'stop-ids-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const stations = [
+    {
+      id: 'n-bochum-jahrhunderthalle',
+      name: 'Jacob-Mayer-Straße/Jahrhunderthalle',
+      lon: 7.187,
+      lat: 51.481,
+      mode: 'tram' as const,
+      ifopt: 'de:05911:5543:3:03',
+    },
+    {
+      id: 'n-singen-landesgartenschau',
+      name: 'Singen Landesgartenschau',
+      lon: 8.85,
+      lat: 47.76,
+      mode: 'rail' as const,
+      ifopt: 'de:08335:2390',
+    },
+  ];
+  t.mock.method(globalThis, 'fetch', (input: string | URL | Request) => {
+    const url = requestUrl(input);
+    if (url.includes('de%3A05911%3A5543%3A3%3A03')) {
+      return Promise.resolve(
+        Response.json({
+          place: {
+            name: 'Bochum J.-Mayer-S/Jahrh.-Halle',
+            stopId: 'de-DELFI_de:05911:5543:3:03',
+            lat: stations[0].lat,
+            lon: stations[0].lon,
+            modes: ['TRAM'],
+          },
+        }),
+      );
+    }
+    assert.match(url, /de%3A08335%3A2390/);
+    return Promise.resolve(
+      Response.json({
+        place: {
+          name: 'Singen-Landesgartenschau Bf',
+          stopId: 'de-DELFI_de:08335:2390',
+          lat: stations[1].lat,
+          lon: stations[1].lon,
+          modes: ['REGIONAL_RAIL'],
+        },
+      }),
+    );
+  });
+
+  const result = await resolveStopIds(stations, {
+    budget: 2,
+    cachePath: join(dir, 'cache.json'),
+  });
+
+  assert.equal(result.stopIds.get(stations[0].id), 'de-DELFI_de:05911:5543:3:03');
+  assert.equal(result.stopIds.get(stations[1].id), 'de-DELFI_de:08335:2390');
+});
+
+test('a rejected Albbruck ref:IFOPT candidate falls back without caching the bus id', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'stop-ids-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const station = {
+    id: 'n-albbruck',
+    name: 'Albbruck',
+    lon: 8.127,
+    lat: 47.59,
+    mode: 'rail' as const,
+    ifopt: 'de:08337:6576',
+  };
+  const fetch = t.mock.method(globalThis, 'fetch', (input: string | URL | Request) => {
+    const url = requestUrl(input);
+    if (url.includes('/stoptimes?')) {
+      return Promise.resolve(
+        Response.json({
+          place: {
+            name: 'Albbruck ehem. Papierfabrik',
+            stopId: 'de-DELFI_de:08337:6576',
+            lat: 47.5915,
+            lon: 8.127,
+            modes: ['BUS'],
+          },
+        }),
+      );
+    }
+    return Promise.resolve(Response.json([]));
+  });
+
+  const cachePath = join(dir, 'cache.json');
+  const result = await resolveStopIds([station], { budget: 1, cachePath });
+
+  assert.equal(result.stopIds.get(station.id), '');
+  assert.equal(fetch.mock.callCount(), 4);
+  const saved = JSON.parse(readFileSync(cachePath, 'utf8')) as {
+    stops: Record<string, string>;
+  };
+  assert.equal(saved.stops[station.id], '');
+});
+
+test('missing, malformed, unknown, and unavailable ref:IFOPT values use the grouped sweep', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'stop-ids-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const seen: string[] = [];
+  t.mock.method(globalThis, 'fetch', (input: string | URL | Request) => {
+    const url = requestUrl(input);
+    seen.push(url);
+    if (url.includes('de%3A00000%3Aunknown')) {
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }
+    if (url.includes('de%3A00000%3Aunavailable')) {
+      throw new Error('Transitous unavailable');
+    }
+    assert.match(url, /\/map\/stops\?.*&grouped=true$/);
+    return Promise.resolve(
+      Response.json([mapStop('de-DELFI_de:00000:fallback', 'Fallback', 51, 8)]),
+    );
+  });
+  const fixtures = [
+    { id: 'n-missing', ifopt: undefined },
+    { id: 'n-malformed', ifopt: 'not a DHID' },
+    { id: 'n-unknown', ifopt: 'de:00000:unknown' },
+    { id: 'n-unavailable', ifopt: 'de:00000:unavailable' },
+  ];
+
+  for (const fixture of fixtures) {
+    const result = await resolveStopIds(
+      [{ ...fixture, name: 'Fallback', lon: 8, lat: 51, mode: 'rail' }],
+      { budget: 1, cachePath: join(dir, `${fixture.id}.json`) },
+    );
+    assert.equal(result.stopIds.get(fixture.id), 'de-DELFI_de:00000:fallback');
+  }
+
+  assert.equal(seen.filter((url) => url.includes('/map/stops?')).length, 4);
+  assert.equal(seen.filter((url) => url.includes('/stoptimes?')).length, 4);
+});
+test('a zero-budget build reuses an isolated cache without fetching untried stations', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'stop-ids-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cachePath = join(dir, 'cache.json');
+  writeFileSync(
+    cachePath,
+    JSON.stringify({
+      version: 7,
+      stops: { n100020289: 'de-DELFI_de:08337:6576:3:1' },
+    }),
+  );
   const fetch = t.mock.method(globalThis, 'fetch', () => {
     throw new Error('zero-budget resolution must not fetch');
   });
@@ -707,7 +920,7 @@ test('a zero-budget build reuses the committed cache without fetching untried st
     mode: 'rail' as const,
   };
 
-  const result = await resolveStopIds([cached, untried], { budget: 0 });
+  const result = await resolveStopIds([cached, untried], { budget: 0, cachePath });
 
   assert.equal(result.stopIds.get(cached.id), 'de-DELFI_de:08337:6576:3:1');
   assert.equal(result.stopIds.has(untried.id), false);
