@@ -13,6 +13,7 @@ import {
   selectionOpacity,
   highlightOpacity,
   servedByModes,
+  routeBadgeFilter,
   STATION_FILTERS,
   STOP_MARK_LAYERS,
   CLOSURE_LAYER_IDS,
@@ -401,7 +402,7 @@ async function main() {
     }
     // Operator is a data-driven filter rather than a layer toggle.
     const byOperator = operatorExpression(state.operators);
-    const modeFilter: unknown[] = ['in', ['get', 'mode'], ['literal', [...state.modes]]];
+    const modeFilter = routeBadgeFilter([...state.modes]);
     map.setFilter(
       'route-badges',
       (byOperator ? ['all', modeFilter, byOperator] : modeFilter) as never,

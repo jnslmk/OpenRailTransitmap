@@ -50,6 +50,17 @@ test('and still validates once the mode filter is folded into it', () => {
   );
 });
 
+test('route badges do not appear before their mode tracks', () => {
+  const badges = style.layers.find((l) => l.id === 'route-badges') as
+    { filter?: unknown } | undefined;
+  assert.ok(badges?.filter, 'route-badges has no filter');
+  const visible = evaluate(badges.filter);
+
+  assert.equal(visible(9.5, { mode: 'tram', ref: '1' }), false);
+  assert.equal(visible(9.5, { mode: 'subway', ref: 'U1' }), true);
+  assert.equal(visible(10, { mode: 'tram', ref: '1' }), true);
+});
+
 test('every layer the app reaches for by name is in the style', () => {
   for (const id of [...STOP_MARK_LAYERS, ...Object.keys(STATION_FILTERS)]) {
     assert.ok(

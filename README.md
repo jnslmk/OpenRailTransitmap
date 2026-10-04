@@ -409,6 +409,8 @@ npx playwright install chromium     # once, unless a browser is already present
 node e2e/legend.mjs                                # https://jnslmk.github.io/OpenRailTransitmap/
 node e2e/legend.mjs --url http://127.0.0.1:5173/   # a local dev server
 node e2e/legend.mjs --headed                       # watch it run
+node e2e/legend.mjs --url http://127.0.0.1:5173/ --case "tram badges" \
+  --proof-dir /tmp/legend-proof                       # focused check with screenshots
 
 node e2e/planner.mjs                               # the journey planner
 ```

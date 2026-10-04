@@ -12,6 +12,8 @@
  */
 
 import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -20,6 +22,8 @@ const flag = (name, fallback) => {
 };
 const BASE = flag('url', 'https://jnslmk.github.io/OpenRailTransitmap/').replace(/\/?$/, '/');
 const HEADED = args.includes('--headed');
+const PROOF_DIR = flag('proof-dir', '');
+const CASE = flag('case', '');
 
 /** Mode ids paired with the label the legend prints for them. */
 const LABELS = {
@@ -39,6 +43,8 @@ const LABELS = {
 const VIEWS = {
   // Braunschweig at street level: trams everywhere, no long-distance line.
   braunschweigStreets: '#14.50/52.2712/10.5385',
+  braunschweigRegional: '#9.50/52.2712/10.5385',
+  braunschweigCity: '#10.50/52.2712/10.5385',
   // Berlin: the only kind of view where all five modes are drawn together.
   berlin: '#11.50/52.5170/13.4050',
   // Open sea north-west of Sylt: no rail of any kind.
@@ -65,6 +71,7 @@ const eq = (actual, expected, what) =>
   );
 
 async function testCase(name, fn) {
+  if (CASE && !name.includes(CASE)) return;
   currentCase = { name, checks: [], failed: false };
   results.push(currentCase);
   try {
@@ -181,6 +188,23 @@ const drawn = (page, mode) =>
     return map.queryRenderedFeatures({ layers: [`route-${m}`] }).length;
   }, mode);
 
+/** Route-number badges actually painted in the current viewport. */
+const badges = (page) =>
+  page.evaluate(() =>
+    window.__map.queryRenderedFeatures({ layers: ['route-badges'] }).map(({ properties }) => ({
+      line: properties.line,
+      mode: properties.mode,
+      operator: properties.operator,
+      ref: properties.ref,
+    })),
+  );
+
+async function proof(page, name) {
+  if (!PROOF_DIR) return;
+  await mkdir(PROOF_DIR, { recursive: true });
+  await page.screenshot({ path: join(PROOF_DIR, name), fullPage: true });
+}
+
 /**
  * The operator panel: the master switch, and every row the current view has
  * put in the list. Unlike the mode legend the rows are not fixed - the list is
@@ -276,6 +300,51 @@ async function run(page) {
     check(
       Object.values(rows).some((r) => r.visible),
       'some mode is on screen here',
+    );
+  });
+
+  await testCase('tram badges follow the tram zoom boundary through state changes', async () => {
+    await goto(page, VIEWS.braunschweigRegional, '?modes=tram');
+    eq((await badges(page)).length, 0, 'no tram badge is drawn at z9.5');
+
+    await jumpTo(page, VIEWS.braunschweigCity);
+    check((await badges(page)).length > 0, 'tram badges are drawn above z10');
+    await page.click('#sidebar .line-list .line-row');
+    await page.waitForTimeout(150);
+    check(
+      await page.evaluate(() => !!new URLSearchParams(location.search).get('line')),
+      'a tram is selected',
+    );
+    check((await badges(page)).length > 0, 'selection keeps its badges above z10');
+    await proof(page, 'braunschweig-z10.5-selected.png');
+
+    await jumpTo(page, VIEWS.braunschweigRegional);
+    eq((await badges(page)).length, 0, 'selection does not admit tram badges at z9.5');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body.ready', { timeout: 30000 });
+    await settle(page, 0);
+    eq((await badges(page)).length, 0, 'reload keeps tram badges out at z9.5');
+    await proof(page, 'braunschweig-z9.5-reloaded.png');
+
+    await jumpTo(page, VIEWS.braunschweigCity);
+    await toggle(page, 'tram');
+    eq((await badges(page)).length, 0, 'switching tram off removes its badges');
+    await toggle(page, 'tram');
+    check((await badges(page)).length > 0, 'switching tram on restores its badges above z10');
+
+    const who = (await badges(page)).find((badge) => badge.operator)?.operator;
+    check(!!who, 'a visible tram badge names its operator');
+    if (!who) return;
+    await toggleOperator(page, who);
+    eq(
+      (await badges(page)).filter((badge) => badge.operator === who).length,
+      0,
+      'switching an operator off removes its badges',
+    );
+    await toggleOperator(page, who);
+    check(
+      (await badges(page)).some((badge) => badge.operator === who),
+      'switching an operator on restores its badges',
     );
   });
 

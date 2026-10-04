@@ -145,6 +145,22 @@ function routeLayers(): LayerSpecification[] {
   });
 }
 
+export function routeBadgeFilter(modes: readonly Mode[]): ExpressionSpecification {
+  return [
+    'all',
+    ['has', 'ref'],
+    ['!=', ['get', 'ref'], ''],
+    [
+      'any',
+      ...modes.map((mode): ExpressionSpecification => [
+        'all',
+        ['==', ['get', 'mode'], mode],
+        ['>=', ['zoom'], MODE_SPECS[mode].minzoom],
+      ]),
+    ],
+  ] as ExpressionSpecification;
+}
+
 /** Line-number badges: white text on a thick coloured halo reads as a chip. */
 function badgeLayer(): LayerSpecification {
   return {
@@ -153,7 +169,7 @@ function badgeLayer(): LayerSpecification {
     source: 'rail',
     'source-layer': 'routes',
     minzoom: 9,
-    filter: ['all', ['has', 'ref'], ['!=', ['get', 'ref'], '']],
+    filter: routeBadgeFilter(MODES),
     layout: {
       'symbol-placement': 'line-center',
       'text-field': ['get', 'ref'],
