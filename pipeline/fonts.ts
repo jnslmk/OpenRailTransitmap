@@ -8,24 +8,15 @@
  * Everything is served from our own Pages site - no runtime font CDN.
  */
 
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import fontnik from 'fontnik';
 
 const OUT = 'public/fonts';
 
-const FONTS: { stack: string; url: string }[] = [
-  {
-    stack: 'Fira Sans Regular',
-    url: 'https://github.com/google/fonts/raw/main/ofl/firasans/FiraSans-Regular.ttf',
-  },
-  {
-    stack: 'Fira Sans Medium',
-    url: 'https://github.com/google/fonts/raw/main/ofl/firasans/FiraSans-Medium.ttf',
-  },
-  {
-    stack: 'Fira Sans Bold',
-    url: 'https://github.com/google/fonts/raw/main/ofl/firasans/FiraSans-Bold.ttf',
-  },
+const FONTS = [
+  { stack: 'Fira Sans Regular', file: 'pipeline/fonts/FiraSans-Regular.ttf' },
+  { stack: 'Fira Sans Medium', file: 'pipeline/fonts/FiraSans-Medium.ttf' },
+  { stack: 'Fira Sans Bold', file: 'pipeline/fonts/FiraSans-Bold.ttf' },
 ];
 
 /**
@@ -47,7 +38,7 @@ const range = (font: Buffer, start: number, end: number): Promise<Buffer> =>
   );
 
 async function main() {
-  for (const { stack, url } of FONTS) {
+  for (const { stack, file } of FONTS) {
     const dir = `${OUT}/${stack}`;
     if (RANGES.every(([s, e]) => existsSync(`${dir}/${s}-${e}.pbf`))) {
       console.log(`==> ${stack}: cached`);
@@ -55,9 +46,7 @@ async function main() {
     }
     mkdirSync(dir, { recursive: true });
 
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${stack}: ${res.status} fetching ${url}`);
-    const font = Buffer.from(await res.arrayBuffer());
+    const font = readFileSync(file);
 
     for (const [s, e] of RANGES) {
       writeFileSync(`${dir}/${s}-${e}.pbf`, await range(font, s, e));

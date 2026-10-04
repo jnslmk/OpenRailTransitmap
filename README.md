@@ -185,6 +185,13 @@ src/                       MapLibre app (style, state, UI, controls, strings)
   planner.ts               the Plan tab
 ```
 
+The Fira Sans source fonts and OFL license in `pipeline/fonts/` are vendored
+from [`google/fonts` at commit
+`ed7143b8f0c9587f9dcfbcdf5b34ec1a7bc07fca`](https://github.com/google/fonts/tree/ed7143b8f0c9587f9dcfbcdf5b34ec1a7bc07fca/ofl/firasans).
+To refresh them, choose and review a newer `google/fonts` commit, replace the
+three named TTFs and `OFL.txt` from its `ofl/firasans/` directory, remove the
+cached glyphs with `rm -rf public/fonts`, then run `npm run build:fonts`.
+
 ### Region switching
 
 `config/regions.yaml` selects the extract. Germany (4.5 GB) is the deployed
