@@ -68,6 +68,14 @@ geocoder query for every click. **Resolve the mapping once in the nightly
 pipeline** and ship a `stopId` per station in the tiles, the same way `uic_ref`
 is shipped now. Stations that fail to resolve simply get no departure board.
 
+Resolution validates stop type, service, name and distance before considering
+mode. If those checks leave nearby candidates tied, the resolver selects one
+only when exactly one candidate serves the OSM feature's class: `tram_stop`
+requires `TRAM`, while `station` and `halt` accept the rail-borne Transitous
+modes. Multiple compatible candidates remain ambiguous rather than being
+guessed between. Both the `/map/stops` sweep and geocoder fallbacks preserve
+candidate modes for this decision.
+
 ### Stop-id cache ownership
 
 CI builds use the committed `data/stop-ids.json` cache only:

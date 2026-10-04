@@ -76,7 +76,13 @@ const east = (lon: number, m: number) => lon + m / (111320 * Math.cos((51 * Math
 test('an exact name wins over the plausible neighbours around it', () => {
   // The "Sondern" shape: three bus stops whose names contain the station's
   // name outright, and the actual station 54 m away.
-  const station = { id: 'n1', name: 'Sondern', lon: 8.0, lat: 51.0 };
+  const station = {
+    id: 'n1',
+    name: 'Sondern',
+    lon: 8.0,
+    lat: 51.0,
+    mode: 'rail' as const,
+  };
   const result = bestMatch(
     [
       stop('bus-1', 'Sondern Kirche', 51.0, east(8.0, 218)),
@@ -91,7 +97,13 @@ test('an exact name wins over the plausible neighbours around it', () => {
 test('two exact names really are ambiguous', () => {
   // Torgau has a station and a bus stop of the same name; guessing between
   // them would show a rider departures from the wrong one.
-  const station = { id: 'n2', name: 'Torgau', lon: 13.0, lat: 51.0 };
+  const station = {
+    id: 'n2',
+    name: 'Torgau',
+    lon: 13.0,
+    lat: 51.0,
+    mode: 'rail' as const,
+  };
   const result = bestMatch(
     [stop('a', 'Torgau', 51.0, east(13.0, 40)), stop('b', 'Torgau', 51.0, east(13.0, 120))],
     station,
@@ -99,8 +111,138 @@ test('two exact names really are ambiguous', () => {
   assert.deepEqual(result, { ambiguous: true });
 });
 
+test('a rail station chooses the only rail candidate in an exact-name tie', () => {
+  const station = {
+    id: 'n26600701',
+    name: 'Torgau',
+    lon: 12.9909587,
+    lat: 51.5628862,
+    mode: 'rail' as const,
+  };
+  const result = bestMatch(
+    [
+      {
+        ...stop('de-DELFI_de:14730:8010351', 'Torgau', station.lat, east(station.lon, 40)),
+        modes: ['METRO', 'REGIONAL_RAIL'],
+      },
+      {
+        ...stop('de-DELFI_de:14730:915:1', 'Torgau', station.lat, east(station.lon, 120)),
+        modes: ['BUS'],
+      },
+    ],
+    station,
+  );
+  assert.deepEqual(result, { id: 'de-DELFI_de:14730:8010351' });
+});
+
+test('a tram stop chooses the only tram candidate in an exact-name tie', () => {
+  const station = {
+    id: 'n-tram',
+    name: 'Hauptbahnhof',
+    lon: 9.735,
+    lat: 52.376,
+    mode: 'tram' as const,
+  };
+  const result = bestMatch(
+    [
+      {
+        ...stop('tram', 'Hauptbahnhof', station.lat, east(station.lon, 40)),
+        modes: ['TRAM'],
+      },
+      {
+        ...stop('bus', 'Hauptbahnhof', station.lat, east(station.lon, 90)),
+        modes: ['BUS'],
+      },
+    ],
+    station,
+  );
+  assert.deepEqual(result, { id: 'tram' });
+});
+
+test('the Eschhofen rail candidate wins over the nearer bus stop', () => {
+  const station = {
+    id: 'n-eschhofen',
+    name: 'Eschhofen',
+    lon: 8.1,
+    lat: 50.4,
+    mode: 'rail' as const,
+  };
+  const result = bestMatch(
+    [
+      {
+        ...stop('bus', 'Limburg (Lahn)-Eschhofen Am Bahnhof', station.lat, east(station.lon, 46)),
+        modes: ['BUS'],
+      },
+      {
+        ...stop('rail', 'Limburg (Lahn)-Eschhofen Bahnhof', station.lat, east(station.lon, 94)),
+        modes: ['REGIONAL_RAIL'],
+      },
+    ],
+    station,
+  );
+  assert.deepEqual(result, { id: 'rail' });
+});
+
+test('two compatible rail candidates remain ambiguous', () => {
+  const station = {
+    id: 'n-rail-tie',
+    name: 'Torgau',
+    lon: 12.9909587,
+    lat: 51.5628862,
+    mode: 'rail' as const,
+  };
+  assert.deepEqual(
+    bestMatch(
+      [
+        {
+          ...stop('rail-a', station.name, station.lat, east(station.lon, 40)),
+          modes: ['REGIONAL_RAIL'],
+        },
+        {
+          ...stop('rail-b', station.name, station.lat, east(station.lon, 120)),
+          modes: ['METRO'],
+        },
+      ],
+      station,
+    ),
+    { ambiguous: true },
+  );
+});
+
+test('mode never rescues candidates that fail name or distance validation', () => {
+  const station = {
+    id: 'n-guards',
+    name: 'Torgau',
+    lon: 12.9909587,
+    lat: 51.5628862,
+    mode: 'rail' as const,
+  };
+  assert.equal(
+    bestMatch(
+      [
+        {
+          ...stop('wrong-name', 'Leipzig Hbf', station.lat, east(station.lon, 10)),
+          modes: ['REGIONAL_RAIL'],
+        },
+        {
+          ...stop('too-far', station.name, station.lat, east(station.lon, 600)),
+          modes: ['REGIONAL_RAIL'],
+        },
+      ],
+      station,
+    ),
+    null,
+  );
+});
+
 test('one stop published by two feeds collapses despite a town prefix', () => {
-  const station = { id: 'n3', name: 'Forchheim (b Karlsruhe)', lon: 8.3, lat: 51.0 };
+  const station = {
+    id: 'n3',
+    name: 'Forchheim (b Karlsruhe)',
+    lon: 8.3,
+    lat: 51.0,
+    mode: 'rail' as const,
+  };
   const result = bestMatch(
     [
       stop('de-KVV_1', 'Forchheim (b Karlsruhe)', 51.0, east(8.3, 10)),
@@ -113,18 +255,45 @@ test('one stop published by two feeds collapses despite a town prefix', () => {
 });
 
 test('nothing within range is a negative, not a guess', () => {
-  const station = { id: 'n4', name: 'Philosophenweg', lon: 9.59, lat: 52.84 };
+  const station = {
+    id: 'n4',
+    name: 'Philosophenweg',
+    lon: 9.59,
+    lat: 52.84,
+    mode: 'rail' as const,
+  };
   assert.equal(bestMatch([stop('far', 'Kassel Philosophenweg', 51.3, 9.48)], station), null);
+});
+
+test('an explicitly unserved geocoder row is not a stop match', () => {
+  const station = {
+    id: 'n-unserved',
+    name: 'Rammingen (Württ)',
+    lon: 10.1909194,
+    lat: 48.5124141,
+    mode: 'rail' as const,
+  };
+  assert.equal(
+    bestMatch(
+      [
+        {
+          ...stop('unserved-parent', station.name, station.lat, station.lon),
+          modes: [],
+        },
+      ],
+      station,
+    ),
+    null,
+  );
 });
 
 // --- the spatial sweep (/map/stops) ------------------------------------------
 //
 // Every fixture below is a verbatim `/api/v1/map/stops` response observed
 // against api.transitous.org for a 500 m box around the named OSM station's
-// own coordinates, trimmed only of the fields the matcher doesn't read
-// (importance, tz, level, vertexType, description, and modes - which the
-// sweep does return, and which `boxCandidates` drops for now). The station
-// coordinates are the ones in .work/extract/stations.geojsonseq.
+// own coordinates, trimmed only of fields the individual test does not read.
+// Mode-aware fixtures retain `modes`; older selection fixtures omit it.
+// The station coordinates are the ones in .work/extract/stations.geojsonseq.
 
 /** One `/map/stops` element, as the endpoint spells it. */
 const mapStop = (stopId: string, name: string, lat: number, lon: number) => ({
@@ -134,30 +303,41 @@ const mapStop = (stopId: string, name: string, lat: number, lon: number) => ({
   lon,
 });
 
-test('the sweep response is reshaped into what bestMatch reads', () => {
-  // /map/stops calls the id `stopId` and has no `type` field at all, where the
-  // geocoder calls it `id` and types every result. bestMatch reads `.id` and
-  // discards anything not typed 'STOP', so an unreshaped sweep result would
-  // match nothing whatsoever.
-  const [c] = boxCandidates([
-    {
-      stopId: 'de-DELFI_de:06439:11318',
-      name: 'Idstein Bahnhof',
-      lat: 50.21599197387695,
-      lon: 8.257540702819824,
-      modes: ['REGIONAL_RAIL'],
-    },
-  ]);
-  assert.equal(c.id, 'de-DELFI_de:06439:11318');
-  assert.equal(c.type, 'STOP');
-  assert.equal(c.name, 'Idstein Bahnhof');
+test('the sweep returns the compatible member id from a near-duplicate group', () => {
+  const station = {
+    id: 'n-sweep-mode',
+    name: 'Idstein Bahnhof',
+    lon: 8.2575508,
+    lat: 50.2159384,
+    mode: 'rail' as const,
+  };
+  const result = bestMatch(
+    boxCandidates([
+      {
+        ...mapStop('a-bus', station.name, station.lat, east(station.lon, 40)),
+        modes: ['BUS'],
+      },
+      {
+        ...mapStop('z-rail', station.name, station.lat, east(station.lon, 50)),
+        modes: ['REGIONAL_RAIL'],
+      },
+    ]),
+    station,
+  );
+  assert.deepEqual(result, { id: 'z-rail' });
 });
 
 test('the box covers the whole match radius in every direction', () => {
   // The box has to be at least as large as the distance filter it feeds, or a
   // stop bestMatch would have accepted never reaches it - and a station whose
   // stop fell just outside would be cached as a permanent negative.
-  const station = { id: 'n5', name: 'Idstein (Taunus)', lon: 8.2575508, lat: 50.2159384 };
+  const station = {
+    id: 'n5',
+    name: 'Idstein (Taunus)',
+    lon: 8.2575508,
+    lat: 50.2159384,
+    mode: 'rail' as const,
+  };
   const q = new URLSearchParams(stopsBox(station));
   const [minLat, minLon] = q.get('min')!.split(',').map(Number);
   const [maxLat, maxLon] = q.get('max')!.split(',').map(Number);
@@ -182,7 +362,13 @@ test('the sweep never sees the unserved record that ties the geocoder up', () =>
   // excluded because it carries `modes: []` (nothing calls there) and
   // /map/stops does not return such records at any box size, while /geocode
   // does. So the box below, the observed 500 m sweep, holds one stop.
-  const station = { id: 'n6', name: 'Rammingen (Württ)', lon: 10.1909194, lat: 48.5124141 };
+  const station = {
+    id: 'n6',
+    name: 'Rammingen (Württ)',
+    lon: 10.1909194,
+    lat: 48.5124141,
+    mode: 'rail' as const,
+  };
   const result = bestMatch(
     boxCandidates([
       mapStop('de-DELFI_de:08425:2261', 'Rammingen Bahnhof', 48.512489318847656, 10.19048023223877),
@@ -199,7 +385,13 @@ test('the sweep picks the station out of the bus stops sharing its village name'
   // the box the only exact match on the normalised form is the Bahnhof, and
   // the three "Lette, ..." bus stops that merely start the same way are
   // rejected on the name, not the distance.
-  const station = { id: 'n7', name: 'Lette (Kr Coesfeld)', lon: 7.1868406, lat: 51.8926972 };
+  const station = {
+    id: 'n7',
+    name: 'Lette (Kr Coesfeld)',
+    lon: 7.1868406,
+    lat: 51.8926972,
+    mode: 'rail' as const,
+  };
   const result = bestMatch(
     boxCandidates([
       mapStop(
@@ -239,7 +431,13 @@ test('the exact-name tier still settles a busy box', () => {
   // rest stop counting - the same rule the "Sondern" case above tests, now
   // over a whole neighbourhood's worth of candidates rather than a geocoder's
   // ten best.
-  const station = { id: 'n8', name: 'Dresden-Neustadt', lon: 13.7405404, lat: 51.0658669 };
+  const station = {
+    id: 'n8',
+    name: 'Dresden-Neustadt',
+    lon: 13.7405404,
+    lat: 51.0658669,
+    mode: 'rail' as const,
+  };
   const result = bestMatch(
     boxCandidates([
       mapStop(
@@ -307,7 +505,13 @@ test('an ungrouped sweep would resolve a rail station to a bus bay', () => {
   // "Idstein Bahnhof". The platforms are the ones carrying parentId, so
   // filtering on parentId - the obvious way to drop platform-level entries -
   // deletes exactly the rail half and leaves a bus bay to win.
-  const station = { id: 'n9', name: 'Idstein (Taunus)', lon: 8.2575508, lat: 50.2159384 };
+  const station = {
+    id: 'n9',
+    name: 'Idstein (Taunus)',
+    lon: 8.2575508,
+    lat: 50.2159384,
+    mode: 'rail' as const,
+  };
   const ungrouped = [
     {
       ...mapStop(
@@ -384,7 +588,13 @@ test('the box corners bring in stops past 500 m, and the distance filter drops t
   // Korntal sweep, at 544 m and 510 m. Both *pass* the name filter - "korntal"
   // is contained in each - so the distance check is the only thing that can
   // reject them, which is what makes this worth asserting.
-  const station = { id: 'n10', name: 'Korntal', lon: 9.1214162, lat: 48.8265137 };
+  const station = {
+    id: 'n10',
+    name: 'Korntal',
+    lon: 9.1214162,
+    lat: 48.8265137,
+    mode: 'rail' as const,
+  };
   assert.equal(
     bestMatch(
       boxCandidates([
@@ -420,7 +630,13 @@ test('a sweep can be legitimately ambiguous, and that verdict is now final', () 
   // an {ambiguous} from the sweep is returned as-is and the fallbacks are not
   // requested. The station stays re-probeable rather than being handed a
   // confident id by a search that never saw the rival.
-  const station = { id: 'n11', name: 'Korntal', lon: 9.1214162, lat: 48.8265137 };
+  const station = {
+    id: 'n11',
+    name: 'Korntal',
+    lon: 9.1214162,
+    lat: 48.8265137,
+    mode: 'rail' as const,
+  };
   assert.deepEqual(
     bestMatch(
       boxCandidates([
@@ -481,8 +697,15 @@ test('a zero-budget build reuses the committed cache without fetching untried st
     name: 'Albbruck',
     lon: 8.127,
     lat: 47.59,
+    mode: 'rail' as const,
   };
-  const untried = { id: 'n-test-untried', name: 'Untried', lon: 0, lat: 0 };
+  const untried = {
+    id: 'n-test-untried',
+    name: 'Untried',
+    lon: 0,
+    lat: 0,
+    mode: 'rail' as const,
+  };
 
   const result = await resolveStopIds([cached, untried], { budget: 0 });
 

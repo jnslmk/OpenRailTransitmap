@@ -80,12 +80,23 @@ const MAX_DISTANCE_M = 500;
 // A name match is only trustworthy when it's not a tie: e.g. Hannover's rail
 // Hbf ("Hannover Hbf") and the adjacent tram stop
 // ("Hannover Hauptbahnhof/Rosenstraße", ~205 m away) both pass the name
-// filter, since the latter contains the former after normalisation. Verified
-// live against api.transitous.org/geocode?text=Hannover%20Hbf. Two such
-// candidates within this margin of each other are treated as ambiguous and
-// rejected outright - a wrong stopId would show a rider real departures from
-// the wrong physical stop, which is worse than showing none.
+// filter, since the latter contains the former after normalisation. Candidates
+// within this margin are ambiguous unless exactly one serves the OSM station's
+// mode class. A wrong stopId would show a rider real departures from the wrong
+// physical stop, which is worse than showing none.
 const AMBIGUITY_MARGIN_M = 150;
+
+const COMPATIBLE_MODES: Record<StationMode, Record<string, true>> = {
+  rail: {
+    HIGHSPEED_RAIL: true,
+    LONG_DISTANCE: true,
+    REGIONAL_RAIL: true,
+    SUBURBAN: true,
+    METRO: true,
+    SUBWAY: true,
+  },
+  tram: { TRAM: true },
+};
 
 // Two same-named candidates this close together are almost certainly one
 // physical stop counted twice by two merged feeds (observed live at ~0.1 m
@@ -120,11 +131,14 @@ const CIRCUIT_BREAKER = 5;
 // and renames, so an interrupted checkpoint can't corrupt the committed one.
 const SAVE_EVERY = 100;
 
+export type StationMode = 'rail' | 'tram';
+
 export interface StationInput {
   id: string; // OSM feature id, e.g. "n123456" - the cache key
   name: string;
   lon: number;
   lat: number;
+  mode: StationMode; // OSM station/halt vs tram_stop
 }
 
 // A '#' prefix can never collide with a real MOTIS id (ids are plain feed
@@ -433,6 +447,7 @@ interface Candidate {
   lat: number;
   lon: number;
   areas?: CandidateArea[];
+  modes?: string[];
 }
 
 /**
@@ -454,10 +469,12 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
     name: string;
     lon: number;
     lat: number;
+    modes: string[];
   }
   const all: (Match & { exact: boolean })[] = [];
   for (const c of candidates) {
     if (c.type !== 'STOP') continue;
+    if (c.modes?.length === 0) continue;
     const d = metres(c.lon, c.lat, station.lon, station.lat);
     if (d > MAX_DISTANCE_M) continue;
     if (!namesMatch(c.name, station.name)) continue;
@@ -467,6 +484,7 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
       name: normaliseName(c.name),
       lon: c.lon,
       lat: c.lat,
+      modes: c.modes ?? [],
       exact: namesEqual(c.name, station.name),
     });
   }
@@ -480,17 +498,15 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
   // validates, and the resulting crowd of rivals within AMBIGUITY_MARGIN_M
   // buries "Sondern Bf" 54 m away - an exact match on the normalised form.
   // Sampling put this shape behind 8 of 10 ambiguous verdicts.
-  //
-  // A tie between two *exact* names is still a genuine ambiguity and is still
-  // declined below: Torgau really does have a station and a bus stop of that
-  // name, and picking one would be a guess.
+  // A tie between two *exact* names is still ambiguous unless mode data below
+  // identifies exactly one compatible stop.
   const exact = all.filter((m) => m.exact);
   const matches: Match[] = exact.length ? exact : all;
 
   // Collapse feed duplicates (see file header) before judging ambiguity:
   // group candidates that share a normalised name AND sit within
-  // DUPLICATE_DISTANCE_M of another member of the group, then keep one
-  // deterministic representative (lowest id) per group.
+  // DUPLICATE_DISTANCE_M of another member of the group, then keep the lowest
+  // compatible id where possible (otherwise the lowest id) per group.
   //
   // This has to be a real connected-components partition, not a greedy
   // first-match grouping (T1-7): with three same-named candidates A, B, C
@@ -546,7 +562,17 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
     else groups.set(root, [m]);
   });
   const representatives = [...groups.values()]
-    .map((g) => [...g].sort((a, b) => a.id.localeCompare(b.id))[0])
+    .map((g) => {
+      let representative = g[0];
+      let compatible: Match | undefined;
+      for (const match of g) {
+        if (match.id.localeCompare(representative.id) < 0) representative = match;
+        const servesStation = match.modes.some((mode) => COMPATIBLE_MODES[station.mode][mode]);
+        if (servesStation && (!compatible || match.id.localeCompare(compatible.id) < 0))
+          compatible = match;
+      }
+      return compatible ?? representative;
+    })
     // Distance ties are possible (e.g. two collapsed groups equidistant from
     // the station); break on id too so the chosen [best, runnerUp] pair -
     // and therefore the ambiguity verdict - never depends on Array.sort's
@@ -554,10 +580,16 @@ export function bestMatch(candidates: Candidate[], station: StationInput): Match
     .sort((a, b) => a.d - b.d || a.id.localeCompare(b.id));
 
   const [best, runnerUp] = representatives;
-  // Two validated, distinct stops this close together (see AMBIGUITY_MARGIN_M)
-  // - guessing which one is right risks a wrong-but-confident answer, so
-  // decline instead.
-  if (runnerUp && runnerUp.d - best.d < AMBIGUITY_MARGIN_M) return { ambiguous: true };
+  // Mode is only a tie-breaker after the existing name and distance checks
+  // have established a genuine ambiguity. Never use it to rescue an otherwise
+  // implausible candidate.
+  if (runnerUp && runnerUp.d - best.d < AMBIGUITY_MARGIN_M) {
+    const tied = representatives.filter((m) => m.d - best.d < AMBIGUITY_MARGIN_M);
+    const compatible = tied.filter((m) =>
+      m.modes.some((mode) => COMPATIBLE_MODES[station.mode][mode]),
+    );
+    return compatible.length === 1 ? { id: compatible[0].id } : { ambiguous: true };
+  }
   return { id: best.id };
 }
 
@@ -646,13 +678,19 @@ export function stopsBox(station: StationInput): string {
  * to do. What `type=STOP` did for the geocoder is done for this endpoint by
  * `grouped=true` instead - see `lookup`.
  *
- * `modes` is dropped, because nothing here matches on mode yet; it is left out
- * rather than carried unused. Note it is not unique to this endpoint - the
- * geocoder returns `modes` too - so a future mode-aware matcher would have to
- * plumb it through both paths, not just this one, to behave consistently.
+ * `modes` is carried through because `bestMatch` uses it to distinguish a
+ * station from a same-named bus stop. The geocoder already returns the field
+ * in this shape, so preserving it here keeps both lookup paths equivalent.
  */
 export function boxCandidates(stops: MapStop[]): Candidate[] {
-  return stops.map((s) => ({ type: 'STOP', id: s.stopId, name: s.name, lat: s.lat, lon: s.lon }));
+  return stops.map((s) => ({
+    type: 'STOP',
+    id: s.stopId,
+    name: s.name,
+    lat: s.lat,
+    lon: s.lon,
+    modes: s.modes,
+  }));
 }
 
 /**
@@ -1042,6 +1080,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       name: f.properties.name,
       lon: f.geometry.coordinates[0],
       lat: f.geometry.coordinates[1],
+      mode: f.properties.railway === 'tram_stop' ? 'tram' : 'rail',
     });
   }
   console.log(
