@@ -395,6 +395,87 @@ async function run(page) {
     );
   });
 
+  await testCase(
+    'restored and changed filters discard selections they no longer draw',
+    async () => {
+      const hash = '#12.70/52.2760/10.5320';
+      await goto(page, hash);
+      const line = await page.evaluate(async () => {
+        const registry = await fetch(new URL('lines.json', location.href)).then((response) =>
+          response.json(),
+        );
+        return registry.lines.find((candidate) => candidate.id === 'regional|vrb|rb47');
+      });
+      check(!!line, 'the regression line exists in the loaded registry');
+      if (!line) return;
+
+      const selectedQuery = new URLSearchParams({ line: line.id });
+      await goto(page, hash, `?${selectedQuery}`);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('body.ready', { timeout: 30000 });
+      await settle(page, 0);
+      eq(
+        await page.evaluate(() => new URLSearchParams(location.search).get('line')),
+        line.id,
+        'a valid shared selection survives an actual reload',
+      );
+
+      const assertNormalized = async (reason) => {
+        const view = await page.evaluate(() => {
+          const map = window.__map;
+          const routeLayers = map
+            .getStyle()
+            .layers.filter(({ id }) =>
+              /^route-(longdistance|regional|suburban|subway|tram|coach)$/.test(id),
+            );
+          const stationLayers = map
+            .getStyle()
+            .layers.filter(({ id }) => id.startsWith('stop-') || id === 'station-positions');
+          const stationLayerIds = stationLayers.map(({ id }) => id);
+          return {
+            line: new URLSearchParams(location.search).get('line'),
+            undimmed: routeLayers.every(({ id }) => map.getPaintProperty(id, 'line-opacity') === 1),
+            stationFilters: stationLayerIds.map((id) => map.getFilter(id)),
+            visibleStations: map.queryRenderedFeatures({ layers: stationLayerIds }).length,
+          };
+        });
+        eq(view.line, null, `${reason} leaves no stale selection in the URL`);
+        check(view.undimmed, `${reason} leaves the network undimmed`);
+        check(
+          !JSON.stringify(view.stationFilters).includes(line.id),
+          `${reason} leaves stations unconstrained by the stale selection`,
+        );
+        check(view.visibleStations > 0, `${reason} does not hide every station`);
+      };
+
+      const modes = ['longdistance', 'regional', 'suburban', 'subway', 'tram', 'coach'].filter(
+        (mode) => mode !== line.mode,
+      );
+      await goto(page, hash, `?${new URLSearchParams({ modes: modes.join(','), line: line.id })}`);
+      await assertNormalized('a disabled selected mode');
+
+      await goto(page, hash, `?${new URLSearchParams({ opoff: line.operator, line: line.id })}`);
+      await assertNormalized('an excluded selected operator');
+
+      await goto(page, hash, `?${new URLSearchParams({ line: 'unknown|line' })}`);
+      await assertNormalized('an unknown selected line');
+
+      await goto(page, hash, `?${selectedQuery}`);
+      await openFilters(page);
+      const modeIndex = ['longdistance', 'regional', 'suburban', 'subway', 'tram', 'coach'].indexOf(
+        line.mode,
+      );
+      await page
+        .locator('#sidebar .filter-content .panel')
+        .filter({ has: page.locator('h2', { hasText: 'Modes' }) })
+        .locator('label.toggle input')
+        .nth(modeIndex)
+        .click();
+      await settle(page);
+      await assertNormalized('switching the selected mode off');
+    },
+  );
+
   // --- the active-filter summary -------------------------------------------
 
   await testCase('the filter summary names the modes held back and resets', async () => {

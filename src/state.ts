@@ -18,7 +18,7 @@
  */
 
 import { MODES, type Mode } from '../shared/lnvg.ts';
-import { readOperators, writeOperators, type OperatorFilter } from './operators.ts';
+import { operatorShown, readOperators, writeOperators, type OperatorFilter } from './operators.ts';
 import { MODE_GROUPS, type Place } from './routing.ts';
 import { BIKE_STEPS, defaultPlannerState, type PlannerState } from './planner.ts';
 
@@ -46,6 +46,25 @@ export interface ViewState {
   chrome: ChromeMode;
   tab: Tab;
   plan: PlannerState;
+}
+
+type SelectableLine = { mode: Mode; operator: string };
+
+/**
+ * Drop a selected line that the loaded registry or active filters do not draw.
+ * Returns whether the state changed so a restored URL can be rewritten.
+ */
+export function normalizeSelection(
+  state: ViewState,
+  lines: ReadonlyMap<string, SelectableLine>,
+): boolean {
+  if (!state.selected) return false;
+  const line = lines.get(state.selected);
+  if (line && state.modes.has(line.mode) && operatorShown(state.operators, line.operator)) {
+    return false;
+  }
+  state.selected = null;
+  return true;
 }
 
 /**

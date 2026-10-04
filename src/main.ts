@@ -22,7 +22,14 @@ import {
   FONT_BOLD,
 } from './style.ts';
 import { registerPillImages } from './stopmarks.ts';
-import { readState, writeState, type ViewState, type ChromeMode, type Tab } from './state.ts';
+import {
+  normalizeSelection,
+  readState,
+  writeState,
+  type ViewState,
+  type ChromeMode,
+  type Tab,
+} from './state.ts';
 import { t } from './strings.ts';
 import {
   renderChrome,
@@ -55,7 +62,7 @@ import { fetchDepartures, LiveDataError, type Departure } from './live.ts';
 import { loadPunctuality } from './punctuality.ts';
 import { loadLogos } from './logos.ts';
 import { parseClosure } from './closures.ts';
-import { operatorExpression, operatorKey, operatorShown } from './operators.ts';
+import { operatorExpression, operatorKey } from './operators.ts';
 import './styles.css';
 
 /** Vite injects the Pages sub-path here; ensures tile/glyph URLs resolve. */
@@ -89,6 +96,7 @@ async function main() {
 
   const initial = { center: [9.73, 52.63] as [number, number], zoom: 7 };
   const state: ViewState = readState(initial);
+  if (normalizeSelection(state, byId)) writeState(state);
   // Before the map is constructed, so it measures the final container size.
   applyChromeClasses();
 
@@ -394,6 +402,7 @@ async function main() {
   }
 
   function applyFilters() {
+    if (normalizeSelection(state, byId)) applySelection();
     for (const mode of MODES) {
       const on = state.modes.has(mode);
       for (const id of [`route-${mode}`, `route-${mode}-highlight`]) {
@@ -1065,25 +1074,10 @@ async function main() {
     onToggleMode: (mode: Mode, on: boolean) => {
       if (on) state.modes.add(mode);
       else state.modes.delete(mode);
-      // Everything but the selected line paints dimmed, so a selection whose
-      // own mode has just been switched off would leave the map greyed out
-      // with nothing lit. Drop it with the mode that carried it.
-      if (!on && state.selected && byId.get(state.selected)?.mode === mode) {
-        state.selected = null;
-        applySelection();
-      }
       applyFilters();
     },
     onOperators: (filter) => {
       state.operators = filter;
-      // The same reasoning as a mode being switched off: everything but the
-      // selected line paints dimmed, so a selection whose operator has just
-      // been filtered away would leave the map greyed out around nothing.
-      const line = state.selected ? byId.get(state.selected) : null;
-      if (line && !operatorShown(filter, line.operator)) {
-        state.selected = null;
-        applySelection();
-      }
       applyFilters();
     },
     onToggleClosures: (on) => {
