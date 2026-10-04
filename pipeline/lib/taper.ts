@@ -18,7 +18,7 @@
  */
 
 import type { Mode } from '../../shared/lnvg.ts';
-import { metres, type Coord } from './track.ts';
+import { endpointKey, metres, type Coord } from './track.ts';
 
 export type { Coord };
 
@@ -100,8 +100,8 @@ export function taperLengthM(mode: Mode, slotDelta = 1): number {
  *
  * A chain has two ends and can be tapered at both, so anything above a half
  * lets two junctions ask for more than the chain has between them - which is
- * what the trim-collision check in build.ts exists to catch. At 0.4 the two
- * halves come to at most 0.8 of the chain, so the collision is impossible by
+ * what the trim-collision check in `resolveTapers` exists to catch. At 0.4 the
+ * two halves come to at most 0.8 of the chain, so the collision is impossible by
  * construction rather than caught afterwards, and what is left in the middle
  * is still the majority of the chain, drawn at its own slot.
  */
@@ -396,4 +396,247 @@ export function buildTaper(
 
     return { coords, offset };
   });
+}
+
+/** Geometry and per-line slots already gathered for one bundle segment. */
+export interface TaperSegment {
+  lineIds: readonly string[];
+  chains: Coord[][];
+  slots: ReadonlyMap<string, number>;
+}
+
+export interface ResolvedTaperStep {
+  lineId: string;
+  bundle: number;
+  minzoom: number;
+  step: TaperStep;
+}
+
+export interface TaperTrim {
+  startM: number;
+  endM: number;
+}
+
+export interface TaperDiagnostics {
+  tapered: number;
+  skippedAmbiguous: number;
+  skippedShort: number;
+  skippedCollision: number;
+  shortened: number;
+  occupiedLanding: number;
+}
+
+export interface TaperResolution {
+  staircases: ResolvedTaperStep[];
+  trims: Map<number, Map<number, Map<string, TaperTrim>>>;
+  diagnostics: TaperDiagnostics;
+}
+
+interface EndRef {
+  segIdx: number;
+  chainIdx: number;
+  atStart: boolean;
+}
+
+interface Candidate {
+  lineId: string;
+  bundle: number;
+  steps: TaperStep[];
+  minzoom: number;
+  up: number;
+  down: number;
+  aIdx: number;
+  aChainIdx: number;
+  aFromStart: boolean;
+  aHalf: number;
+  bIdx: number;
+  bChainIdx: number;
+  bFromStart: boolean;
+  bHalf: number;
+}
+
+const trimKey = (segIdx: number, chainIdx: number, lineId: string) =>
+  `${segIdx}:${chainIdx}:${lineId}`;
+
+/**
+ * Resolve the slot changes between already-gathered bundle segments.
+ *
+ * Pairing and ambiguity are per line, so an unrelated branch at the same
+ * coordinate cannot suppress a clean continuation. Geometry is reversed only
+ * for a real slot change; the large source chains otherwise stay untouched.
+ */
+export function resolveTapers(
+  segments: readonly TaperSegment[],
+  modes: ReadonlyMap<string, Mode>,
+): TaperResolution {
+  const byEnd = new Map<string, EndRef[]>();
+  segments.forEach((segment, segIdx) => {
+    segment.chains.forEach((chain, chainIdx) => {
+      for (const atStart of [true, false]) {
+        const key = endpointKey(atStart ? chain[0] : chain[chain.length - 1]);
+        const ref = { segIdx, chainIdx, atStart };
+        const refs = byEnd.get(key);
+        if (refs) refs.push(ref);
+        else byEnd.set(key, [ref]);
+      }
+    });
+  });
+
+  const candidates: Candidate[] = [];
+  let skippedAmbiguous = 0;
+  let skippedShort = 0;
+  let shortened = 0;
+
+  for (const refs of byEnd.values()) {
+    const bySeg = new Map<number, EndRef[]>();
+    for (const ref of refs) {
+      const segmentRefs = bySeg.get(ref.segIdx);
+      if (segmentRefs) segmentRefs.push(ref);
+      else bySeg.set(ref.segIdx, [ref]);
+    }
+    if (bySeg.size < 2) continue;
+
+    const segIdxs = [...bySeg.keys()];
+    const linesHere = new Set<string>();
+    for (const segIdx of segIdxs) {
+      for (const lineId of segments[segIdx].lineIds) linesHere.add(lineId);
+    }
+
+    for (const lineId of linesHere) {
+      const relevant = segIdxs.filter((segIdx) => segments[segIdx].lineIds.includes(lineId));
+      if (relevant.length < 2) continue;
+      if (relevant.length > 2 || relevant.some((segIdx) => bySeg.get(segIdx)!.length > 1)) {
+        skippedAmbiguous++;
+        continue;
+      }
+
+      const [idxA, idxB] = relevant;
+      const segmentA = segments[idxA];
+      const segmentB = segments[idxB];
+      const [refA] = bySeg.get(idxA)!;
+      const [refB] = bySeg.get(idxB)!;
+      const slotA = segmentA.slots.get(lineId)!;
+      const slotB = segmentB.slots.get(lineId)!;
+      const upSlot = refA.atStart ? -slotA : slotA;
+      const downSlot = refB.atStart ? slotB : -slotB;
+      if (upSlot === downSlot) continue;
+
+      const chainA = segmentA.chains[refA.chainIdx];
+      const chainB = segmentB.chains[refB.chainIdx];
+      const upChain = refA.atStart ? [...chainA].reverse() : chainA;
+      const downChain = refB.atStart ? chainB : [...chainB].reverse();
+      const delta = downSlot - upSlot;
+      const wantM = taperLengthM(modes.get(lineId)!, delta);
+      const lengthM = fitTaperLength(chainLengthM(upChain), chainLengthM(downChain), wantM);
+      if (lengthM === 0) {
+        skippedShort++;
+        continue;
+      }
+      if (lengthM < wantM) shortened++;
+      const steps = buildTaper(upChain, downChain, upSlot, downSlot, lengthM, taperSteps(delta));
+      if (!steps) {
+        skippedShort++;
+        continue;
+      }
+
+      candidates.push({
+        lineId,
+        bundle: segmentA.lineIds.length,
+        steps,
+        minzoom: taperMinzoom(lengthM),
+        up: upSlot,
+        down: downSlot,
+        aIdx: idxA,
+        aChainIdx: refA.chainIdx,
+        aFromStart: refA.atStart,
+        aHalf: lengthM / 2,
+        bIdx: idxB,
+        bChainIdx: refB.chainIdx,
+        bFromStart: refB.atStart,
+        bHalf: lengthM / 2,
+      });
+    }
+  }
+
+  const trimTotal = new Map<string, number>();
+  const bump = (segIdx: number, chainIdx: number, lineId: string, metres: number) => {
+    const key = trimKey(segIdx, chainIdx, lineId);
+    trimTotal.set(key, (trimTotal.get(key) ?? 0) + metres);
+  };
+  for (const candidate of candidates) {
+    bump(candidate.aIdx, candidate.aChainIdx, candidate.lineId, candidate.aHalf);
+    bump(candidate.bIdx, candidate.bChainIdx, candidate.lineId, candidate.bHalf);
+  }
+  const collides = (segIdx: number, chainIdx: number, lineId: string) =>
+    (trimTotal.get(trimKey(segIdx, chainIdx, lineId)) ?? 0) >=
+    chainLengthM(segments[segIdx].chains[chainIdx]);
+
+  const trims = new Map<number, Map<number, Map<string, TaperTrim>>>();
+  const addTrim = (
+    segIdx: number,
+    chainIdx: number,
+    lineId: string,
+    fromStart: boolean,
+    metres: number,
+  ) => {
+    let byChain = trims.get(segIdx);
+    if (!byChain) trims.set(segIdx, (byChain = new Map<number, Map<string, TaperTrim>>()));
+    let byLine = byChain.get(chainIdx);
+    if (!byLine) byChain.set(chainIdx, (byLine = new Map<string, TaperTrim>()));
+    const trim = byLine.get(lineId) ?? { startM: 0, endM: 0 };
+    if (fromStart) trim.startM += metres;
+    else trim.endM += metres;
+    byLine.set(lineId, trim);
+  };
+
+  const staircases: ResolvedTaperStep[] = [];
+  let tapered = 0;
+  let skippedCollision = 0;
+  let occupiedLanding = 0;
+  for (const candidate of candidates) {
+    if (
+      collides(candidate.aIdx, candidate.aChainIdx, candidate.lineId) ||
+      collides(candidate.bIdx, candidate.bChainIdx, candidate.lineId)
+    ) {
+      skippedCollision++;
+      continue;
+    }
+    addTrim(
+      candidate.aIdx,
+      candidate.aChainIdx,
+      candidate.lineId,
+      candidate.aFromStart,
+      candidate.aHalf,
+    );
+    addTrim(
+      candidate.bIdx,
+      candidate.bChainIdx,
+      candidate.lineId,
+      candidate.bFromStart,
+      candidate.bHalf,
+    );
+    for (const step of candidate.steps) {
+      if (onOccupiedSlot(step.offset, candidate.up, candidate.down)) occupiedLanding++;
+      staircases.push({
+        lineId: candidate.lineId,
+        bundle: candidate.bundle,
+        minzoom: candidate.minzoom,
+        step,
+      });
+    }
+    tapered++;
+  }
+
+  return {
+    staircases,
+    trims,
+    diagnostics: {
+      tapered,
+      skippedAmbiguous,
+      skippedShort,
+      skippedCollision,
+      shortened,
+      occupiedLanding,
+    },
+  };
 }

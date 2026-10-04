@@ -30,19 +30,8 @@ import {
   tileBufferUnits,
   type Mode,
 } from '../shared/lnvg.ts';
-import { chainWays, collapseParallelTracks, endpointKey, type Coord } from './lib/track.ts';
-import {
-  slotOffset,
-  taperLengthM,
-  fitTaperLength,
-  taperSteps,
-  taperMinzoom,
-  buildTaper,
-  trimEnd,
-  chainLengthM,
-  onOccupiedSlot,
-  type TaperStep,
-} from './lib/taper.ts';
+import { chainWays, collapseParallelTracks, type Coord } from './lib/track.ts';
+import { resolveTapers, slotOffset, trimEnd } from './lib/taper.ts';
 import { coorientChains } from './lib/orient.ts';
 import { buildStopMarks, type MarkBundle } from './lib/stopmarks.ts';
 import { buildRailGraph, nearestNode, routeBetween, metres, type RailWay } from './lib/railpath.ts';
@@ -785,226 +774,26 @@ async function main() {
   }
 
   // --- slot tapers ------------------------------------------------------------
-  // With slots compacted per segment, a slot change is the rule rather than
-  // the exception: it happens wherever a bundle's membership changes, which
-  // is every junction where a line joins or leaves. So this is where the
-  // compaction above is paid for, and the ramp has to hold up at junctions
-  // the corridor scheme never asked it to - short chains between two closely
-  // spaced junctions especially, where it used to give up and leave the hard
-  // step it exists to remove. Two things follow: the ramp's length is fitted
-  // to what the two chains can actually spare (fitTaperLength), and it scales
-  // with how far the line is moving, so a four-band merge is not ramped over
-  // the same ground as a half-pitch parity slide (taperLengthM, taperSteps).
-  // See pipeline/lib/taper.ts for why that ramp has to be a staircase of
-  // short constant-offset sub-features rather than baked-in diagonal
-  // geometry.
-  interface EndRef {
-    segIdx: number;
-    chainIdx: number;
-    atStart: boolean;
-  }
-  const byEnd = new Map<string, EndRef[]>();
-  segInfos.forEach((seg, segIdx) => {
-    seg.chains.forEach((chain, chainIdx) => {
-      for (const atStart of [true, false]) {
-        const key = endpointKey(atStart ? chain[0] : chain[chain.length - 1]);
-        const ref = { segIdx, chainIdx, atStart };
-        const list = byEnd.get(key);
-        if (list) list.push(ref);
-        else byEnd.set(key, [ref]);
-      }
-    });
-  });
-
-  const trimKey = (segIdx: number, chainIdx: number, lineId: string) =>
-    `${segIdx}:${chainIdx}:${lineId}`;
-
-  interface Candidate {
-    lineId: string;
-    bundle: number;
-    steps: TaperStep[];
-    minzoom: number;
-    /** The ramp's two ends, canonicalised - what "occupied slot" is judged against. */
-    up: number;
-    down: number;
-    aIdx: number;
-    aChainIdx: number;
-    aFromStart: boolean;
-    aHalf: number;
-    bIdx: number;
-    bChainIdx: number;
-    bFromStart: boolean;
-    bHalf: number;
-  }
-  const candidates: Candidate[] = [];
-  let skippedAmbiguous = 0,
-    skippedShort = 0,
-    shortened = 0;
-
-  for (const refs of byEnd.values()) {
-    const bySeg = new Map<number, EndRef[]>();
-    for (const r of refs) {
-      const list = bySeg.get(r.segIdx);
-      if (list) list.push(r);
-      else bySeg.set(r.segIdx, [r]);
-    }
-    if (bySeg.size < 2) continue; // only one segment touches here
-
-    // Ambiguity is judged per line, not per point: a busy node can carry
-    // several unrelated bundle changes at once (e.g. a tram joining an
-    // existing corridor changes both its own bundle and everyone else's, at
-    // the same coordinate), and a line whose own pairing here is a clean two
-    // segments should still get its taper even though the point itself sees
-    // three or more segments overall.
-    const segIdxs = [...bySeg.keys()];
-    const linesHere = new Set<string>();
-    for (const s of segIdxs) for (const l of segInfos[s].lineIds) linesHere.add(l);
-
-    for (const lineId of linesHere) {
-      const relevant = segIdxs.filter((s) => segInfos[s].lineIds.includes(lineId));
-      if (relevant.length < 2) continue; // this line doesn't carry on past here
-      if (relevant.length > 2 || relevant.some((s) => bySeg.get(s)!.length > 1)) {
-        // Three or more of the line's own segments meet here, or one of them
-        // touches this point with more than one chain end: no well-defined
-        // upstream/downstream pair for this line.
-        skippedAmbiguous++;
-        continue;
-      }
-
-      const [idxA, idxB] = relevant;
-      const segA = segInfos[idxA],
-        segB = segInfos[idxB];
-      const [refA] = bySeg.get(idxA)!,
-        [refB] = bySeg.get(idxB)!;
-
-      const line = lines.get(lineId)!;
-      const nA = segA.lineIds.length;
-      const slotA = slotFor(idxA, lineId),
-        slotB = slotFor(idxB, lineId);
-
-      // buildTaper wants a chain ending at the junction and one starting
-      // there. Co-orienting above settles which way each chain runs but not
-      // which of its ends the junction is - two chains agreeing perfectly
-      // still meet start-to-start where the corridor turns back on itself -
-      // so a side that does not already fit is handed in reversed, with its
-      // slot negated to match: line-offset is relative to a feature's own
-      // direction of travel, so reversing a copy of the geometry without also
-      // flipping the sign it is offset by would flip which side it draws on.
-      const chainA = segA.chains[refA.chainIdx];
-      const chainB = segB.chains[refB.chainIdx];
-      const up = refA.atStart
-        ? { chain: [...chainA].reverse(), slot: -slotA }
-        : { chain: chainA, slot: slotA };
-      const down = refB.atStart
-        ? { chain: chainB, slot: slotB }
-        : { chain: [...chainB].reverse(), slot: -slotB };
-
-      // Whether there is really a jump to ramp has to be judged on up/down,
-      // not on the raw slotA/slotB: when one side needed the reversal above,
-      // slotA and slotB live in two unrelated coordinate frames and comparing
-      // them directly means nothing. A raw-value check here would both miss
-      // real jumps (equal raw slots after an unequal-magnitude reversal can
-      // still be physically discontinuous) and manufacture fake ones (equal
-      // and opposite raw slots - e.g. slotA=1, slotB=-1 - can cancel out to
-      // up.slot===down.slot once canonicalised, i.e. no real jump at all).
-      if (up.slot === down.slot) continue;
-
-      // Ask for a ramp proportional to the move, then take as much of it as
-      // the shorter of the two chains can give up. Only when what is left is
-      // too short to be worth drawing at all - under a pixel at the highest
-      // zoom the tiles carry - is the hard step left alone.
-      const delta = down.slot - up.slot;
-      const wantM = taperLengthM(line.mode, delta);
-      const L = fitTaperLength(chainLengthM(up.chain), chainLengthM(down.chain), wantM);
-      if (L === 0) {
-        skippedShort++;
-        continue;
-      }
-      if (L < wantM) shortened++;
-      const steps = buildTaper(up.chain, down.chain, up.slot, down.slot, L, taperSteps(delta));
-      if (!steps) {
-        skippedShort++;
-        continue;
-      }
-
-      candidates.push({
-        lineId,
-        bundle: nA,
-        steps,
-        minzoom: taperMinzoom(L),
-        up: up.slot,
-        down: down.slot,
-        // Trims apply to each side's own chain in its own, never-reversed
-        // orientation, so they are recorded against that chain's actual end
-        // rather than the up/down role it was given above.
-        aIdx: idxA,
-        aChainIdx: refA.chainIdx,
-        aFromStart: refA.atStart,
-        aHalf: L / 2,
-        bIdx: idxB,
-        bChainIdx: refB.chainIdx,
-        bFromStart: refB.atStart,
-        bHalf: L / 2,
-      });
-    }
-  }
-
-  // A chain touched by two tapers, one at each end, could have them ask for
-  // more trimming than the chain is long. Drop that pair rather than let the
-  // trims cross over and emit a line that folds back on itself.
-  const trimTotal = new Map<string, number>();
-  const bump = (segIdx: number, chainIdx: number, lineId: string, m: number) => {
-    const k = trimKey(segIdx, chainIdx, lineId);
-    trimTotal.set(k, (trimTotal.get(k) ?? 0) + m);
-  };
-  for (const c of candidates) {
-    bump(c.aIdx, c.aChainIdx, c.lineId, c.aHalf);
-    bump(c.bIdx, c.bChainIdx, c.lineId, c.bHalf);
-  }
-  const collides = (segIdx: number, chainIdx: number, lineId: string) => {
-    const total = trimTotal.get(trimKey(segIdx, chainIdx, lineId)) ?? 0;
-    return total >= chainLengthM(segInfos[segIdx].chains[chainIdx]);
-  };
-
-  const trimStart = new Map<string, number>();
-  const trimEndM = new Map<string, number>();
-  const staircases: { lineId: string; bundle: number; minzoom: number; step: TaperStep }[] = [];
-  let tapered = 0,
-    skippedCollision = 0,
-    occupiedLanding = 0;
-  for (const c of candidates) {
-    if (collides(c.aIdx, c.aChainIdx, c.lineId) || collides(c.bIdx, c.bChainIdx, c.lineId)) {
-      skippedCollision++;
-      continue;
-    }
-    const aKey = trimKey(c.aIdx, c.aChainIdx, c.lineId);
-    const bKey = trimKey(c.bIdx, c.bChainIdx, c.lineId);
-    if (c.aFromStart) trimStart.set(aKey, (trimStart.get(aKey) ?? 0) + c.aHalf);
-    else trimEndM.set(aKey, (trimEndM.get(aKey) ?? 0) + c.aHalf);
-    if (c.bFromStart) trimStart.set(bKey, (trimStart.get(bKey) ?? 0) + c.bHalf);
-    else trimEndM.set(bKey, (trimEndM.get(bKey) ?? 0) + c.bHalf);
-    for (const step of c.steps) {
-      // buildTaper nudges a step off a slot another line rests at, where it
-      // would otherwise land on one exactly (see its comment in taper.ts).
-      // This counts how many still do regardless, so a change to that nudge -
-      // or to the data - surfaces here rather than silently painting over a
-      // band again. Expected to be 0.
-      if (onOccupiedSlot(step.offset, c.up, c.down)) occupiedLanding++;
-      staircases.push({ lineId: c.lineId, bundle: c.bundle, minzoom: c.minzoom, step });
-    }
-    tapered++;
-  }
+  // Gathering stays in this pipeline because it owns the stitched corridor
+  // geometry. Pairing, orientation and trim-collision decisions live behind
+  // taper.ts's resolveTapers seam, where direct consumers can exercise them.
+  const lineModes = new Map<string, Mode>();
+  for (const [lineId, line] of lines) lineModes.set(lineId, line.mode);
+  const {
+    staircases,
+    trims,
+    diagnostics: taperDiagnostics,
+  } = resolveTapers(
+    segInfos.map((segment, segIdx) => ({ ...segment, slots: segSlots[segIdx] })),
+    lineModes,
+  );
+  const { tapered, skippedAmbiguous, skippedShort, skippedCollision, shortened, occupiedLanding } =
+    taperDiagnostics;
   console.log(
     `==> ${tapered} slot tapers (${skippedAmbiguous} skipped: ambiguous junction, ` +
       `${skippedShort} skipped: chain too short, ${skippedCollision} skipped: trims collided)`,
   );
-  // How often the chains could not afford the ramp the move asked for. Not a
-  // fault - a shortened ramp is still a ramp, and still beats the step it
-  // replaces - but it is the dial to watch if the diagonals start reading as
-  // steep: it says how much of the network is junction-dense enough that
-  // there is no room to be gentler. `skippedCollision`, by contrast, should
-  // stay 0: fitTaperLength hands each end at most 0.4 of its chain, so the
-  // two ends of one chain cannot together ask for more than it has.
+  // A shortened ramp is still preferable to the hard step it replaces.
   console.log(`==> ${shortened} tapers ramped shorter than asked, to fit the chain they had`);
   console.log(
     `==> ${occupiedLanding} taper steps land exactly on an occupied slot (see taper.ts:buildTaper)`,
@@ -1020,8 +809,9 @@ async function main() {
       const line = lines.get(lineId)!;
       maxAbsOffset = Math.max(maxAbsOffset, Math.abs(slotFor(segIdx, lineId)));
       const parts = seg.chains.map((chain, chainIdx) => {
-        const sM = trimStart.get(trimKey(segIdx, chainIdx, lineId)) ?? 0;
-        const eM = trimEndM.get(trimKey(segIdx, chainIdx, lineId)) ?? 0;
+        const trim = trims.get(segIdx)?.get(chainIdx)?.get(lineId);
+        const sM = trim?.startM ?? 0;
+        const eM = trim?.endM ?? 0;
         if (sM === 0 && eM === 0) return chain;
         let c = chain;
         if (sM > 0) c = trimEnd(c, sM, true)?.kept ?? c;

@@ -18,8 +18,10 @@ import {
   trimEnd,
   splitByLength,
   buildTaper,
+  resolveTapers,
   TAPER_STEPS,
   type Coord,
+  type TaperSegment,
 } from './lib/taper.ts';
 
 /** Metres, at Braunschweig's latitude, as a longitude/latitude delta. */
@@ -32,6 +34,10 @@ function eastward(x: number, y: number, len: number): Coord[] {
     [x, y],
     [x + len * M_LON, y],
   ];
+}
+
+function segment(lineIds: string[], chain: Coord[], slots: [string, number][]): TaperSegment {
+  return { lineIds, chains: [chain], slots: new Map(slots) };
 }
 
 test('slotOffset spaces a bundle one pitch apart, whatever its size', () => {
@@ -354,4 +360,153 @@ test('buildTaper never nudges onto slotUp or slotDown themselves', () => {
     assert.notEqual(step.offset, 0);
     assert.notEqual(step.offset, 2);
   }
+});
+
+test('resolveTapers pairs a line through a busy junction despite an unrelated branch', () => {
+  const before = eastward(10.52, 52.26, 200);
+  const junction = before[before.length - 1];
+  const after = eastward(junction[0], junction[1], 200);
+  const branch: Coord[] = [junction, [junction[0], junction[1] + 200 * M_LAT]];
+  const result = resolveTapers(
+    [
+      segment(['main'], before, [['main', 0]]),
+      segment(['main', 'other'], after, [
+        ['main', 0.5],
+        ['other', -0.5],
+      ]),
+      segment(['branch'], branch, [['branch', 0]]),
+    ],
+    new Map([
+      ['main', 'regional'],
+      ['other', 'regional'],
+      ['branch', 'tram'],
+    ]),
+  );
+
+  assert.equal(result.staircases.length, 3);
+  assert.ok(result.staircases.every(({ lineId }) => lineId === 'main'));
+  assert.deepEqual(result.trims.get(0)?.get(0)?.get('main'), { startM: 0, endM: 40 });
+  assert.deepEqual(result.trims.get(1)?.get(0)?.get('main'), { startM: 40, endM: 0 });
+  assert.deepEqual(result.diagnostics, {
+    tapered: 1,
+    skippedAmbiguous: 0,
+    skippedShort: 0,
+    skippedCollision: 0,
+    shortened: 0,
+    occupiedLanding: 0,
+  });
+});
+
+test('resolveTapers distinguishes a three-way ambiguity from one-sided lines', () => {
+  const before = eastward(10.52, 52.26, 200);
+  const junction = before[before.length - 1];
+  const east = eastward(junction[0], junction[1], 200);
+  const north: Coord[] = [junction, [junction[0], junction[1] + 200 * M_LAT]];
+
+  const ambiguous = resolveTapers(
+    [
+      segment(['main'], before, [['main', 0]]),
+      segment(['main'], east, [['main', 1]]),
+      segment(['main'], north, [['main', -1]]),
+    ],
+    new Map([['main', 'regional']]),
+  );
+  assert.equal(ambiguous.staircases.length, 0);
+  assert.equal(ambiguous.diagnostics.skippedAmbiguous, 1);
+
+  const oneSided = resolveTapers(
+    [segment(['ending'], before, [['ending', 0]]), segment(['starting'], east, [['starting', 0]])],
+    new Map([
+      ['ending', 'regional'],
+      ['starting', 'regional'],
+    ]),
+  );
+  assert.equal(oneSided.staircases.length, 0);
+  assert.deepEqual(oneSided.diagnostics, {
+    tapered: 0,
+    skippedAmbiguous: 0,
+    skippedShort: 0,
+    skippedCollision: 0,
+    shortened: 0,
+    occupiedLanding: 0,
+  });
+});
+
+test('resolveTapers reverses chains and slot signs, but skips a canonical no-op', () => {
+  const junction: Coord = [10.52, 52.26];
+  const east = eastward(junction[0], junction[1], 200);
+  const west: Coord[] = [junction, [junction[0] - 200 * M_LON, junction[1]]];
+  const reversed = resolveTapers(
+    [segment(['main'], east, [['main', 1]]), segment(['main'], west, [['main', 0]])],
+    new Map([['main', 'regional']]),
+  );
+
+  assert.equal(reversed.diagnostics.tapered, 1);
+  assert.ok(reversed.staircases[0].step.offset > -1);
+  assert.ok(reversed.staircases.at(-1)!.step.offset < 0);
+  assert.deepEqual(reversed.trims.get(0)?.get(0)?.get('main'), { startM: 40, endM: 0 });
+  assert.deepEqual(reversed.trims.get(1)?.get(0)?.get('main'), { startM: 40, endM: 0 });
+
+  const noOp = resolveTapers(
+    [segment(['main'], east, [['main', 1]]), segment(['main'], west, [['main', -1]])],
+    new Map([['main', 'regional']]),
+  );
+  assert.equal(noOp.staircases.length, 0);
+  assert.equal(noOp.trims.size, 0);
+  assert.equal(noOp.diagnostics.tapered, 0);
+});
+
+test('resolveTapers fits a short ramp and reports the shortened geometry', () => {
+  const before = eastward(10.52, 52.26, 30);
+  const junction = before[before.length - 1];
+  const after = eastward(junction[0], junction[1], 30);
+  const result = resolveTapers(
+    [segment(['main'], before, [['main', 0]]), segment(['main'], after, [['main', 1]])],
+    new Map([['main', 'regional']]),
+  );
+
+  assert.equal(result.staircases.length, 3);
+  assert.equal(result.diagnostics.shortened, 1);
+  assert.equal(result.diagnostics.skippedShort, 0);
+  const beforeTrim = result.trims.get(0)?.get(0)?.get('main');
+  const afterTrim = result.trims.get(1)?.get(0)?.get('main');
+  assert.ok(Math.abs(beforeTrim!.endM - 12) < 0.01);
+  assert.ok(Math.abs(afterTrim!.startM - 12) < 0.01);
+  const first = result.staircases[0].step.coords[0];
+  const lastStep = result.staircases.at(-1)!.step.coords;
+  const last = lastStep[lastStep.length - 1];
+  assert.ok(Math.abs(chainLengthM([first, junction]) - 12) < 0.1);
+  assert.ok(Math.abs(chainLengthM([junction, last]) - 12) < 0.1);
+});
+
+test('resolveTapers keeps two end tapers within one chain and leaves another pair unaffected', () => {
+  const left = eastward(10.52, 52.26, 200);
+  const central = eastward(left.at(-1)![0], left.at(-1)![1], 100);
+  const right = eastward(central.at(-1)![0], central.at(-1)![1], 200);
+  const otherBefore = eastward(10.52, 53.26, 200);
+  const otherAfter = eastward(otherBefore.at(-1)![0], otherBefore.at(-1)![1], 200);
+  const result = resolveTapers(
+    [
+      segment(['main'], left, [['main', 0]]),
+      segment(['main'], central, [['main', 1]]),
+      segment(['main'], right, [['main', 0]]),
+      segment(['other'], otherBefore, [['other', 0]]),
+      segment(['other'], otherAfter, [['other', 1]]),
+    ],
+    new Map([
+      ['main', 'regional'],
+      ['other', 'regional'],
+    ]),
+  );
+
+  const centralTrim = result.trims.get(1)?.get(0)?.get('main');
+  assert.ok(centralTrim);
+  assert.ok(Math.abs(centralTrim.startM - 40) < 0.01);
+  assert.ok(Math.abs(centralTrim.endM - 40) < 0.01);
+  assert.ok(centralTrim.startM + centralTrim.endM <= 0.8 * chainLengthM(central) + 1e-9);
+  assert.equal(result.diagnostics.tapered, 3);
+  assert.equal(result.diagnostics.skippedCollision, 0);
+  assert.equal(result.staircases.filter(({ lineId }) => lineId === 'other').length, 3);
+  assert.deepEqual(result.trims.get(3)?.get(0)?.get('other'), { startM: 0, endM: 40 });
+  assert.deepEqual(result.trims.get(4)?.get(0)?.get('other'), { startM: 40, endM: 0 });
 });

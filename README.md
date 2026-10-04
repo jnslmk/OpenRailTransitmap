@@ -254,6 +254,15 @@ the line is moving and is then fitted to what those two chains can actually
 spare — a ramp that does not fit is shortened, not skipped, since a skipped
 ramp is exactly the sideways jump the taper exists to remove.
 
+`build.ts` gathers the stitched chains, per-segment slots, and line modes;
+`resolveTapers` in `pipeline/lib/taper.ts` owns the junction pairing,
+orientation, and trim-collision decisions and returns staircase geometry,
+per-chain trims, and diagnostics for the pipeline to emit and log.
+
+Each taper can trim at most 40% from one end of a chain, so tapers at both
+ends consume at most 80%; the resolver still retains and reports its
+trim-collision guard as a backstop.
+
 Directional variants (`A → B` and `B → A`) are collapsed into one logical line
 keyed on `mode | network | ref`.
 
