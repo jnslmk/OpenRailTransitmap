@@ -10,7 +10,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { namesMatch, namesEqual, bestMatch, boxCandidates, stopsBox } from './stop-ids.ts';
+import {
+  namesMatch,
+  namesEqual,
+  bestMatch,
+  boxCandidates,
+  stopsBox,
+  resolveStopIds,
+} from './stop-ids.ts';
 
 test('accepts the same name spelled differently', () => {
   assert.ok(namesMatch('Bremen Hbf', 'Bremen Hauptbahnhof'));
@@ -463,4 +470,25 @@ test('a sweep can be legitimately ambiguous, and that verdict is now final', () 
     ),
     { ambiguous: true },
   );
+});
+
+test('a zero-budget build reuses the committed cache without fetching untried stations', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', () => {
+    throw new Error('zero-budget resolution must not fetch');
+  });
+  const cached = {
+    id: 'n100020289',
+    name: 'Albbruck',
+    lon: 8.127,
+    lat: 47.59,
+  };
+  const untried = { id: 'n-test-untried', name: 'Untried', lon: 0, lat: 0 };
+
+  const result = await resolveStopIds([cached, untried], { budget: 0 });
+
+  assert.equal(result.stopIds.get(cached.id), 'de-DELFI_de:08337:6576:3:1');
+  assert.equal(result.stopIds.has(untried.id), false);
+  assert.equal(result.cached, 1);
+  assert.equal(result.budgetUsed, 0);
+  assert.equal(fetch.mock.callCount(), 0);
 });

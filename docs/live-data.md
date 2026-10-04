@@ -68,6 +68,18 @@ geocoder query for every click. **Resolve the mapping once in the nightly
 pipeline** and ship a `stopId` per station in the tiles, the same way `uic_ref`
 is shipped now. Stations that fail to resolve simply get no departure board.
 
+### Stop-id cache ownership
+
+CI builds use the committed `data/stop-ids.json` cache only:
+`STOP_ID_BUDGET=0` makes `resolveStopIds` reuse cached mappings without making
+Transitous requests for untried stations. The workflow deliberately retains
+read-only repository contents permission, so it neither refreshes nor commits
+the cache.
+
+Refreshes are deliberate local maintenance. After producing the station
+extract, run `npm run resolve:stop-ids`, review the cache diff, and commit the
+updated cache. Ordinary local and CI builds should use `STOP_ID_BUDGET=0`.
+
 Id coverage in OSM, measured over Germany via Overpass: 8,650
 `railway=station|halt` nodes, of which 5,456 carry `uic_ref` (~63%). The
 equivalent count for `ref:IFOPT` timed out twice and is still unknown — worth
